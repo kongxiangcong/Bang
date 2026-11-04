@@ -1,0 +1,19 @@
+# Source-only repository. New files require explicit review before inclusion.
+# Existing local discussions, personal data, workspaces, credentials, caches,
+# browser profiles, screenshots and generated validation output stay untracked.
+/*
+!/.gitignore
+!/.github/
+/.github/*
+!/.github/README.md
+!/docs/
+/docs/*
+!/docs/design/
+/docs/design/*
+!/docs/design/requirements.md
+!/prototypes/
+/prototypes/*
+!/prototypes/lifetime-experience/
+/prototypes/lifetime-experience/*
+!/prototypes/lifetime-experience/index.html
+!/prototypes/lifetime-experience/validate.mjs
