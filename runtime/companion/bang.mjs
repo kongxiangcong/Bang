@@ -32,6 +32,8 @@ async function initialize(){
  const configPath=path.join(home,'companion.json');if(await read(configPath,null))throw Error('本项目已初始化；用status/resume，不覆盖现有配置');
  await fs.mkdir(path.join(home,'runtime'),{recursive:true});
  for(const name of ['bang.mjs','organizer.md','output.schema.json','start.ps1','whiteboard.mjs'])await fs.copyFile(path.join(here,name),path.join(home,'runtime',name));
+ await fs.mkdir(path.join(home,'bundle'),{recursive:true});
+ await fs.copyFile(path.join(here,'../bundle/storage.mjs'),path.join(home,'bundle/storage.mjs'));
  const config={schema:1,workspace,chatId,transcript:path.resolve(transcript),executable,model:arg('--model','gpt-6-astra'),topic,enabled:true,transport:'transcript-poll',pollMs:1500,initializedAt:new Date().toISOString()};
  const existing=await rounds(config);const backfill=Number(arg('--backfill','0'));const ignored=backfill?existing.slice(0,-backfill):existing;
  await write(configPath,config);await write(path.join(home,'topics',topic,'state.json'),{ignoredTurnIds:ignored.map(r=>r.id),processedTurnIds:[],revision:0,coverage:backfill?`补处理初始化前最近 ${backfill} 条完成轮，然后接收新完成轮`:'从初始化时的完成轮边界开始；仅处理实际收到的用户消息与最终回答'});

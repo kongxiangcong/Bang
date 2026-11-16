@@ -55,3 +55,18 @@
 !/runtime/companion/output.schema.json
 !/runtime/companion/README.md
 !/runtime/companion/whiteboard.mjs
+
+# Bang bundle source and tests (generated workspaces remain ignored).
+!/runtime/bundle/
+/runtime/bundle/*
+!/runtime/bundle/*.mjs
+!/runtime/bundle/*.md
+!/runtime/bundle/*.json
+!/skills/bang-bundle/
+/skills/bang-bundle/*
+!/skills/bang-bundle/SKILL.md
+!/tests/
+/tests/*
+!/tests/*.mjs
+
+!/prototypes/whiteboard-integration/bundle-vite.mjs

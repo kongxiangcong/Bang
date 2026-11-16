@@ -1,0 +1,321 @@
+{
+  "type": "object",
+  "properties": {
+    "kind": {
+      "type": "string",
+      "enum": [
+        "update",
+        "lookup"
+      ]
+    },
+    "event": {
+      "type": "object",
+      "properties": {
+        "goal": {
+          "type": "string"
+        },
+        "upsertGroups": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "goal": {
+                "type": "string"
+              },
+              "relation": {
+                "type": "string",
+                "enum": [
+                  "loose",
+                  "hierarchy",
+                  "radial",
+                  "sequence"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "goal",
+              "relation"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "upsertNodes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "groupId": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              },
+              "explanation": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "open",
+                  "supported",
+                  "hypothesis",
+                  "disputed",
+                  "rejected"
+                ]
+              },
+              "sourceIds": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "id",
+              "groupId",
+              "text",
+              "explanation",
+              "status",
+              "sourceIds"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "upsertRelations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "from": {
+                "type": "string"
+              },
+              "to": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "from",
+              "to",
+              "label"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "removeNodeIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "removeRelationIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "goal",
+        "upsertGroups",
+        "upsertNodes",
+        "upsertRelations",
+        "removeNodeIds",
+        "removeRelationIds"
+      ],
+      "additionalProperties": false
+    },
+    "discussion": {
+      "type": "string"
+    },
+    "memory": {
+      "type": "object",
+      "properties": {
+        "goal": {
+          "type": "string"
+        },
+        "conclusions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "conditions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "sourceIds": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "text",
+              "conditions",
+              "sourceIds"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "unresolved": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "conditions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "sourceIds": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "text",
+              "conditions",
+              "sourceIds"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "nextSteps": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "goal",
+        "conclusions",
+        "unresolved",
+        "nextSteps"
+      ],
+      "additionalProperties": false
+    },
+    "sourceIds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "archiveIds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "archiveNodeIds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "archiveReason": {
+      "type": "string"
+    },
+    "retainedConditions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "resolvedQuestions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "sourceIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "question",
+          "reason",
+          "sourceIds"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "archivedConditions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "condition": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "sourceIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "condition",
+          "reason",
+          "sourceIds"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "kind",
+    "event",
+    "discussion",
+    "memory",
+    "sourceIds",
+    "archiveIds",
+    "archiveNodeIds",
+    "archiveReason",
+    "retainedConditions",
+    "resolvedQuestions",
+    "archivedConditions"
+  ],
+  "additionalProperties": false
+}

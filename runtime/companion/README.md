@@ -1,5 +1,7 @@
 # Bang 后台整理
 
+Linux 一键初始化和跨会话接续请使用 [bang-bundle](../bundle/README.md)。本页记录旧版显式指定 transcript 的入口；已有数据可在停止旧 worker 后由 bundle 迁移。
+
 当前已接入后台专题白板，PIM 白板保持独立。采用 **明确绑定的 transcript 完成轮轮询**，不是已接通的 Stop hook。每 1.5 秒检查一次，仅在真实 `task_complete` 后处理对应用户消息与最终回答；不读取工具结果、模型内部推理或其他聊天。
 
 官方 Hooks 已提供异步入口，但新 hook 需宿主信任，当前轮内不能证明配置已加载。本次不更改全局 hook 信任。当前桌面 transcript 格式属于内部格式，解析器按实测的 `task_started / response_item / task_complete` 编写，版本变化需核对。
