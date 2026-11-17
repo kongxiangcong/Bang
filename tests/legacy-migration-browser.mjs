@@ -13,6 +13,7 @@ const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const temp=await fs.mkdtemp(path.join(os.tmpdir(),'bang-browser-'));
 const fixture=JSON.parse(await fs.readFile(path.join(root,'baselines/whiteboard-v1/legacy-session.json'),'utf8'));
 fixture.scene.elements.push({id:'known',type:'rectangle',x:100.5,y:100.2,width:260.4,height:100.2,angle:0.3,boundElements:[{id:'known-label',type:'text'}],customData:{bangNode:{id:'known',text:'stale generated'}}},{id:'known-label',type:'text',containerId:'known',x:110,y:120,text:'Saved human body',originalText:'Saved human body'});
+fixture.scene.elements[2].customData.bangRelation={id:'route',from:'known',to:'deleted'};
 await fs.mkdir(path.join(temp,'.bang/sessions'),{recursive:true});await fs.writeFile(path.join(temp,'.bang/sessions/pim.json'),JSON.stringify(fixture));
 const middleware=createCanvasMiddleware({project:temp});
 const dist=path.join(root,'prototypes/whiteboard-integration/dist');
@@ -43,6 +44,7 @@ try{
  for(const label of ['我已停止所有旧写入者并关闭旧页面','我已核对历史、来源和画面；同意矛盾关系保持待确认']){const pos=await evaluate(`(()=>{const e=[...document.querySelectorAll('label')].find(e=>e.textContent===${JSON.stringify(label)}).querySelector('input');e.scrollIntoView();const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);await click(pos.x,pos.y);}
  await button('迁入独立新项目');const href=await until(()=>evaluate(`document.querySelector('[data-migration-link]')?.href`));await cmd('Page.navigate',{url:href});
  await until(()=>evaluate(`document.querySelector('[aria-label="卡片正文 1"]')?.value==='Saved human body'`));
+ assert.equal(await evaluate('document.body.innerText.includes("旧迁移依据 · 1 条关系待确认")'),true);
  const snapshot=await evaluate('window.canvasBoard.snapshot()');assert.equal(snapshot.find(e=>e.id==='known').angle,0.3);assert.equal(snapshot.find(e=>e.id==='known').width,260.4);
  await cmd('Page.reload');await until(()=>evaluate(`document.querySelector('[aria-label="卡片正文 1"]')?.value==='Saved human body'`));
  assert.equal(await fs.readFile(path.join(temp,'.bang/sessions/pim.json'),'utf8'),JSON.stringify(fixture));

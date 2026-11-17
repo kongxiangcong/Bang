@@ -26,7 +26,7 @@ const chrome=spawn(process.env.BANG_CHROME??'C:/Program Files/Google/Chrome/Appl
 const delay=ms=>new Promise(r=>setTimeout(r,ms));let ws;let n=0;const pending=new Map();
 async function until(fn){for(let i=0;i<100;i++){try{const result=await fn();if(result)return result}catch{}await delay(100)}throw Error('timed out')}
 function cmd(method,params={}){return new Promise((resolve,reject)=>{const id=++n;pending.set(id,{resolve,reject});ws.send(JSON.stringify({id,method,params}))})}
-async function evaluate(expression){const result=await cmd('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(result.exceptionDetails)throw Error(result.exceptionDetails.text);return result.result.value}
+async function evaluate(expression){if(expression.includes('canvasBoard.viewport()')){await cmd('Runtime.evaluate',{expression:'document.querySelector("main")?.scrollIntoView({block:"start"})'});await delay(150);}const result=await cmd('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(result.exceptionDetails)throw Error(result.exceptionDetails.text);return result.result.value}
 async function click(x,y){await cmd('Input.dispatchMouseEvent',{type:'mousePressed',x,y,button:'left',clickCount:1});await cmd('Input.dispatchMouseEvent',{type:'mouseReleased',x,y,button:'left',clickCount:1})}
 try{
  const port=await until(async()=>Number((await fs.readFile(path.join(temp,'chrome/DevToolsActivePort'),'utf8')).split('\n')[0]));
@@ -35,7 +35,7 @@ try{
  ws.onmessage=event=>{const m=JSON.parse(event.data);if(m.id){const p=pending.get(m.id);pending.delete(m.id);m.error?p.reject(Error(m.error.message)):p.resolve(m.result)}};
  await cmd('Page.enable');await cmd('Page.navigate',{url:url+'/canvas.html?topic=demo'});
  await until(()=>evaluate('!!window.canvasBoard?.snapshot().length'));
- async function button(text){const pos=await evaluate(`(()=>{const e=[...document.querySelectorAll('button')].find(e=>e.textContent===${JSON.stringify(text)});if(!e)throw Error('Missing button');const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);await click(pos.x,pos.y);}
+ async function button(text){const pos=await evaluate(`(()=>{const e=[...document.querySelectorAll('button')].find(e=>e.textContent===${JSON.stringify(text)});if(!e)throw Error('Missing button');e.scrollIntoView({block:'center'});const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);await click(pos.x,pos.y);}
  async function type(label,text){const pos=await evaluate(`(()=>{const e=document.querySelector('[aria-label="${label}"]');e.scrollIntoView({block:"nearest"});const r=e.getBoundingClientRect();return {x:r.x+10,y:r.y+10}})()`);await click(pos.x,pos.y);await cmd('Input.dispatchKeyEvent',{type:'keyDown',key:'a',code:'KeyA',modifiers:2,windowsVirtualKeyCode:65,commands:['selectAll']});await cmd('Input.dispatchKeyEvent',{type:'keyUp',key:'a',code:'KeyA',modifiers:2});await cmd('Input.insertText',{text});}
 
 
@@ -52,16 +52,16 @@ try{
  await button('保存');await until(()=>evaluate('document.body.innerText.includes("已保存 · 修订 1")'));
  let saved=await state();assert.equal(saved.canvas.nodes.length,2);assert.equal(saved.canvas.edges.length,0);assert.ok(saved.editorExtras.some(e=>e.element.originalText==='自由文字标注'&&!e.element.customData?.businessId));
  const annotation=saved.editorExtras.find(e=>e.element.type==='rectangle'&&!e.element.customData?.businessId);assert.ok(annotation);const route=saved.editorExtras.find(e=>e.element.type==='line');assert.ok(route);assert.ok(route.element.points.length>=3,'native multi-point route');assert.notEqual(annotation.element.angle,0,'native rotation');
- await cmd('Page.reload');await until(()=>evaluate('document.body.innerText.includes("转换标注 1")'));
+ await cmd('Page.reload');await until(()=>evaluate('document.body.innerText.includes("转换标注 1")'));await until(()=>evaluate('!!window.canvasBoard?.snapshot().length'));
  assert.ok(await evaluate(`window.canvasBoard.snapshot().some(e=>e.id===${JSON.stringify(annotation.id)})`));
 
  const reopened=await evaluate('window.canvasBoard.snapshot()');assert.equal(reopened.find(e=>e.id===annotation.id).angle,annotation.element.angle);assert.deepEqual(reopened.find(e=>e.id===route.id).points,route.element.points);
  await button('转换标注 1 为知识卡片');await button('保存');await until(()=>evaluate('document.body.innerText.includes("已保存 · 修订 2")'));
  assert.equal((await state()).canvas.nodes.length,3);
  await key('v','KeyV');
- const position=await evaluate(`(()=>{const e=window.canvasBoard.snapshot().find(e=>e.id===${JSON.stringify(annotation.id)}),v=window.canvasBoard.viewport();return {x:(e.x+10+v.scrollX)*v.zoom.value+v.offsetLeft,y:(e.y+10+v.scrollY)*v.zoom.value+v.offsetTop}})()`);
+ const position=await evaluate(`(()=>{const e=window.canvasBoard.snapshot().find(e=>e.id===${JSON.stringify(annotation.id)}),v=window.canvasBoard.viewport();return {x:(e.x+e.width/2+(-e.width/2+4)*Math.cos(e.angle)+v.scrollX)*v.zoom.value+v.offsetLeft,y:(e.y+e.height/2+(-e.width/2+4)*Math.sin(e.angle)+v.scrollY)*v.zoom.value+v.offsetTop}})()`);
  await click(position.x,position.y);await key('d','KeyD',2);
- await until(()=>evaluate('document.querySelectorAll("textarea").length===4'));await until(()=>evaluate('!!window.canvasBoard?.snapshot().length'));
+ await until(()=>evaluate('document.querySelectorAll("textarea[aria-label^=卡片正文]").length===4'));await until(()=>evaluate('!!window.canvasBoard?.snapshot().length'));
  await button('保存');await until(()=>evaluate('document.body.innerText.includes("已保存 · 修订 3")'));
  saved=await state();const copy=saved.canvas.nodes.find(n=>n.derivedFrom===annotation.id);assert.ok(copy);assert.equal(saved.metadata[copy.id].derivedFrom,annotation.id);
  await type('卡片正文 4','独立副本');await button('保存');await until(()=>evaluate('document.body.innerText.includes("已保存 · 修订 4")'));
@@ -70,7 +70,7 @@ try{
  await cmd('Input.dispatchMouseEvent',{type:'mousePressed',...labelPosition,button:'left',clickCount:2});await cmd('Input.dispatchMouseEvent',{type:'mouseReleased',...labelPosition,button:'left',clickCount:2});await key('a','KeyA',2);await cmd('Input.insertText',{text:'原生独立正文'});await key('Escape','Escape');await delay(600);
  await button('保存');await until(()=>evaluate('document.body.innerText.includes("已保存 · 修订 5")'));
  saved=await state();assert.equal(saved.canvas.nodes.find(n=>n.id===copy.id).text,'原生独立正文');assert.notEqual(saved.canvas.nodes.find(n=>n.id===annotation.id).text,'原生独立正文');
- await cmd('Page.reload');await until(()=>evaluate('document.querySelectorAll("textarea").length===4'));await until(()=>evaluate('!!window.canvasBoard?.snapshot().length'));
+ await cmd('Page.reload');await until(()=>evaluate('document.querySelectorAll("textarea[aria-label^=卡片正文]").length===4'));await until(()=>evaluate('!!window.canvasBoard?.snapshot().length'));
  // A completed annotation gesture is recoverable; interrupted next gesture must not mutate that snapshot.
  const linePosition=async()=>evaluate(`(()=>{const e=window.canvasBoard.snapshot().find(e=>e.id===${JSON.stringify(route.id)}),v=window.canvasBoard.viewport();return {x:(e.x+(e.points[0][0]+e.points[1][0])/2+v.scrollX)*v.zoom.value+v.offsetLeft,y:(e.y+(e.points[0][1]+e.points[1][1])/2+v.scrollY)*v.zoom.value+v.offsetTop}})()`);
  await key('v','KeyV');let lp=await linePosition();await drag(lp.x,lp.y,30,30);
@@ -79,7 +79,7 @@ try{
  await cmd('Page.reload');await until(()=>evaluate('document.body.innerText.includes("发现可恢复草稿")'));await button('恢复草稿');await until(()=>evaluate('!!window.canvasBoard?.snapshot().length'));
  const recovered=await evaluate(`window.canvasBoard.snapshot().find(e=>e.id===${JSON.stringify(route.id)})`);assert.equal(recovered.x,completed.x);assert.equal(recovered.y,completed.y);assert.deepEqual(recovered.points,completed.points);assert.equal((await state()).revision,5);
  await button('转换标注 1 为知识卡片');await button('保存');await until(()=>evaluate('document.body.innerText.includes("已保存 · 修订 6")'));
- saved=await state();const textCard=saved.canvas.nodes.find(n=>n.text==='自由文字标注');assert.ok(textCard);await cmd('Page.reload');await until(()=>evaluate('document.querySelectorAll("textarea").length===5'));await until(()=>evaluate('!!window.canvasBoard?.snapshot().length'));
+ saved=await state();const textCard=saved.canvas.nodes.find(n=>n.text==='自由文字标注');assert.ok(textCard);await cmd('Page.reload');await until(()=>evaluate('document.querySelectorAll("textarea[aria-label^=卡片正文]").length===5'));await until(()=>evaluate('!!window.canvasBoard?.snapshot().length'));
  const textElements=await evaluate(`window.canvasBoard.snapshot().filter(e=>e.customData?.businessId===${JSON.stringify(textCard.id)})`);assert.equal(textElements.length,2);assert.ok(textElements.some(e=>e.type==='text'&&e.originalText==='自由文字标注'));
  // A remote edit of the same extra must remain a conflict through keep-and-merge refresh.
  lp=await linePosition();await drag(lp.x,lp.y,20,10);
@@ -91,10 +91,3 @@ await button('刷新');await button('保留并合并');await until(()=>evaluate(
  await cmd('Page.navigate',{url:url+'/canvas.html?topic=other'});await until(()=>evaluate('!!window.canvasBoard?.snapshot().some(e=>e.id==="minimal")'));assert.equal(await evaluate('window.canvasBoard.snapshot().find(e=>e.id==="minimal").x'),0);
  console.log(JSON.stringify({pass:true,evidence:'real Chrome native rectangle rotation + multipoint line exact save/reopen, conversion, Ctrl+D provenance, sidebar and native label edits, interrupted gesture draft isolation, standalone text conversion, extra conflict after keep-and-merge refresh'}));
 }finally{ws?.close();chrome.kill();server.closeAllConnections();await new Promise(r=>server.close(r));await delay(500);spawnSync(process.execPath,[path.join(root,'runtime/canvas/bang.mjs'),'stop','--project',temp],{encoding:'utf8'});await fs.rm(temp,{recursive:true,force:true,maxRetries:5,retryDelay:200});}
-
-
-
-
-
-
-

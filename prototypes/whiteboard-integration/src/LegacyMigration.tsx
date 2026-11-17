@@ -2,6 +2,10 @@ import React,{useState} from 'react';
 import {Excalidraw} from '@excalidraw/excalidraw';
 import {canvasFetch} from './canvas-client';
 import {renderScene} from './canvas-annotations';
+export function LegacyProvenance({state}:{state:any}){
+ const migration=state?.legacyMigration;if(!migration)return null;
+ return <details aria-label="旧迁移依据"><summary>旧迁移依据 · {migration.uncertainties.length} 条关系待确认</summary><p>实际保存正文已迁入；历史事件仅重建语义，旧来源未自动获得宿主授权。待确认连线保持标注，不作为知识关系。</p><pre>{JSON.stringify(migration.uncertainties,null,2)}</pre><details><summary>原始来源</summary><pre>{JSON.stringify(migration.sources,null,2)}</pre></details></details>;
+}
 export function LegacyMigration(){
  const [kind,setKind]=useState('session'),[topic,setTopic]=useState(''),[report,setReport]=useState<any>(null),[result,setResult]=useState<any>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[offline,setOffline]=useState(false),[reviewed,setReviewed]=useState(false);
  async function request(action:string,input:unknown){const response=await canvasFetch('/api/canvas/project/'+action,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(input)});const value=await response.json();if(!response.ok)throw Error(value.error);return value;}
