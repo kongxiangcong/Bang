@@ -1,3 +1,4 @@
+import {exportProject,verifyProject,restoreProject} from '../canvas/backup.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
@@ -21,7 +22,7 @@ function privateDirectory(dir){
 }
 function metadata(dir){try{return JSON.parse(fs.readFileSync(path.join(dir,'connection.json'),'utf8'));}catch{return null;}}
 async function request(connection,command,topic,input){
- const response=await fetch(connection.url+'/control',{method:'POST',headers:{'Content-Type':'application/json','x-bang-token':connection.token,'x-bang-epoch':connection.epoch},body:JSON.stringify({command,topic,input}),signal:AbortSignal.timeout(5000)});
+ const response=await fetch(connection.url+'/control',{method:'POST',headers:{'Content-Type':'application/json','x-bang-token':connection.token,'x-bang-epoch':connection.epoch},body:JSON.stringify({command,topic,input}),signal:AbortSignal.timeout(command.startsWith('backup-')?60000:5000)});
  const result=await response.json();if(!response.ok)throw Object.assign(Error(result.error||'Runtime request rejected'),{preview:result.preview,code:result.code});return result;
 }
 async function live(dir){const connection=metadata(dir);if(!connection)return null;try{await request(connection,'status');return connection;}catch{return null;}}
@@ -76,7 +77,7 @@ async function daemon(project){
  identity.epoch++;const identityTemp=path.join(dir,'workspace.tmp');const identityFd=fs.openSync(identityTemp,'w',0o600);try{fs.writeFileSync(identityFd,JSON.stringify(identity));fs.fsyncSync(identityFd);}finally{fs.closeSync(identityFd);}await publishMetadata(identityTemp,identityFile);
  const connection={workspaceId:identity.workspaceId,instanceId:randomUUID(),epoch:String(identity.epoch),pid:process.pid,token:randomBytes(32).toString('hex')};
  const status=()=>({status:'running',ownership:'os-handle',workspaceId:connection.workspaceId,instanceId:connection.instanceId,epoch:connection.epoch,pid:process.pid,supervisorPid:process.ppid,url:connection.url});
- const methods={'export-canvas':store.exportCanvas,'import-preview':store.previewImport,'import-canvas':store.importCanvas,'recovery-status':store.readRecoveryStatus,recover:store.recoverBoard,undo:store.undoBoard,history:store.readHistory,'history-preview':store.previewHistory,'history-diff':store.diffHistory,generate:store.generateBoard,read:store.readBoard,state:store.readCommitted,commit:store.commitBoard,preview:store.previewBoard,head:store.readHead,'resource-status':(project,topic,input)=>store.readResourceStatus(project,topic,input.id)};
+ const methods={'backup-export':exportProject,'backup-verify':verifyProject,'backup-restore':restoreProject,'export-canvas':store.exportCanvas,'import-preview':store.previewImport,'import-canvas':store.importCanvas,'recovery-status':store.readRecoveryStatus,recover:store.recoverBoard,undo:store.undoBoard,history:store.readHistory,'history-preview':store.previewHistory,'history-diff':store.diffHistory,generate:store.generateBoard,read:store.readBoard,state:store.readCommitted,commit:store.commitBoard,preview:store.previewBoard,head:store.readHead,'resource-status':(project,topic,input)=>store.readResourceStatus(project,topic,input.id)};
  let stopping=false,operationQueue=Promise.resolve();
  const server=http.createServer(async(req,res)=>{
   res.setHeader('Content-Type','application/json; charset=utf-8');res.setHeader('Cache-Control','no-store');
@@ -84,8 +85,9 @@ async function daemon(project){
    const supplied=Buffer.from(String(req.headers['x-bang-token']||'')),expected=Buffer.from(connection.token);
    if(req.headers.host!==new URL(connection.url).host||(req.headers.origin&&req.headers.origin!==connection.url)||supplied.length!==expected.length||!timingSafeEqual(supplied,expected)||req.headers['x-bang-epoch']!==connection.epoch){res.statusCode=403;res.end(JSON.stringify({error:'Runtime capability, Host, Origin or epoch rejected'}));return;}
    if(req.method!=='POST'||req.url!=='/control'||!req.headers['content-type']?.startsWith('application/json')){res.statusCode=400;res.end(JSON.stringify({error:'JSON control request required'}));return;}
-   req.setEncoding('utf8');let body='';for await(const chunk of req){body+=chunk;if(Buffer.byteLength(body)>1024*1024)throw Error('Request too large');}
+   req.setEncoding('utf8');let body='';for await(const chunk of req){body+=chunk;if(Buffer.byteLength(body)>64*1024*1024)throw Error('Request too large');}
    const {command,topic,input}=JSON.parse(body);
+   if(!['backup-verify','backup-restore'].includes(command)&&Buffer.byteLength(body)>1024*1024)throw Error('Request too large');
    // One owner queue covers board publication and binding/default creation.
    // No metadata transaction is held across an asynchronous board operation.
    const execute=async()=>{let result;

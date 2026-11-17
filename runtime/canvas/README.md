@@ -456,3 +456,95 @@ passed 14 with one Linux-only skip; the initial combined run retained the new
 red topic-discovery test, then the corrected binding suite passed in full.
 Both real Chrome binding and publication-recovery scenarios passed after the merge.
 - Final integration: merged ticket 13 / `f3ce31f` at `693f9a6`; resolved additive CLI/HTTP/native dispatch conflicts while preserving the single-owner operation queue and session/binding routes. Final combined `node --test tests/canvas-exchange.test.mjs tests/topic-binding.test.mjs`: 11 passed. Final build and `node tests/canvas-exchange-browser.mjs` passed again on the merged tree.
+
+## Ticket 36 — complete project backup and isolated restore
+
+Public CLI commands: `backup-export --project DIR`, `backup-verify --project DIR`
+and `backup-restore --project DIR`; the latter two read `{ "backup": PACKAGE }`
+from stdin. Protected HTTP provides GET `/api/canvas/project/backup-export` and
+POST `backup-verify` / `backup-restore` at the same prefix. The project-level UI is
+available even without a selected topic: generate/download a package, select or
+paste it, validate, explicitly restore, then open the new project. Single Canvas
+exchange remains a separate operation with its own degradation report.
+
+Version 1 is a bounded (48 MiB) JSON package containing a **logical SQLite database
+snapshot**, attachment bytes and SHA-256 manifest. The native owner reconciles all
+topics, reads all supported persistent tables in one SQLite transaction, and
+exports current states, all revisions, confirmed intents, topic names, exact
+completed source versions/gaps and editorExtras. It never copies a live database
+main file. Current Canvas files are reconstructed from their committed state.
+References in old revisions are included even when absent from the current board.
+Existing missing resources are enumerated in the package and UI and remain missing
+placeholders; the exporter does not claim to recreate missing bytes. Externally
+changed Canvas or attachments detected during export cause refusal. This is not a
+snapshot guarantee for arbitrary external writers ignoring Bang's owner boundary.
+
+Verification checks the package digest, fixed table/column shapes and constraints,
+current revision/hash consistency, standard Canvas and editor extras, exact
+attachment manifest membership, hashes, duplicate paths and portable resource
+paths. Restoration executes only local fixed schema SQL and parameterized rows,
+never SQL supplied by the package. Digests detect corruption, not an untrusted
+author's authenticity. Unknown future persistent tables cause explicit exporter
+failure so a later feature cannot silently disappear from a backup.
+
+Restoration creates a private, random new project below the authorized project's
+`.bang/restored-projects/<uuid>` via an unpublished staging directory and rename;
+it never accepts a caller-selected destination or overwrites another project.
+It also works in a different empty authorized project using only the package,
+with the original project unavailable. The returned `projectPath` is a normal
+standalone Runtime root. Browser reopen selects only allocated UUID child paths,
+rejects directory links and arbitrary path strings, and uses a fresh workspace
+identity. Filesystem-wide project browsing is not added. Nested browser selection
+is limited to eight restored projects.
+
+Host registrations, session/proof/takeover capabilities, runtime connection files,
+backfill grants and batch authorization receipts are excluded. Bound source
+metadata and exact received source bodies remain, but sources are inactive and
+old unprocessed queue entries are visibly frozen; no previous host authority or
+work is automatically replayed. Ambient `.env`, `.git`, credential/runtime files,
+unreferenced project files and browser-local drafts are not harvested. Referenced
+attachments must use the existing safe, project-relative resource convention.
+
+Validation (Windows 11, Node 25.8.1, synthetic temporary projects, native daemon):
+- Fresh TDD red: first public export failed `Unknown runtime operation`; source
+  restoration exposed no frozen count (`undefined !== 1`); a forged active source
+  in a rehashed package was initially accepted. Each passed after its slice.
+- First real Chrome UI test failed because the backup action was absent. A Windows
+  Python helper later stopped on default GBK decoding; rerun used UTF-8. Initial
+  browser assertions were strengthened to require a valid restore UUID and a real
+  edit/save in the restored workspace with the original unchanged, avoiding a
+  false positive from equal board content.
+- On merged integration `f7a317c`, `node --test tests/canvas-backup.test.mjs
+  tests/completed-turns.test.mjs tests/canvas-exchange.test.mjs
+  tests/canvas-history.test.mjs`: **20 passed**, including four backup scenarios.
+  Covers multiple topics, removed historical attachments, exact history/extras,
+  original project moved offline, restart, signed synthetic source versions/gaps,
+  frozen old work/capabilities, protected HTTP, corruption/missing entries,
+  unsafe paths, directory junctions and external Canvas refusal.
+- Frontend TypeScript/production build and real Chrome final results are recorded
+  below after the final UI verification.
+- No real host/model calls, Windows 10/Linux backup matrix, physical power loss,
+  adversarial same-user filesystem races, large-project performance, archive
+  encryption or formats above the explicit package size limit were validated.
+  This ticket does not claim historical version restoration (ticket 23) or future
+  organizer lifecycle/schema acceptance; those features must extend the snapshot
+  registry and add their own restored-state tests when introduced.
+
+Final ticket 36 UI verification on the merged tree:
+- `npm --prefix prototypes/whiteboard-integration run build` passed; existing
+  chunk-size warnings remain.
+- `node tests/canvas-backup-browser.mjs` passed with real Chrome mouse/keyboard,
+  package download, independent verification, explicit new-project restore,
+  reopen, actual edit/save in that project, original project unchanged and reload.
+- `node tests/canvas-exchange-browser.mjs` passed. The already-started
+  `node tests/completed-turns-browser.mjs` initially timed out because the new
+  frozen count interrupted an existing contiguous status phrase. Moving the
+  count to the end preserved that phrasing; rebuild and the same unchanged test
+  passed (real close/restart/browser-free receive/reopen).
+- One backup browser harness run stalled without diagnostic output. Only its
+  owned test process tree was terminated. The harness now bounds each CDP call
+  to 15 seconds and closes HTTP connections during cleanup; the subsequent run
+  passed. This is retained as a harness failure, not evidence of a product hang.
+- Source implementation `62cb5b0`; latest integration `f7a317c` merged at `9a0605c`.
+  Subsequent ticket 15 owns adding its future organizer tables/frozen attempt
+  states and the corresponding public restore regression before its integration.

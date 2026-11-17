@@ -78,7 +78,7 @@ export function ingestTurns(project,workspaceId,input){
 export function turnStatus(project,input){
  const db=open(project);try{
   const topic=input?.topicId??'',rows=db.prepare('SELECT s.id,s.binding,s.turn_id,s.version_id,s.source_hash,q.state FROM completed_sources s JOIN ingestion_queue q ON q.source_id=s.id WHERE s.topic=? ORDER BY s.rowid').all(topic);
-  return {received:rows.length,organized:rows.filter(s=>s.state==='organized').length,backlog:rows.filter(s=>s.state==='pending').length,pending:rows.filter(s=>s.state==='pending').map(s=>({id:s.id,bindingId:s.binding,turnId:s.turn_id,versionId:s.version_id,sourceHash:s.source_hash})),gaps:db.prepare('SELECT binding AS bindingId,cursor,reason FROM ingestion_gaps WHERE topic=? ORDER BY rowid').all(topic),ignored:db.prepare('SELECT binding AS bindingId,cursor,reason FROM ingestion_ignored WHERE topic=? ORDER BY rowid').all(topic)};
+  return {received:rows.length,frozen:rows.filter(s=>s.state==='frozen').length,frozenSources:rows.filter(s=>s.state==='frozen').map(s=>({id:s.id,bindingId:s.binding,turnId:s.turn_id,versionId:s.version_id,sourceHash:s.source_hash})),organized:rows.filter(s=>s.state==='organized').length,backlog:rows.filter(s=>s.state==='pending').length,pending:rows.filter(s=>s.state==='pending').map(s=>({id:s.id,bindingId:s.binding,turnId:s.turn_id,versionId:s.version_id,sourceHash:s.source_hash})),gaps:db.prepare('SELECT binding AS bindingId,cursor,reason FROM ingestion_gaps WHERE topic=? ORDER BY rowid').all(topic),ignored:db.prepare('SELECT binding AS bindingId,cursor,reason FROM ingestion_ignored WHERE topic=? ORDER BY rowid').all(topic)};
  }finally{db.close();}
 }
 export function turnSource(project,input){
