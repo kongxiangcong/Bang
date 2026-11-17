@@ -40,3 +40,16 @@ test('compiler preserves prior stacking and unseen cards when input order or act
  const next=compileCanvas({previous,cards:[{id:'b',text:'updated'},{id:'a',text:'original knowledge'}]});
  assert.deepEqual(next.nodes.map(n=>n.id),['a','b','c']);assert.equal(next.nodes[1].text,'updated');assert.deepEqual(next.nodes[2],previous.nodes[2]);
 });
+
+test('layout fields merge independently while competing size edits remain atomic conflicts',async()=>{
+ const p=await fs.mkdtemp(path.join(os.tmpdir(),'bang-layout-conflict-'));
+ try{
+  run(p,'generate',{cards:[card]});
+  run(p,'commit',patch('size',0,[{type:'edit-card',id:'a',width:410}]));
+  run(p,'commit',patch('group',0,[{type:'edit-card',id:'a',regionId:'region-2',fixed:true}]));
+  const proposed=patch('stale-size',0,[{type:'edit-card',id:'a',width:500,x:700}]);
+  const preview=run(p,'preview',proposed);assert.equal(preview.conflicts[0].field,'width');assert.equal(preview.legalOperations.length,0);
+  const r=spawnSync(process.execPath,[cli,'commit','--project',p,'--topic','demo'],{input:JSON.stringify(proposed),encoding:'utf8'});assert.notEqual(r.status,0);
+  const state=run(p,'state');assert.equal(state.revision,2);assert.equal(state.canvas.nodes[0].x,10);assert.equal(state.canvas.nodes[0].width,410);assert.equal(state.canvas.nodes[0].regionId,'region-2');
+ }finally{run(p,'stop');await fs.rm(p,{recursive:true,force:true});}
+});
