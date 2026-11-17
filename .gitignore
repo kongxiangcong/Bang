@@ -92,6 +92,9 @@
 !/tests/canvas-save.test.mjs
 !/tests/canvas-save-browser.mjs
 
+# Reviewed ticket 06 browser-local recovery and end-of-interaction regression.
+!/prototypes/whiteboard-integration/src/drafts.ts
+!/tests/canvas-draft-browser.mjs
 # Reviewed ticket 04 native OS-lock runtime, prebuilt Windows helper and public tests.
 !/runtime/native/
 /runtime/native/*
@@ -103,3 +106,4 @@
 !/prototypes/whiteboard-integration/src/canvas-client.ts
 !/tests/native-runtime.test.mjs
 !/tests/canvas-request.mjs
+
