@@ -69,8 +69,11 @@ export function reconcile(db,project,topic,file){
  const row=db.prepare('SELECT * FROM topics WHERE topic=?').get(topic);
  finishPublication(db,project,topic,file,pending,row?.hash??null);
 }
-export function publish(db,project,topic,file,{operation,request,state,receipt},baseline){
+export function preparePublication(db,topic,{operation,request,state,receipt}){
  const content=bytes(state.canvas),serialized=JSON.stringify(state),digest=hash(content);
  db.prepare('INSERT INTO intents VALUES(?,?,?,?,?,?,?)').run(topic,operation,request,serialized,digest,JSON.stringify(receipt),'prepared');
- fault(project,'prepared');return finishPublication(db,project,topic,file,{operation,state:serialized,hash:digest,receipt:JSON.stringify(receipt)},baseline);
+ return {operation,state:serialized,hash:digest,receipt:JSON.stringify(receipt)};
+}
+export function publish(db,project,topic,file,material,baseline){
+ const intent=preparePublication(db,topic,material);fault(project,'prepared');return finishPublication(db,project,topic,file,intent,baseline);
 }

@@ -204,3 +204,8 @@
 # Ticket 18 controlled namespace switching and backlog recovery.
 !/tests/source-switch.test.mjs
 
+
+# Ticket 21 source answer history and public/browser acceptance.
+!/tests/source-versions.test.mjs
+!/tests/source-versions-browser.mjs
+!/runtime/canvas/SOURCE-VERSIONS.md
