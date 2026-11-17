@@ -272,3 +272,51 @@ Validation (Windows 11, Node v25.8.1, actual Chrome headless):
   audit, 10,000-revision latency or full restore acceptance is claimed here.
 
 Combined with ticket 10 Runtime commit `1570f9d`: 9 history/annotation public tests, build and real Chrome history script passed. Extras sharing a knowledge-card identity compensate in a separate namespace without deleting its provenance; conversion undo restores exact multi-point routes/rotation and copy provenance remains visible in immutable history. An integration typecheck caught the newly extended operation union in the old identity helper; handling create-extra fixed it.
+
+## Ticket 10 — native annotations, explicit conversion and independent copies
+
+Native free shapes/text and unbound connectors persist in `CommittedBoard.editorExtras`
+inside the same revision/intention/publication transaction as knowledge edits. They
+are excluded from `canvas.nodes`, `canvas.edges` and semantic relations until explicit
+conversion; a connector requires two valid knowledge-card bindings. Standard Canvas
+is deliberately a degraded view (free drawing, precise bends and rotations omitted),
+and the UI says so. Full project export remains a separate ticket.
+
+Each native knowledge shape and bound label carries the same business identity.
+Ctrl+D uses the new native container identity for a new card, retaining immutable
+`derivedFrom` provenance and preserving the original record. Sidebar and native bound
+text edits both reach that card. Unchanged truncated previews retain the complete
+source body. Exact native points/rotation and unmapped shapes/text survive reopening.
+
+`create-extra`, `edit-extra` and `delete-extra` operate on individual native elements;
+concurrent changes conservatively conflict on the element field, while unrelated
+objects still merge. Extra identities have their own overlay namespace, including
+when a card visual shares a knowledge identity. Draft recovery, explicit save,
+manual keep-and-merge refresh, conflict preview and history all include extras.
+There is no scene overwrite endpoint or committed autosave. Capture and rendering
+clone nested native data; pointer/text/multipoint gesture guards preserve the previous
+completed draft when a subsequent gesture is interrupted. Unsafe native hyperlinks,
+invalid geometry/route/binding/style payloads are rejected; incomplete supported
+visuals are normalized by the native editor restore boundary.
+
+Validation on Windows 11, Node v25.8.1 and actual headless Google Chrome:
+- Red→green CLI/HTTP tests initially failed on unknown extra operation, missing copy
+  provenance and accepting an unsafe hyperlink. All are retained as regression cases.
+- `node --test --test-concurrency=1 tests/canvas-annotations.test.mjs tests/canvas-history.test.mjs tests/canvas-save.test.mjs tests/canvas-conflicts.test.mjs tests/canvas-relations.test.mjs tests/canvas-layout.test.mjs tests/canvas-resources.test.mjs tests/canvas-runtime.test.mjs`: 31 passed.
+- `npm --prefix prototypes/whiteboard-integration run build`: passed; existing large
+  bundle warning remains.
+- `node tests/canvas-annotations-browser.mjs`: real native rectangle rotation,
+  multipoint line and free text, explicit save/reopen with exact angle/points,
+  explicit shape/text conversion, Ctrl+D identity/provenance, independent sidebar
+  and native double-click text editing, interrupted-gesture draft recovery, and
+  same-extra conflict after keep-and-merge refresh. No scene/state injection.
+- Actual Chrome regressions passed: `canvas-relations-browser.mjs`,
+  `canvas-layout-browser.mjs`, `canvas-history-browser.mjs`,
+  `canvas-conflicts-browser.mjs`, `canvas-draft-browser.mjs`,
+  `canvas-resources-browser.mjs` (all under `tests/`).
+- Intermediate failures exposed mutable scene comparison, in-progress multipoint
+  capture, and interrupted pointer capture. Immutable signatures, deep copies and
+  explicit gesture lifecycle guards corrected them. Browser harness fixes targeted
+  real visible borders/rotation handles and awaited editor/refresh readiness.
+- No physical IME, clipboard cross-project transfer, accessibility audit, Windows 10,
+  Linux, real model/host roundtrip, full export or performance acceptance is claimed.

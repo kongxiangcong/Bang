@@ -46,10 +46,11 @@ try{
  await click(blank.x,blank.y);await key('r','KeyR');await delay(150);await drag(blank.x,blank.y,150,70);
  await key('l','KeyL');await delay(100);await click(blank.x+200,blank.y+20);await cmd('Input.dispatchMouseEvent',{type:'mouseMoved',x:blank.x+250,y:blank.y+80});await click(blank.x+250,blank.y+80);await cmd('Input.dispatchMouseEvent',{type:'mouseMoved',x:blank.x+320,y:blank.y+30});await cmd('Input.dispatchMouseEvent',{type:'mousePressed',x:blank.x+320,y:blank.y+30,button:'left',clickCount:2});await cmd('Input.dispatchMouseEvent',{type:'mouseReleased',x:blank.x+320,y:blank.y+30,button:'left',clickCount:2});await key('Escape','Escape');await delay(500);
  await key('v','KeyV');const rotate=await evaluate(`(()=>{const e=window.canvasBoard.snapshot().find(e=>e.type==='rectangle'&&!e.customData?.businessId),v=window.canvasBoard.viewport();return {x:(e.x+v.scrollX)*v.zoom.value+v.offsetLeft,y:(e.y+v.scrollY)*v.zoom.value+v.offsetTop,w:e.width*v.zoom.value,h:e.height*v.zoom.value}})()`);await click(rotate.x,rotate.y+rotate.h/2);await delay(150);await drag(rotate.x+rotate.w/2,rotate.y-20,50,20);
+ await key('t','KeyT');await click(blank.x,blank.y+120);await cmd('Input.insertText',{text:'自由文字标注'});await key('Escape','Escape');await delay(600);
  await until(()=>evaluate('document.body.innerText.includes("转换标注 1")'));
  assert.equal((await state()).revision,0);
  await button('保存');await until(()=>evaluate('document.body.innerText.includes("已保存 · 修订 1")'));
- let saved=await state();assert.equal(saved.canvas.nodes.length,2);assert.equal(saved.canvas.edges.length,0);
+ let saved=await state();assert.equal(saved.canvas.nodes.length,2);assert.equal(saved.canvas.edges.length,0);assert.ok(saved.editorExtras.some(e=>e.element.originalText==='自由文字标注'&&!e.element.customData?.businessId));
  const annotation=saved.editorExtras.find(e=>e.element.type==='rectangle'&&!e.element.customData?.businessId);assert.ok(annotation);const route=saved.editorExtras.find(e=>e.element.type==='line');assert.ok(route);assert.ok(route.element.points.length>=3,'native multi-point route');assert.notEqual(annotation.element.angle,0,'native rotation');
  await cmd('Page.reload');await until(()=>evaluate('document.body.innerText.includes("转换标注 1")'));
  assert.ok(await evaluate(`window.canvasBoard.snapshot().some(e=>e.id===${JSON.stringify(annotation.id)})`));
@@ -60,7 +61,7 @@ try{
  await key('v','KeyV');
  const position=await evaluate(`(()=>{const e=window.canvasBoard.snapshot().find(e=>e.id===${JSON.stringify(annotation.id)}),v=window.canvasBoard.viewport();return {x:(e.x+10+v.scrollX)*v.zoom.value+v.offsetLeft,y:(e.y+10+v.scrollY)*v.zoom.value+v.offsetTop}})()`);
  await click(position.x,position.y);await key('d','KeyD',2);
- await until(()=>evaluate('document.querySelectorAll("textarea").length===4'));
+ await until(()=>evaluate('document.querySelectorAll("textarea").length===4'));await until(()=>evaluate('!!window.canvasBoard?.snapshot().length'));
  await button('保存');await until(()=>evaluate('document.body.innerText.includes("已保存 · 修订 3")'));
  saved=await state();const copy=saved.canvas.nodes.find(n=>n.derivedFrom===annotation.id);assert.ok(copy);assert.equal(saved.metadata[copy.id].derivedFrom,annotation.id);
  await type('卡片正文 4','独立副本');await button('保存');await until(()=>evaluate('document.body.innerText.includes("已保存 · 修订 4")'));
@@ -69,9 +70,29 @@ try{
  await cmd('Input.dispatchMouseEvent',{type:'mousePressed',...labelPosition,button:'left',clickCount:2});await cmd('Input.dispatchMouseEvent',{type:'mouseReleased',...labelPosition,button:'left',clickCount:2});await key('a','KeyA',2);await cmd('Input.insertText',{text:'原生独立正文'});await key('Escape','Escape');await delay(600);
  await button('保存');await until(()=>evaluate('document.body.innerText.includes("已保存 · 修订 5")'));
  saved=await state();assert.equal(saved.canvas.nodes.find(n=>n.id===copy.id).text,'原生独立正文');assert.notEqual(saved.canvas.nodes.find(n=>n.id===annotation.id).text,'原生独立正文');
- await cmd('Page.reload');await until(()=>evaluate('document.querySelectorAll("textarea").length===4'));
- console.log(JSON.stringify({pass:true,evidence:'real Chrome native free rectangle/line, explicit save/reopen, explicit conversion, Ctrl+D identity/provenance and independent editing'}));
+ await cmd('Page.reload');await until(()=>evaluate('document.querySelectorAll("textarea").length===4'));await until(()=>evaluate('!!window.canvasBoard?.snapshot().length'));
+ // A completed annotation gesture is recoverable; interrupted next gesture must not mutate that snapshot.
+ const linePosition=async()=>evaluate(`(()=>{const e=window.canvasBoard.snapshot().find(e=>e.id===${JSON.stringify(route.id)}),v=window.canvasBoard.viewport();return {x:(e.x+(e.points[0][0]+e.points[1][0])/2+v.scrollX)*v.zoom.value+v.offsetLeft,y:(e.y+(e.points[0][1]+e.points[1][1])/2+v.scrollY)*v.zoom.value+v.offsetTop}})()`);
+ await key('v','KeyV');let lp=await linePosition();await drag(lp.x,lp.y,30,30);
+ const completed=await evaluate(`window.canvasBoard.snapshot().find(e=>e.id===${JSON.stringify(route.id)})`);
+ lp=await linePosition();await cmd('Input.dispatchMouseEvent',{type:'mousePressed',...lp,button:'left',clickCount:1});await cmd('Input.dispatchMouseEvent',{type:'mouseMoved',x:lp.x+80,y:lp.y+40,buttons:1,button:'left'});await delay(600);
+ await cmd('Page.reload');await until(()=>evaluate('document.body.innerText.includes("发现可恢复草稿")'));await button('恢复草稿');await until(()=>evaluate('!!window.canvasBoard?.snapshot().length'));
+ const recovered=await evaluate(`window.canvasBoard.snapshot().find(e=>e.id===${JSON.stringify(route.id)})`);assert.equal(recovered.x,completed.x);assert.equal(recovered.y,completed.y);assert.deepEqual(recovered.points,completed.points);assert.equal((await state()).revision,5);
+ await button('转换标注 1 为知识卡片');await button('保存');await until(()=>evaluate('document.body.innerText.includes("已保存 · 修订 6")'));
+ saved=await state();const textCard=saved.canvas.nodes.find(n=>n.text==='自由文字标注');assert.ok(textCard);await cmd('Page.reload');await until(()=>evaluate('document.querySelectorAll("textarea").length===5'));await until(()=>evaluate('!!window.canvasBoard?.snapshot().length'));
+ const textElements=await evaluate(`window.canvasBoard.snapshot().filter(e=>e.customData?.businessId===${JSON.stringify(textCard.id)})`);assert.equal(textElements.length,2);assert.ok(textElements.some(e=>e.type==='text'&&e.originalText==='自由文字标注'));
+ // A remote edit of the same extra must remain a conflict through keep-and-merge refresh.
+ lp=await linePosition();await drag(lp.x,lp.y,20,10);
+ const baseline=await state(),remoteExtra=baseline.editorExtras.find(e=>e.id===route.id);
+ const token=(await (await fetch(url+'/api/canvas/session/bootstrap')).json()).token;
+ const remoteResponse=await fetch(url+'/api/canvas/demo/commit',{method:'POST',headers:{'Content-Type':'application/json','x-bang-browser-token':token},body:JSON.stringify({operationId:'remote-extra',topic:'demo',baseRevision:6,author:{kind:'manual',id:'other-user'},readDependencies:[],intent:'explicit-save',operations:[{type:'edit-extra',id:route.id,element:{...remoteExtra.element,angle:0.456}}]})});assert.equal(remoteResponse.status,200);
+await button('刷新');await button('保留并合并');await until(()=>evaluate('document.body.innerText.includes("显示版本 7")'));await button('保存');await until(()=>evaluate('document.body.innerText.includes("冲突预览 · 整次保存未提交")'));assert.equal((await state()).revision,7);assert.equal((await state()).editorExtras.find(e=>e.id===route.id).element.angle,0.456);
+ const minimal=await fetch(url+'/api/canvas/other/commit',{method:'POST',headers:{'Content-Type':'application/json','x-bang-browser-token':token},body:JSON.stringify({operationId:'minimal-element',topic:'other',baseRevision:0,author:{kind:'manual',id:'other-user'},readDependencies:[],intent:'explicit-save',operations:[{type:'create-extra',extra:{id:'minimal',element:{id:'minimal',type:'rectangle',width:120,height:70}}}]})});assert.equal(minimal.status,200);
+ await cmd('Page.navigate',{url:url+'/canvas.html?topic=other'});await until(()=>evaluate('!!window.canvasBoard?.snapshot().some(e=>e.id==="minimal")'));assert.equal(await evaluate('window.canvasBoard.snapshot().find(e=>e.id==="minimal").x'),0);
+ console.log(JSON.stringify({pass:true,evidence:'real Chrome native rectangle rotation + multipoint line exact save/reopen, conversion, Ctrl+D provenance, sidebar and native label edits, interrupted gesture draft isolation, standalone text conversion, extra conflict after keep-and-merge refresh'}));
 }finally{ws?.close();chrome.kill();server.closeAllConnections();await new Promise(r=>server.close(r));await delay(500);spawnSync(process.execPath,[path.join(root,'runtime/canvas/bang.mjs'),'stop','--project',temp],{encoding:'utf8'});await fs.rm(temp,{recursive:true,force:true,maxRetries:5,retryDelay:200});}
+
+
 
 
 
