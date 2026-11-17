@@ -115,8 +115,10 @@ export async function readHead(project,topic){const state=await readCommitted(pr
 // keeps comparison and publication together without another request interleaving.
 export async function commitBoard(project,topic,value){return publishPatch(project,topic,value,false);}
 export async function undoBoard(project,topic,value){return publishPatch(project,topic,value,true);}
-async function publishPatch(project,topic,value,undo){
- const patch=undo?parseUndo(value):parsePatch(value),file=topicPath(project,topic);if(patch.topic!==topic)throw Error('Patch topic mismatch');
+export async function commitOrganizerBoard(project,topic,value,organizer){return publishPatch(project,topic,value,false,organizer);}
+async function publishPatch(project,topic,value,undo,organizer){
+ if(organizer&&(value.author?.kind!=='organizer'||value.author.id!=='organizer:'+organizer.taskId||value.intent!=='incremental-organize'))throw Error('Invalid Organizer authority');
+ const patch=undo?parseUndo(value):organizer?{...parsePatch({...value,author:{kind:'manual',id:value.author.id},intent:'explicit-save'}),author:value.author,intent:value.intent,taskId:organizer.taskId,attemptId:organizer.attemptId}:parsePatch(value),file=topicPath(project,topic);if(patch.topic!==topic)throw Error('Patch topic mismatch');
  const db=open(project);const request=JSON.stringify(patch);
  try{
   reconcile(db,project,topic,file);
@@ -144,8 +146,8 @@ async function publishPatch(project,topic,value,undo){
    else {
     const previous=next.metadata[identity]??{},changed=op.type==='create-card'?Object.keys(op.card):op.type==='create-relation'?Object.keys(op.edge):(op.type==='edit-relation'?relationFields:editableFields).filter(k=>op[k]!==undefined);
     const layoutOnly=op.type==='edit-card'&&changed.every(k=>layoutFields.includes(k));
-    const source=layoutOnly?previous.source:{kind:'manual',authorId:patch.author.id,operationId:patch.operationId};
-    Object.defineProperty(next.metadata,identity,{value:{...previous,...(op.type==='create-card'?{role:op.card.type==='group'?'visual-region':'knowledge'}:{}),...(op.type==='create-card'&&op.card.derivedFrom?{derivedFrom:op.card.derivedFrom}:{}),source,modifiedRevision:next.revision,fields:{...previous.fields,...Object.fromEntries(changed.map(k=>[k,{modifiedRevision:next.revision,authorId:patch.author.id,operationId:patch.operationId}]))}},enumerable:true,configurable:true,writable:true});
+    const source=layoutOnly||organizer?.knowledge[identity]?.supplement?previous.source:organizer?{kind:'discussion',sourceIds:[organizer.sourceId]}:{kind:'manual',authorId:patch.author.id,operationId:patch.operationId};
+    Object.defineProperty(next.metadata,identity,{value:{...previous,...(organizer?{organizer:{taskId:organizer.taskId,attemptId:organizer.attemptId},knowledge:organizer.knowledge[identity]}:{}),...(op.type==='create-card'?{role:op.card.type==='group'?'visual-region':'knowledge'}:{}),...(op.type==='create-card'&&op.card.derivedFrom?{derivedFrom:op.card.derivedFrom}:{}),source,modifiedRevision:next.revision,fields:{...previous.fields,...Object.fromEntries(changed.map(k=>[k,{modifiedRevision:next.revision,authorId:patch.author.id,operationId:patch.operationId}]))}},enumerable:true,configurable:true,writable:true});
    }
   }
   }
@@ -218,3 +220,5 @@ export async function importCanvas(project,topic,input){
  publish(db,project,topic,file,{operation:input.operationId,request,state:next,receipt},preview.expectedHash);return receipt;
  }finally{db.close();}
 }
+
+export async function readOperationReceipt(project,topic,operation){await readCommitted(project,topic);const db=open(project,true);try{const row=db.prepare("SELECT receipt FROM intents WHERE topic=? AND operation=? AND status='confirmed'").get(topic,operation);return row?JSON.parse(row.receipt):null;}finally{db.close();}}

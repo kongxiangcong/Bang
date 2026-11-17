@@ -9,6 +9,8 @@ import {resourceStatus} from './resources.mjs';
 // Logical SQLite snapshot: fixed schemas, parameterized values, no SQL from a package.
 // One native owner queue + one read transaction establishes the database cut.
 const schemas={
+ organizer_topics:'topic TEXT PRIMARY KEY,enabled INTEGER NOT NULL',
+ organizer_tasks:'id TEXT PRIMARY KEY,topic TEXT NOT NULL,source_id TEXT NOT NULL UNIQUE,body TEXT NOT NULL',
  topics:'topic TEXT PRIMARY KEY, revision INTEGER NOT NULL, state TEXT NOT NULL, hash TEXT NOT NULL',
  revisions:'topic TEXT, revision INTEGER, state TEXT NOT NULL, PRIMARY KEY(topic,revision)',
  intents:'topic TEXT, operation TEXT, request TEXT NOT NULL, state TEXT NOT NULL, hash TEXT NOT NULL, receipt TEXT NOT NULL, status TEXT NOT NULL, PRIMARY KEY(topic,operation)',
@@ -70,6 +72,7 @@ function inspect(backup){
   }
   for(const row of [...tables.revisions,...tables.intents])if(!tables.topics.some(t=>t.topic===row.topic)||!/^[a-zA-Z0-9_-]+$/.test(row.topic))throw Error('Backup references unknown topic');
   if(tables.binding_sources.some(r=>r.active!==0)||tables.ingestion_queue.some(r=>!['frozen','organized'].includes(r.state)))throw Error('Backup authority must be frozen');
+  if(tables.organizer_topics.some(r=>r.enabled!==0)||tables.organizer_tasks.some(r=>{const t=JSON.parse(r.body);return !['committed','no-change','failed'].includes(t.status)||t.input!==undefined||t.baseline!==undefined;}))throw Error('Backup Organizer authority must be frozen');
   if(tables.intents.some(r=>r.status!=='confirmed'))throw Error('Backup contains uncommitted publication');
   const refs=references(tables),seen=new Set();
   for(const a of attachments){
@@ -98,6 +101,8 @@ export async function exportProject(project){
  }finally{db.close();}
  // A migration never carries authority to resume a host or replay old work.
  for(const row of tables.binding_sources){row.active=0;const m=JSON.parse(row.metadata);m.endCursor=m.receivedCursor??m.startCursor;m.restoredFrozen=true;m.frozenBacklog=m.backlog??0;m.backlog=0;row.metadata=JSON.stringify(m);}
+ for(const row of tables.organizer_topics)row.enabled=0;
+ for(const row of tables.organizer_tasks){const task=JSON.parse(row.body);delete task.input;delete task.baseline;if(task.status==='running'){task.status='failed';task.error={code:'ATTEMPT_INTERRUPTED',message:'Restored attempt cannot resume'};}row.body=JSON.stringify(task);}
  for(const row of tables.ingestion_queue)if(row.state!=='organized')row.state='frozen';
  let size=Buffer.byteLength(JSON.stringify(tables));
  const captured=[];
