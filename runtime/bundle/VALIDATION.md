@@ -29,3 +29,20 @@ TypeScript 检查与生产构建通过。生产构建命令：`npm run build`，
 6. 检查手改节点的建议、位置和视角，执行刷新。记录真实模型 stderr、成功 revision、各 turn ID 和来源引用；报告失败点，不删除工作区或活跃锁。
 
 模型需要现有宿主授权和兼容入口；自定义 provider 配置尚需适配。远程白板访问需要宿主支持端口转发。不开机自启、不提供多会话并行汇入或多用户并发保证。
+
+## 2026-11-17：只读安装目录修复验证
+
+本次在独立云 checkout 验证，未接触 200cloud 或用户现有 `.bang/`。
+
+- 安装器实际执行成功（专用测试 skills 目录）。前端 TypeScript 与 Vite production build 通过；仍有既有包体大小提示。
+- 新增资源缺失/不自动修补、项目缓存环境隔离、`.bang` 私有权限回归。`node --test --test-skip-pattern="Linux lifecycle" tests/bundle.test.mjs tests/bundle-resources.test.mjs tests/frontend-install.test.mjs`：20 项通过（显式排除受阻浏览器生命周期项）；只读双项目集成另 1 项通过。
+- `bundle-readonly.test.mjs`：非 root UID 1000，安装副本去除全部写权限，写入探针明确失败；两个可写目标项目均返回 initialized、boundToCurrentHost、workerRunning、whiteboardAccessible=true。这里的绑定是合成 fixture，不是真实当前聊天。
+- 两项目使用不同端口；同项目重复 up 复用 PID 和 URL；字体、ELK worker、主页面及 TSX/scene 转换请求均 HTTP 200。Vite 缓存分别在各项目 `.bang/cache/vite`。运行前后安装副本的路径、大小、mtime 和 mode 清单一致。
+- 回归发现并修复 Vite 6 将 port:0 解释成 5173 的问题：首次启动选择空闲端口，后续启动严格复用保存端口。
+- 保留原有原子提交、切换队列、旧数据迁移和手改保留逻辑；没有删除用户数据、已有修订或锁。
+
+限制：完整 Linux lifecycle 浏览器测试本次未通过，卡在 Chromium 启动阶段（socket EPERM，即使请求放宽执行权限仍失败），而非应用断言失败。该测试在启动失败前已验证 synthetic up/重复 up 和一次合成完成轮提交；不能报告整项通过。新增浏览器断言要求 FontFace 实际解码和 ELK worker 实际布局；本次没有运行到该断言，HTTP 200 不等价于实际加载成功。云浏览器也无法访问执行器 loopback，因此该项待具有浏览器网络可达性的宿主复核。
+
+真实当前聊天的 transcript 受宿主访问限制，没有读取、扫描、伪造或另造“当前聊天”来绕过。因此本次没有验证真实 turnId 提交、真实整理模型或真实宿主完整运行的写入轨迹。现有真实链路待办仍有效；最终验收必须在可访问当前 transcript 的目标宿主完成一轮后，核对 status.lastSuccessfulRound.turnId 与实际轮 ID，不能用进程启动代替。
+
+用户随后提供的补丁已在基线 8ea91ac 独立 worktree 核对：因 CRLF，普通 git apply 检查失败，使用 --ignore-space-change 后成功。最终实现合入其只读 checkFrontend 接口、resume 修改配置前预检查及 Node --permission 无写权限测试；错误匹配测试按用户最初要求的完整提示语调整顺序。保留额外的临时文件隔离、Vite 缓存读取白名单和独立端口修复。

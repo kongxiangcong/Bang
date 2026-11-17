@@ -12,7 +12,7 @@
 node runtime/bundle/install.mjs
 ```
 
-安装器按锁文件补齐缺失的前端依赖，并将技能装入 `~/.agents/skills/bang-bundle/SKILL.md`。已有同内容安装可重复执行；不同内容的已有技能不会被覆盖。`--skills-dir <目录>` 可指定宿主支持的全局技能目录。保留 Bang 源码安装路径，技能使用该路径下的运行程序。新 Codex 会话发现全局技能；无需复制到每个项目。
+安装器按锁文件补齐缺失的前端依赖并准备字体与 ELK worker 静态资源，并将技能装入 `~/.agents/skills/bang-bundle/SKILL.md`。已有同内容安装可重复执行；不同内容的已有技能不会被覆盖。`--skills-dir <目录>` 可指定宿主支持的全局技能目录。保留 Bang 源码安装路径，技能使用该路径下的运行程序。新 Codex 会话发现全局技能；无需复制到每个项目。
 
 在目标项目打开 Codex 后调用 `$bang-bundle`。正常情况下不填写 ID、路径或命令。程序使用宿主 `CODEX_THREAD_ID`（其次 `CODEX_SESSION_ID`）；优先读 `CODEX_TRANSCRIPT_PATH`，否则仅按确切 ID 查找 `$CODEX_HOME/sessions` 中唯一文件，核对 `session_meta.id`。`CODEX_TURN_ID` 或 transcript 的当前活动 `task_started` 决定调用轮。无可靠信息时停止，不用 mtime、最新文件或跨聊天内容猜测。
 
@@ -98,3 +98,13 @@ npm run build
 Linux 生命周期测试需要 `/usr/bin/chromium`；测试会明确失败而不是静默跳过。测试使用独立临时项目、合成 transcript 和替代模型 CLI，实际启动 Node 后台、Vite、Chromium，执行提交、切换、手改、刷新与恢复。它不能证明真实聊天自动接收，也不能证明当前模型服务可用。
 
 当前结果与真实验收步骤见 [VALIDATION.md](VALIDATION.md)。
+
+## 只读安装目录
+
+安装器是唯一准备 bundle 前端依赖与静态资源的入口：运行 `install.mjs` 时复制 Excalidraw 字体和 ELK worker；安装完成后 Bang 安装目录可以只读。`up`、`resume` 和白板服务仅核对、读取资源，绝不自动 npm install 或执行资源修补。资源缺失会报告“安装资源不完整，请重新运行安装器”及具体路径；请在安装目录可写的安装阶段重新执行安装器。
+
+各目标项目分别使用 `.bang/cache/vite`（Vite 依赖预构建）、`.bang/cache/node`、`.bang/cache/npm`、`.bang/tmp`（含模型隔离工作目录）、`.bang/state/codex` 和 `.bang/logs/codex`。后台进程 cwd 与临时/缓存环境也指向目标项目，不沿用安装目录。Codex 通过 `log_dir` / `sqlite_home` 参数指定运行状态位置；认证仍使用原 `CODEX_HOME`，不复制凭据、不修改全局配置。外部 CLI 的认证刷新行为不由 Bang 接管。
+
+新项目使用独立空闲端口；重启保留原端口，不抢占其他服务。已有聊天绑定、待切换队列、修订、白板数据及锁文件均保留。不要通过删除 `.bang/` 或锁文件解决安装问题。
+
+回归：先执行安装器，再运行 `node --test tests/*.test.mjs`。`bundle-readonly.test.mjs` 必须以非 root 身份运行，会复制独立安装夹具、去掉写权限、核对两个项目的 `up`/复用/HTTP 资源及安装文件清单。它使用明确标注的合成宿主，不能替代真实当前聊天完成轮验收。

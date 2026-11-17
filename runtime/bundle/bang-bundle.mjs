@@ -10,7 +10,8 @@ import {step,topicDir} from './engine.mjs';
 import {preflight} from './model.mjs';
 import {defaults,limits,lookup} from './context.mjs';
 import {migrate} from './migrate.mjs';
-import {ensureFrontend} from './prerequisites.mjs';
+import {assertFrontend} from './prerequisites.mjs';
+import {runtimeEnv} from './runtime-paths.mjs';
 const here=path.dirname(fileURLToPath(import.meta.url));
 const [command='up',...args]=process.argv.slice(2);
 const arg=(name,fallback)=>{const n=args.indexOf(name);if(n<0)return fallback;if(!args[n+1]||args[n+1].startsWith('--'))throw Error('缺少参数 '+name);return args[n+1]};
@@ -22,10 +23,11 @@ async function launch(kind){
  const handle=await fs.open(path.join(home,kind+'.log'),'a',0o600);
  const script=kind==='worker'?fileURLToPath(import.meta.url):path.join(here,'server.mjs');
  const argv=kind==='worker'?['watch','--workspace',workspace]:[home];
- const child=spawn('flock',['-n','-F',path.join(home,kind+'.lock2'),process.execPath,script,...argv],{detached:true,stdio:['ignore',handle.fd,handle.fd]});child.unref();await handle.close();
+ const child=spawn('flock',['-n','-F',path.join(home,kind+'.lock2'),process.execPath,script,...argv],{cwd:home,env:await runtimeEnv(home),detached:true,stdio:['ignore',handle.fd,handle.fd]});child.unref();await handle.close();
 }
 async function serviceReady(){const s=await read(path.join(home,'server.json'),null);if(!await alive(s))return false;try{const r=await fetch(`http://127.0.0.1:${s.port}/api/bang/health`,{signal:AbortSignal.timeout(2000)});return r.ok&&(await r.json()).workspace===workspace}catch{return false}}
 async function start(){
+ await assertFrontend();
  await fs.mkdir(home,{recursive:true});await launch('server');await launch('worker');
  for(let i=0;i<80;i++){
   if(await serviceReady()&&await alive(await read(path.join(home,'worker.json'),null))){await wait(150);if(await serviceReady()&&await alive(await read(path.join(home,'worker.json'),null)))return;}
@@ -42,8 +44,7 @@ async function status(){
 async function up(){
  // Verify target, invocation boundary, CLI and frontend before mutating binding.
  const target=await discover({chatId:arg('--chat'),transcript:arg('--transcript'),turnId:arg('--turn')});
- let previous=await read(configPath,null);let executable=arg('--codex',previous?.executable??process.env.BANG_CODEX??'codex');if(executable.includes('/'))executable=path.resolve(executable);const disabledFeatures=await preflight(executable);
- await ensureFrontend();
+ let previous=await read(configPath,null);let executable=arg('--codex',previous?.executable??process.env.BANG_CODEX??'codex');if(executable.includes('/'))executable=path.resolve(executable);await assertFrontend();const disabledFeatures=await preflight(executable,home);
  await fs.mkdir(home,{recursive:true,mode:0o700});
  await control(async()=>{
   let c=await read(configPath,null);const legacy=await read(path.join(home,'companion.json'),null);
@@ -78,6 +79,7 @@ try{
   if(!owns)throw Error('watch 是内部入口；使用 up 或 resume 获取进程锁');await watch();
  }
  else if(['pause','stop','resume'].includes(command)){
+  if(command==='resume')await assertFrontend();
   await control(async()=>{const c=await read(configPath);c.enabled=command==='resume';if(command==='stop')c.serverEnabled=false;if(command==='resume')c.serverEnabled=true;await atomic(configPath,c);if(command==='resume')await atomic(path.join(home,'failure.json'),null)});
   if(command==='resume')await start();result=await status();
  }

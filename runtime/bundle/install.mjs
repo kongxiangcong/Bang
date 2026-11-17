@@ -2,9 +2,9 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import {ensureFrontend} from './prerequisites.mjs';
+import {installFrontend} from './prerequisites.mjs';
 import {fileURLToPath} from 'node:url';
-await ensureFrontend();
+await installFrontend();
 const here=path.dirname(fileURLToPath(import.meta.url));
 const at=process.argv.indexOf('--skills-dir');
 const base=at<0?path.join(os.homedir(),'.agents','skills'):path.resolve(process.argv[at+1]);
