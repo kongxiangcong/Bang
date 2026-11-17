@@ -234,3 +234,5 @@ Validation on Windows 11, Node v25.8.1, installed Chrome, Excalidraw 0.18.1:
 
 These are real browser/native Runtime persistence tests with synthetic cards. Next-turn Organizer/host consumption is not yet implemented here; no claim of T03/T04 full real-host acceptance, Win10/Linux validation, physical IME, or model semantic use.
 
+
+Final integration check: merged relation final `7cb3e38` and integration `034b46c`; the 8 layout/relation public tests and TypeScript/Vite build passed. Both `canvas-layout-browser.mjs` and `canvas-relations-browser.mjs` passed on the combined tree, including actual endpoint drag A→B to A→C. The working tree was clean at the integration check.
