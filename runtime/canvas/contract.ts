@@ -1,4 +1,4 @@
-import {parseEdge,relationFields,validateRelationFields,type Edge,type RelationOperation} from './relations.ts';
+import {parseEdge,relationFields,validateRelationFields,semanticRelations,type Edge,type RelationOperation} from './relations.ts';
 export type {Edge} from './relations.ts';
 // The schema is shared by Node and the browser; types are inferred from its parsers.
 type Parser<T> = (value: unknown) => T;
@@ -49,7 +49,7 @@ export type FieldRevisions=Record<string,number>;
 export type BoardOperation = ({type:'create-card';card:Card}|{type:'edit-card';id:string;text?:string;file?:string;url?:string;x?:number;y?:number}|{type:'delete-card';id:string}|RelationOperation) & {fieldRevisions?:FieldRevisions};
 export type BoardPatch = {operationId:string;topic:string;baseRevision:number;author:{kind:'manual';id:string};readDependencies:string[];intent:'explicit-save';operations:BoardOperation[]};
 export type CardMetadata = {source:{kind:'manual';authorId:string;operationId:string}|{kind:'bootstrap'};modifiedRevision:number};
-export type CommittedBoard = {revision:number;canvas:Canvas;metadata:Record<string,CardMetadata>};
+export type CommittedBoard = {revision:number;canvas:Canvas;metadata:Record<string,CardMetadata>;relations?:ReturnType<typeof semanticRelations>;deletionIntents?:{id:string;object:Card|Edge;revision:number;authorId:string;operationId:string}[]};
 export function parsePatch(value:unknown):BoardPatch {
  const p=value as BoardPatch;
  if(!p||typeof p!=='object'||!p.author||p.author.kind!=='manual'||!p.author.id||p.intent!=='explicit-save')throw Error('Expected explicit manual save');
