@@ -1,4 +1,4 @@
-# Canvas runtime: explicit text-card saves (tickets 02–03)
+# Canvas runtime: explicit card saves (tickets 02–03, 06, 11)
 
 Use a disposable/new project. Do not point this development runtime at an existing
 user project. Verified on Windows 11 with Node 25.8.1 and native `node:sqlite`.
@@ -14,7 +14,7 @@ npm run dev
 ```
 
 Open `http://127.0.0.1:5180/canvas.html?topic=demo`. The knowledge-card panel creates,
-edits and deletes text cards. Its in-memory edits do not change committed state.
+edits and deletes text, file and link cards. Browser-local drafts do not change committed state.
 Only **保存** sends operations; the page displays the confirmed revision and operation
 identity. Excalidraw shows the committed Canvas. Reload opens that same revision.
 There are no model calls or remote resources required for saving.
@@ -28,7 +28,7 @@ There are no model calls or remote resources required for saving.
   `/api/canvas/:topic` and `/state` expose the same reads; POST
   `/api/canvas/:topic/commit` accepts JSON and returns the same receipt.
 - `contract.ts` defines dependency-free DOM-free Canvas and typed patches. Supported
-  operations are `create-card`, `edit-card` (text only) and `delete-card`. A patch
+  operations are `create-card`, `edit-card` (text, position and existing resource reference) and `delete-card`. A patch
   carries topic, operationId, baseRevision, manual author, readDependencies, intent
   `explicit-save` and operations. Manual provenance records the actor/operation,
   never a fabricated chat turn. Bootstrap provenance is separately labeled.
@@ -54,14 +54,14 @@ Only then does a SQLite transaction confirm the head, revision and receipt.
 Public reads return a confirmed coherent state or recovery-required error, never
 an unconfirmed replacement. Unknown external content is not silently overwritten.
 
-Synchronous publication prevents interleaving within one process. **Do not run
-competing writers** until ticket 04 adds native project ownership. Prepared failure
+The ticket 04 native project daemon owns publication; CLI and browser requests
+use that single writer. See `../native/README.md` for platform evidence and limits. Prepared failure
 blocks subsequent writes and preserves recovery material; automated crash recovery,
 stronger bootstrap publication and platform durability/fault testing belong to
 05. The bootstrap writes its initial file before its metadata, so interruption can
 require recovery. Draft persistence/IME belongs to 06; field merge to 07; history
-navigation to 12. Text-only standard Canvas is intentionally enforced; other types
-and edges are rejected rather than silently discarded. See the
+navigation to 12. Standard text, file and link nodes are supported; other node types and edges
+are rejected rather than silently discarded. See the
 [JSON Canvas specification](https://jsoncanvas.org/spec/1.0/).
 
 ## Evidence, 2026-11-18
@@ -115,3 +115,20 @@ Real-browser test failed at the missing resource-create button before UI wiring.
 
 - Final 06 rerun after native commit 19dcfbb: build and complete draft browser script passed with /api/canvas/session/bootstrap. Build reports a temporary missing readResourceStatus export from ticket04's forward resource route until ticket11 is integrated; this does not affect the tested text draft endpoints. Seven committed-state CLI/HTTP regressions also passed after native integration.
 
+
+
+### Ticket 11 final validation, 2026-11-18
+
+- Final integration includes ticket 04 `19dcfbb`, ticket 06 `ae52268`, and integration
+  tip `e6d2513`; resource status uses authenticated HTTP → native daemon → store.
+- `node --test tests/canvas-resources.test.mjs tests/native-runtime.test.mjs tests/canvas-save.test.mjs tests/canvas-runtime.test.mjs`: **18 passed**. Resources remain complete on fresh CLI reads; file/link edits preserve node kinds; unsafe protocols, URL userinfo, credential query/fragment, traversal, absolute/hidden paths and native junction escapes reject atomically. Available/removed/replaced resources return available/missing/blocked without bytes. OAuth credential-fragment test first failed acceptance, then passed.
+- `npm --prefix prototypes/whiteboard-integration run build`: TypeScript and production build passed; existing large-chunk warning remains.
+- `node tests/canvas-resources-browser.mjs`: real Chrome input creates file/link/raw cards, recovers an incomplete URL draft, verifies no revision before Save, saves and reopens exact long Markdown/code/formula text, shows missing-file placeholder, verifies inert script text and observes no remote link request. No API interception, injected scene or model mock. Local ignored screenshot `canvas-resources-browser.png` inspected; canvas preview is shortened while the detail panel retains complete raw text.
+- `node tests/canvas-draft-browser.mjs`: combined UI regression retains two tabs/topics, workspace isolation, inherited editor identity protection, draft recovery/discard, stale-save preservation, pointer drag and Chromium composition behavior. Physical OS IME is not asserted.
+- Only temporary projects were used. File contents are not rendered or downloaded: file cards preserve references and show availability. Markdown/code/formulas are read as raw text, not executed or typeset. No real host/model loop, native Windows 10/Ubuntu, hostile concurrent filesystem race, performance target or complete T22/T30 claim.
+
+- Integration regression initially used a stale assertion that the other workspace
+  had no `<details>` elements. Resource details correctly exist there. The test
+  now checks absence of other-page draft recovery specifically, and passes. Its
+  failure cleanup was hardened to stop the second temporary project daemon and
+  close server connections; the interrupted temporary daemon was publicly stopped.
