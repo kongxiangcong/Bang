@@ -4,6 +4,7 @@ import {createInterface} from 'node:readline';
 import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 const [mode,dir]=process.argv.slice(2);
+if(mode==='invalid'){process.stderr.write('PRIVATE_STDERR credential=秘密\n');process.stdout.write('{invalid');process.exit(0);}
 const level=Number(process.argv[4]??0);
 let descendant;
 const stopped=()=>{descendant?.stdin.end();fs.writeFileSync(path.join(dir,`stop-${level}`),'cooperative-stop-observed');if(mode==='graceful')process.exit(0);};

@@ -3,14 +3,16 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import {pathToFileURL} from 'node:url';
 import {fixture} from './completed-turns.test.mjs';
 import {runtimeOperation} from '../runtime/native/runtime.mjs';
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 async function until(fn){for(let i=0;i<150;i++){const v=await fn();if(v)return v;await delay(50);}throw Error('Native attempt did not settle');}
-async function nativeFixture(mode='success',graceMs=200){
+async function nativeFixture(mode='success',graceMs=200,entryType='file'){
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'Bang 模型 path ')),entry=path.join(dir,'执行 entry.mjs');
  await fs.copyFile(new URL('./native-worker-fixture.mjs',import.meta.url),entry);
- process.env.BANG_ORGANIZER_NATIVE=JSON.stringify({version:1,executable:process.execPath,args:[entry,mode,dir],policy:'no-tools',graceMs});
+ const args=entryType==='eval'?['--input-type=module','--eval',`await import(${JSON.stringify(pathToFileURL(entry).href)})`,'--','controlled-entry',mode,dir]:[entry,mode,dir];
+ process.env.BANG_ORGANIZER_NATIVE=JSON.stringify({version:1,executable:process.execPath,args,policy:'no-tools',graceMs});
  process.env.BANG_TEST_SECRET='MUST_NOT_REACH_WORKER';
  const f=await fixture();delete process.env.BANG_ORGANIZER_NATIVE;delete process.env.BANG_TEST_SECRET;
  const close=f.close;f.close=async()=>{await close();await fs.rm(dir,{recursive:true,force:true});};
@@ -41,5 +43,11 @@ test('a cancelling process retains its concurrency slot without blocking other p
  const f=await nativeFixture('stubborn',1500);try{await f.begin();await treePids(f);const topic=await f.call('topic-create',{name:'next'}),session=await f.call('session-connect',f.proof({sessionId:'other'})),bound=await f.call('binding-enable',{...session,topicId:topic.id});
  const {createHash}=await import('node:crypto');const batch={sourceId:bound.source.id,previousCursor:'c0',events:[f.turn()]};await f.call('turn-ingest',{batch,proof:f.proof({sessionId:'other',purpose:'completed-turn-ingestion',sourceId:bound.source.id,batchHash:createHash('sha256').update(JSON.stringify(batch)).digest('hex')})});await f.call('organizer-enable',{topicId:topic.id});await f.call('organizer-control',{topicId:f.bound.topic.id,action:'cancel'});await delay(300);assert.equal((await f.call('organizer-status',{topicId:topic.id})).tasks.length,0);assert.equal((await f.call('status')).status,'running');await until(async()=> (await f.call('organizer-status',{topicId:topic.id})).tasks.length===1);
  }finally{await f.close();}
+});
+test('an alternate CLI argument entry preserves quoted Unicode stdin without invoking a shell',async()=>{
+ const f=await nativeFixture('success',200,'eval');try{await f.begin();await until(async()=> (await f.status()).tasks[0]?.status==='committed');assert.equal((await runtimeOperation(f.project,'state',f.bound.topic.id)).canvas.nodes[0].text,'原文 $(echo injected) & | "秘密"');}finally{await f.close();}
+});
+test('invalid native output and private stderr never enter public failure receipts',async()=>{
+ const f=await nativeFixture('invalid');try{await f.begin();const task=await until(async()=>{const t=(await f.status()).tasks[0];return t?.status==='failed'&&t;});assert.equal(task.error.code,'OUTPUT_INVALID');assert.equal(task.process.exitConfirmed,true);assert.doesNotMatch(JSON.stringify(await f.status()),/PRIVATE_STDERR|秘密/);assert.equal((await runtimeOperation(f.project,'state',f.bound.topic.id)).revision,0);}finally{await f.close();}
 });
 
