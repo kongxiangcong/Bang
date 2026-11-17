@@ -44,6 +44,7 @@ try{
  await delay(600);await button('查看重新整理候选');await until(()=>evaluate('document.body.innerText.includes("候选已就绪")'));
  assert.equal((await state()).revision,0);assert.ok(await evaluate('document.querySelector("svg[aria-label=选区结构候选预览]")!==null'));
  assert.ok(await evaluate('document.body.innerText.includes("Explicit category/member relation")'));
+ await cmd('Page.reload');await delay(400);await until(()=>evaluate('!!window.canvasBoard?.snapshot().length'));await button('查看重新整理候选');await until(()=>evaluate('document.body.innerText.includes("候选已就绪")'));assert.equal((await state()).revision,0);
  await button('采纳重新整理候选');await until(()=>evaluate('document.body.innerText.includes("重新整理已保存：修订 1")'));
  const saved=await state();assert.ok(saved.canvas.nodes.every(n=>n.structure.kind==='classification'));assert.deepEqual(saved.canvas.edges,edges);
  assert.ok(await evaluate('document.body.innerText.includes("显示版本 0")'));
