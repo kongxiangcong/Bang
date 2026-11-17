@@ -5,6 +5,7 @@ const objects=state=>[...state.canvas.nodes,...state.canvas.edges];
 export function invalidateBasis(before,after){
  const changed=new Set(objects(before).filter(old=>!isDeepStrictEqual(semantic(old),semantic(objects(after).find(n=>n.id===old.id)))).map(n=>n.id));
  for(const id of changed)if(after.metadata[id])after.metadata[id].semanticRevision=after.revision;
+ for(const [id,m] of Object.entries(after.metadata))if(m.basis?.status==='needs-review'&&basisUsable(before.metadata[id]))changed.add(id);
  const mark=(id,causes)=>{const m=after.metadata[id];if(!m)return;const previous=m.basis;m.basis={status:'needs-review',revision:after.revision,changedIds:[...new Set([...(previous?.changedIds??[]),...causes])],...(previous?.history?{history:previous.history}:{})};};
  // The old references remain an audit trail, never support for replacement wording.
  for(const id of changed)if(before.metadata[id]?.knowledge)mark(id,[id]);
