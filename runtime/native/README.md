@@ -22,7 +22,4 @@ The prebuilt Windows x64 helper is built from lock-host.c with MinGW GCC (`CC=..
 Linux source is implemented but **not native Linux tested**. The only discovered Linux surface is WSL2 SchedResearch-R12, which has neither node nor gcc on PATH; it is not native Ubuntu acceptance. Windows 10 and packaged Linux runtime remain unverified. Ticket 04 stays claimed until required platform acceptance is supplied. Job control here only supervises the daemon; model worker cancellation and descendant policy belong to later executor work. Prepared publication recovery remains ticket 05.
 
 
-Final Windows validation: 
-ode --test tests/native-runtime.test.mjs tests/canvas-runtime.test.mjs tests/canvas-save.test.mjs — 15/15 passed (8 native, 7 Canvas); 
-pm --prefix prototypes/whiteboard-integration run build passed (existing large-chunk warning; resource-status export awaits ticket 11 integration); 
-ode tests/canvas-save-browser.mjs passed real headless Chrome create/save/reload/edit/delete. Six simultaneous starts converged on one instance/epoch. Split UTF-8 at both HTTP boundaries and valid topic named session passed. No native Linux claim.
+Final Windows validation: `node --test tests/native-runtime.test.mjs tests/canvas-runtime.test.mjs tests/canvas-save.test.mjs` — 15/15 passed (8 native, 7 Canvas); `npm --prefix prototypes/whiteboard-integration run build` passed (existing large-chunk warning; resource-status export awaits ticket 11 integration); `node tests/canvas-save-browser.mjs` passed real headless Chrome create/save/reload/edit/delete. Six simultaneous starts converged on one instance/epoch. Split UTF-8 at both HTTP boundaries and valid topic named session passed. No native Linux claim.
