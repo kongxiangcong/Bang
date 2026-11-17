@@ -76,3 +76,28 @@ Loopback/Chrome execution required leaving the restricted sandbox. All projects
 were temporary; no real `.bang` was touched. This proves the narrow local save
 path with no configured model. No Linux, Windows 10, physical IME, crash recovery,
 concurrent process ownership, performance or real Codex/DSH host acceptance claim.
+
+## Ticket 11 resource-card boundary
+
+`Card` supports standard `text`, `file` and `link` nodes. File references are
+project-relative, with forward slashes; links accept only HTTP(S), without URL
+userinfo or common credential query parameters. File references are validated
+against existing native symlink/junction components on save and on status reads.
+Missing files remain valid references. The resource endpoint returns only
+availability, never file bytes; links and files are never automatically downloaded.
+Hidden path segments, absolute paths, traversal and alternate data streams are
+rejected with generic diagnostics. Existing reference replacement with a junction
+is reported as blocked. This is not an arbitrary file viewer or upload service.
+
+The details panel uses React text nodes and a scrollable raw `<pre>`, preserving
+Markdown, code and formulas exactly, without HTML interpretation or remote embeds.
+Canvas labels abbreviate long text for display only; committed raw content is
+unmodified. Link navigation requires an explicit click and omits referrer/opener.
+
+Evidence in progress (Windows 11, Node 25.8.1): CLI resource save/reopen test first
+failed `Expected string`, then passed. Native junction safety test first failed
+because escape references were accepted, then passed after path guards. Restricted
+sandbox cannot create junctions (`EPERM`); native rerun covers the actual junction.
+Public resource HTTP status covers available → removed/missing → replaced/blocked.
+Edit-resource regression passed on its first run (not a separate red cycle).
+Real-browser test failed at the missing resource-create button before UI wiring.
