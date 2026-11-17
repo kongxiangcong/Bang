@@ -118,6 +118,11 @@
 !/tests/canvas-conflicts.test.mjs
 !/tests/canvas-conflicts-browser.mjs
 
+# Ticket 09 deterministic local layout and acceptance.
+!/runtime/canvas/layout.ts
+!/tests/canvas-layout.test.mjs
+!/tests/canvas-layout-browser.mjs
+!/prototypes/whiteboard-integration/src/LayoutControls.tsx
 # Ticket 08 relation editing and persistence.
 !/runtime/canvas/relations.ts
 !/prototypes/whiteboard-integration/src/canvas-relations.ts
