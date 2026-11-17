@@ -87,6 +87,7 @@ async function daemon(project){
    if(req.method!=='POST'||req.url!=='/control'||!req.headers['content-type']?.startsWith('application/json')){res.statusCode=400;res.end(JSON.stringify({error:'JSON control request required'}));return;}
    req.setEncoding('utf8');let body='';for await(const chunk of req){body+=chunk;if(Buffer.byteLength(body)>64*1024*1024)throw Error('Request too large');}
    const {command,topic,input}=JSON.parse(body);
+   if(!['backup-verify','backup-restore'].includes(command)&&Buffer.byteLength(body)>1024*1024)throw Error('Request too large');
    // One owner queue covers board publication and binding/default creation.
    // No metadata transaction is held across an asynchronous board operation.
    const execute=async()=>{let result;

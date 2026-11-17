@@ -13,7 +13,7 @@ export function ProjectBackup(){
  function download(){const url=URL.createObjectURL(new Blob([JSON.stringify(backup)],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download='bang-project.backup.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
  const current=new URLSearchParams(location.search).get('restored');
  const restoredQuery=restored?new URLSearchParams({restored:[current,restored.restoreId].filter(Boolean).join('/'),topic:restored.topics[0].id}).toString():'';
- return <details open><summary>完整项目备份与还原</summary><section aria-label="完整项目备份">
+ return <details><summary>完整项目备份与还原</summary><section aria-label="完整项目备份">
  <p>备份整个项目的已提交内容、来源、全部历史、附件和编辑器附加信息。浏览器草稿请先保存；标准 Canvas 文件仅用于内容交换。项目包上限 48 MiB。</p>
  <button disabled={busy} onClick={()=>act('export')}>生成完整项目备份</button>
  {backup&&<section><p>完整项目包已生成。<button onClick={download}>下载完整项目包</button></p>{backup.payload.attachments.some((a:any)=>a.status==='missing')&&<p role="status">导出时已缺失的附件：{backup.payload.attachments.filter((a:any)=>a.status==='missing').map((a:any)=>a.path).join('、')}。包内保留缺失记录；不会凭空补齐文件。</p>}</section>}
