@@ -246,3 +246,6 @@
 !/prototypes/whiteboard-integration/src/LegacyMigration.tsx
 !/tests/legacy-migration.test.mjs
 !/tests/legacy-migration-browser.mjs
+# Ticket 32 argument and cyclic flow acceptance.
+!/tests/canvas-argument-flow.test.mjs
+!/tests/canvas-argument-flow-browser.mjs

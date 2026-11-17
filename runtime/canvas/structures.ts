@@ -1,14 +1,14 @@
 import type {Card} from './contract';
 import type {Edge} from './relations';
 import type {Bounds,LayoutWarning} from './layout';
-type TreeIntent={version:1;kind:'classification'|'radial';rootId:string};
+type TreeIntent={version:1;kind:'classification'|'radial'|'argument'|'flow';rootId:string};
 export type ComparisonIntent={version:1;kind:'comparison';rootId:string;dimensions:string[];option:string|null;dimension:string|null};
 export type TimelineIntent={version:1;kind:'timeline';rootId:string;eventTime:string|null};
 export type StructureIntent=TreeIntent|ComparisonIntent|TimelineIntent;
 export function parseStructure(value:unknown):StructureIntent|null{
  if(value===null)return null;
  const v=value as StructureIntent;
- if(!v||v.version!==1||!['classification','radial','comparison','timeline'].includes(v.kind)||typeof v.rootId!=='string'||!v.rootId)throw Error('Invalid structure intent');
+ if(!v||v.version!==1||!['classification','radial','argument','flow','comparison','timeline'].includes(v.kind)||typeof v.rootId!=='string'||!v.rootId)throw Error('Invalid structure intent');
  if(v.kind==='timeline'){
   const t=v.eventTime;
   if(t!==null&&(typeof t!=='string'||!/^\d{4}-\d\d-\d\d(?:T\d\d:\d\d:\d\d(?:\.\d{3})?Z)?$/.test(t)||!Number.isFinite(Date.parse(t))||new Date(t).toISOString().slice(0,10)!==t.slice(0,10))||Object.keys(v).some(k=>!['version','kind','rootId','eventTime'].includes(k)))throw Error('Invalid event time: explicit ISO date or UTC timestamp required; unknown is null');
@@ -35,7 +35,9 @@ export function validateStructureGroups(nodes:Card[]){
  }
 }
 // Version 1: stable input order chooses a spanning forest. Only explicit classification
-// edges enter that forest; extra parents and cycles remain unchanged Canvas edges.
+// edges enter classification/radial forests. Argument follows incoming reasons;
+// flow follows outgoing process edges. BFS ranks project a general graph: extra
+// parents, cross-region edges and feedback cycles remain unchanged Canvas edges.
 export function layoutStructures(result:{nodes:Card[];warnings:LayoutWarning[]},input:Partial<Card>[],edges:Edge[],previous:Card[],selected:string[],bounds:Bounds={x:0,y:0,width:1920,height:1080}){
  validateStructureGroups(result.nodes);
  const nodes=result.nodes,groups=new Map<string,Card[]>();
@@ -68,7 +70,7 @@ export function layoutStructures(result:{nodes:Card[];warnings:LayoutWarning[]},
    continue;
   }
   const depth=new Map<string,number>([[root.id,0]]),parents=new Map<string,string>(),queue=[root];
-  for(let i=0;i<queue.length;i++){const parent=queue[i];for(const edge of edges.filter(e=>e.kind==='classification'&&e.fromNode===parent.id)){const child=members.find(n=>n.id===edge.toNode);if(child&&!depth.has(child.id)){depth.set(child.id,depth.get(parent.id)!+1);parents.set(child.id,parent.id);queue.push(child);}}}
+  for(let i=0;i<queue.length;i++){const parent=queue[i];for(const edge of edges.filter(e=>intent.kind==='argument'?['support','refute','qualify'].includes(e.kind??'')&&e.toNode===parent.id:(intent.kind==='flow'?['precedence','branch','dependency'].includes(e.kind??''):e.kind==='classification')&&e.fromNode===parent.id)){const child=members.find(n=>n.id===(intent.kind==='argument'?edge.fromNode:edge.toNode));if(child&&!depth.has(child.id)){depth.set(child.id,depth.get(parent.id)!+1);parents.set(child.id,parent.id);queue.push(child);}}}
   // Unconnected members are separate visual branches, never inferred semantic edges.
   for(const n of members)if(!depth.has(n.id)){depth.set(n.id,1);parents.set(n.id,root.id);}
   const sectors=new Map<string,{angle:number;width:number}>();
@@ -85,7 +87,8 @@ export function layoutStructures(result:{nodes:Card[];warnings:LayoutWarning[]},
     if(intent.kind==='radial'){
      const sector=sectors.get(node.id)??{angle:0,width:0},angle=sector.angle+(attempt%2?1:-1)*Math.ceil(attempt/2)*sector.width/64;
      x=center.x+Math.cos(angle)*level*step-node.width/2;y=center.y+Math.sin(angle)*level*step-node.height/2;
-    }else{x=bounds.x+level*step;y=bounds.y+(index+attempt)*(Math.max(...siblings.map(n=>n.height))+48);}
+    }else if(intent.kind==='flow'){x=bounds.x+(index+attempt)*(Math.max(...members.map(n=>n.width))+48);y=bounds.y+level*(Math.max(...members.map(n=>n.height))+80);
+    }else{x=bounds.x+(intent.kind==='argument'?Math.max(...depth.values())-level:level)*step;y=bounds.y+(index+attempt)*(Math.max(...siblings.map(n=>n.height))+48);}
     const proposed={...node,x:Math.round(x),y:Math.round(y)};
     if(proposed.x>=bounds.x&&proposed.y>=bounds.y&&proposed.x+node.width<=bounds.x+bounds.width&&proposed.y+node.height<=bounds.y+bounds.height&&!occupied.some(n=>overlaps(proposed,n))){candidate=proposed;break;}
    }
