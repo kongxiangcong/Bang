@@ -20,11 +20,11 @@ function privateDirectory(dir){
 function metadata(dir){try{return JSON.parse(fs.readFileSync(path.join(dir,'connection.json'),'utf8'));}catch{return null;}}
 async function request(connection,command,topic,input){
  const response=await fetch(connection.url+'/control',{method:'POST',headers:{'Content-Type':'application/json','x-bang-token':connection.token,'x-bang-epoch':connection.epoch},body:JSON.stringify({command,topic,input}),signal:AbortSignal.timeout(5000)});
- const result=await response.json();if(!response.ok)throw Object.assign(Error(result.error||'Runtime request rejected'),{preview:result.preview});return result;
+ const result=await response.json();if(!response.ok)throw Object.assign(Error(result.error||'Runtime request rejected'),{preview:result.preview,code:result.code});return result;
 }
 async function live(dir){const connection=metadata(dir);if(!connection)return null;try{await request(connection,'status');return connection;}catch{return null;}}
 export async function ensureRuntime(project){
- const dir=location(project);privateDirectory(dir);let connection=await live(dir);if(connection)return connection;
+ const dir=location(project);if(!fs.existsSync(path.dirname(dir)))privateDirectory(path.dirname(dir));privateDirectory(dir);let connection=await live(dir);if(connection)return connection;
  const helper=fileURLToPath(new URL(process.platform==='win32'?'./lock-host.exe':'./lock-host',import.meta.url));
  if(!fs.existsSync(helper))throw Error('Native lock helper missing; install the prebuilt platform runtime');
  let failure,exitCode=null,signal=null,diagnostic='',child;
@@ -74,7 +74,7 @@ async function daemon(project){
  identity.epoch++;const identityTemp=path.join(dir,'workspace.tmp');const identityFd=fs.openSync(identityTemp,'w',0o600);try{fs.writeFileSync(identityFd,JSON.stringify(identity));fs.fsyncSync(identityFd);}finally{fs.closeSync(identityFd);}await publishMetadata(identityTemp,identityFile);
  const connection={workspaceId:identity.workspaceId,instanceId:randomUUID(),epoch:String(identity.epoch),pid:process.pid,token:randomBytes(32).toString('hex')};
  const status=()=>({status:'running',ownership:'os-handle',workspaceId:connection.workspaceId,instanceId:connection.instanceId,epoch:connection.epoch,pid:process.pid,supervisorPid:process.ppid,url:connection.url});
- const methods={undo:store.undoBoard,history:store.readHistory,'history-preview':store.previewHistory,'history-diff':store.diffHistory,generate:store.generateBoard,read:store.readBoard,state:store.readCommitted,commit:store.commitBoard,preview:store.previewBoard,head:store.readHead,'resource-status':(project,topic,input)=>store.readResourceStatus(project,topic,input.id)};
+ const methods={'recovery-status':store.readRecoveryStatus,recover:store.recoverBoard,undo:store.undoBoard,history:store.readHistory,'history-preview':store.previewHistory,'history-diff':store.diffHistory,generate:store.generateBoard,read:store.readBoard,state:store.readCommitted,commit:store.commitBoard,preview:store.previewBoard,head:store.readHead,'resource-status':(project,topic,input)=>store.readResourceStatus(project,topic,input.id)};
  let stopping=false;
  const server=http.createServer(async(req,res)=>{
   res.setHeader('Content-Type','application/json; charset=utf-8');res.setHeader('Cache-Control','no-store');
@@ -88,7 +88,7 @@ async function daemon(project){
    else if(command==='stop'){stopping=true;result={status:'stopped'};}
    else {if(stopping)throw Error('Runtime stopping');const method=methods[command];if(!Object.hasOwn(methods,command))throw Error('Unknown runtime operation');result=await method(project,topic,input);}
    res.end(JSON.stringify(result));if(stopping){server.close(()=>process.exit(0));server.closeIdleConnections();}
-  }catch(error){res.statusCode=400;res.end(JSON.stringify({error:error.message,preview:error.preview}));}
+  }catch(error){res.statusCode=400;res.end(JSON.stringify({error:error.message,preview:error.preview,code:error.code}));}
  });
  startupStage='listen';
  await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});connection.url=`http://127.0.0.1:${server.address().port}`;
