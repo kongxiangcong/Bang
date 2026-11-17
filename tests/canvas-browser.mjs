@@ -43,4 +43,5 @@ try{
  assert.equal(await fs.readFile(boardFile,'utf8'),before);assert.equal((await fs.stat(boardFile)).mtimeMs,beforeStat.mtimeMs);
  const shot=await cmd('Page.captureScreenshot',{format:'png'});await fs.writeFile(path.join(root,'canvas-browser.png'),Buffer.from(shot.data,'base64'));
  console.log(JSON.stringify({pass:true,evidence:'real Chrome, CLI generation -> HTTP -> Excalidraw -> reload; no write on read'}));
- }finally{ws?.close();chrome.kill();await new Promise(r=>server.close(r));await delay(500);await fs.rm(temp,{recursive:true,force:true,maxRetries:5,retryDelay:200});}
+ }finally{ws?.close();chrome.kill();await new Promise(r=>server.close(r));await delay(500);spawnSync(process.execPath,[path.join(root,'runtime/canvas/bang.mjs'),'stop','--project',temp],{encoding:'utf8'});await fs.rm(temp,{recursive:true,force:true,maxRetries:5,retryDelay:200});}
+
