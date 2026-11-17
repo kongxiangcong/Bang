@@ -10,7 +10,8 @@ export type Canvas = {nodes:Card[];edges:never[]};
 export function safeResourceURL(value:unknown):string {
  const raw=string(value);let u:URL;try{u=new URL(raw);}catch{throw Error('Invalid resource URL');}
  if(!['https:','http:'].includes(u.protocol)||u.username||u.password||/[\u0000-\u0020]/.test(raw))throw Error('Unsafe resource URL');
- u.searchParams.forEach((_,key)=>{if(/^(token|key|api[_-]?key|password|secret|access_token|authorization)$/i.test(key))throw Error('Credential-bearing resource URL');});
+ const rejectCredential=(_:string,key:string)=>{if(/^(token|key|api[_-]?key|password|secret|access_token|id_token|authorization)$/i.test(key))throw Error('Credential-bearing resource URL');};
+ u.searchParams.forEach(rejectCredential);new URLSearchParams(u.hash.slice(1)).forEach(rejectCredential);
  return raw;
 }
 export function safeResourcePath(value:unknown):string {

@@ -22,7 +22,7 @@ test('file and link cards save as standard Canvas and reopen with complete raw t
 test('unsafe resources fail atomically without echoing credentials; symlink escapes cannot save',async()=>{
  const p=await fs.mkdtemp(path.join(os.tmpdir(),'bang-resource-safety-')),outside=await fs.mkdtemp(path.join(os.tmpdir(),'bang-outside-'));
  try {run(p,'generate',{cards:[]});await fs.symlink(outside,path.join(p,'escape'),'junction');
- for(const resource of [{type:'link',url:'javascript:alert(1)'},{type:'link',url:'data:text/html,<script>alert(1)</script>'},{type:'link',url:'https://user:secret@example.com/'},{type:'link',url:'https://example.com/?token=secret'},{type:'file',file:'../outside.pdf'},{type:'file',file:'C:/secret.txt'},{type:'file',file:'.env'},{type:'file',file:'escape/missing.pdf'}]){
+ for(const resource of [{type:'link',url:'javascript:alert(1)'},{type:'link',url:'data:text/html,<script>alert(1)</script>'},{type:'link',url:'https://user:secret@example.com/'},{type:'link',url:'https://example.com/?token=secret'},{type:'link',url:'https://example.com/#access_token=secret'},{type:'file',file:'../outside.pdf'},{type:'file',file:'C:/secret.txt'},{type:'file',file:'.env'},{type:'file',file:'escape/missing.pdf'}]){
  const result=run(p,'commit',patch([{...base,id:'unsafe',...resource}]));assert.notEqual(result.status,0,JSON.stringify(resource));assert.ok(!result.stderr.includes('user:secret'));assert.equal(JSON.parse(run(p,'state').stdout).revision,0);
  }
  }finally{await fs.rm(p,{recursive:true,force:true});await fs.rm(outside,{recursive:true,force:true});}
