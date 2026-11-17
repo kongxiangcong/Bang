@@ -133,3 +133,71 @@ Real-browser test failed at the missing resource-create button before UI wiring.
   failure cleanup was hardened to stop the second temporary project daemon and
   close server connections; the interrupted temporary daemon was publicly stopped.
 - Integration verification after merging 06: production build and `node tests/canvas-draft-browser.mjs` passed. Combined native/Canvas CLI/HTTP run was 14/15: `project daemon reuses ownership across CLI launches and survives independent clients` failed with `Native runtime startup failed` while the build ran concurrently. Its isolated rerun passed; the intermittent startup failure remains recorded and its cause is not established. Native security and simultaneous-start tests passed in that combined run. Ticket 04's corrected validation commands were preserved.
+
+
+## Ticket 07 — manual refresh and field-aware saves (2026-11-18)
+
+`edit-card` now carries only changed fields (`text`, `x`, `y`, `file`, `url`).
+`baseRevision` identifies the displayed historical snapshot. Optional operation
+`fieldRevisions` identifies the persisted historical revision actually read for
+individual fields after local saves. Acknowledging a movement never acknowledges
+unseen remote text. Deletes compare every object field; retired identities cannot
+be reused. All comparisons and publication run within the native single writer.
+
+`POST /api/canvas/:topic/preview` (CLI `preview`, patch on stdin) returns
+`headRevision`, comparable `conflicts` with base/current/proposed values, and
+`legalOperations`. A conflicting commit returns HTTP 409 with the same preview
+and publishes nothing. Resource constraints also apply to offered subsets. Saving
+a subset requires a new explicit operation and rechecks against the current head.
+No scene replacement endpoint was introduced.
+
+The page distinguishes **显示版本**, **后台头版本**, and **局部确认**. Polling uses
+`GET /api/canvas/:topic/head`, which returns only a revision; it does not fetch or
+apply a scene. A successful local save updates only the acknowledged local
+snapshot and the fields it actually wrote. Failed full saves retain the full
+draft. **另存无冲突部分** leaves the remaining edits recoverable, with their original
+field baselines. **刷新** offers **保存并刷新 / 保留并合并 / 放弃并刷新**, plus cancel.
+Keep-and-merge preserves conflicting edits and their old baseline rather than
+silently accepting remote values as their new baseline. Explicit scene updates
+retain the Excalidraw viewport.
+
+Validation environment: Windows 11 build 26200, Node v25.8.1,
+Chrome 157.0.8103.52. Tests use isolated temporary projects, real native Runtime,
+real SQLite/Canvas publication and Chrome CDP mouse/text input. No model or real
+Codex/DSH conversation is involved. No browser API interception or injected editor
+state is used.
+
+Commands and observed results:
+
+```text
+node --test --test-concurrency=1 tests/canvas-runtime.test.mjs tests/canvas-save.test.mjs tests/canvas-resources.test.mjs tests/canvas-conflicts.test.mjs tests/native-runtime.test.mjs tests/legacy-runtime.test.mjs tests/legacy-http.test.mjs
+# 30 passed; 0 failed, including the merged native startup regressions.
+npm run build --prefix prototypes/whiteboard-integration
+# TypeScript + Vite passed; existing large-chunk advisory remains.
+node tests/canvas-conflicts-browser.mjs
+# Passed: remote status without scene application; stale local save;
+# distinct displayed/head/local-ack revisions; atomic conflict; legal subset;
+# residual draft recovery; all three refresh choices; actual panned viewport.
+node tests/canvas-draft-browser.mjs
+# Passed: real two tabs/topics/workspaces, Chromium-simulated IME, drag boundary,
+# recovery/discard and genuine same-field save failure. Physical OS IME untested.
+node tests/canvas-resources-browser.mjs
+node tests/canvas-save-browser.mjs
+# Both passed.
+node --test tests/canvas-conflicts.test.mjs
+# Targeted repeat passed after strengthening the cold Runtime restart assertion.
+```
+
+TDD evidence: independent x-only CLI edit initially failed `Expected string`;
+HTTP preview initially had no conflicts response; browser initially had no refresh
+button; preview initially incorrectly offered a symlink resource operation. Each
+was made green through its public boundary. An initial browser launch before the
+isolated dist was built timed out; building the entry exposed the expected missing
+refresh UI failure. These setup/red failures are not counted as acceptance passes.
+The previous draft test's global stale-create rejection assertion was replaced
+with genuine same-field competition, since compatible stale creates now succeed.
+
+Coverage is the ticket's T08/T09/T24 save/refresh behavior, not complete cross-host
+acceptance. Windows 10, Linux, physical IME, performance targets, semantic relations,
+AI read-dependency authorization and end-to-end Codex/DSH loops remain separate
+work. Native startup fixes were merged from integration, not duplicated here.
