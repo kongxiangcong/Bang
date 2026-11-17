@@ -1,3 +1,4 @@
+import {canvasFetch} from './canvas-client';
 import React,{useEffect,useRef,useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {Excalidraw,convertToExcalidrawElements} from '@excalidraw/excalidraw';
@@ -24,7 +25,7 @@ function App(){
  const [retry,setRetry]=useState<BoardPatch|null>(null);
  const endpoint='/api/canvas/'+encodeURIComponent(topic);
  function persist(){if(timer.current)clearTimeout(timer.current);if(composition.current||!latest.current)return;try{storage.write(latest.current);setReceipt('草稿已保留在此浏览器');}catch(e){setError('草稿保留失败：'+String(e));}}
- useEffect(()=>{if(!topic){setError('缺少专题');return;}fetch(endpoint+'/state').then(async response=>{const value=await response.json();if(!response.ok)throw Error(value.error);validateCanvas(value.canvas);setState(value);setDraft(value.canvas.nodes);try{setRecovery(storage.read());setOtherDrafts(storage.others());}catch(e){setError('无法读取草稿：'+String(e));}}).catch(e=>setError(String(e)));
+ useEffect(()=>{if(!topic){setError('缺少专题');return;}canvasFetch(endpoint+'/state').then(async response=>{const value=await response.json();if(!response.ok)throw Error(value.error);validateCanvas(value.canvas);setState(value);setDraft(value.canvas.nodes);try{setRecovery(storage.read());setOtherDrafts(storage.others());}catch(e){setError('无法读取草稿：'+String(e));}}).catch(e=>setError(String(e)));
  const unload=()=>persist();window.addEventListener('beforeunload',unload);return()=>{window.removeEventListener('beforeunload',unload);if(timer.current)clearTimeout(timer.current);};},[]);
  const operations:BoardOperation[]=[];
  if(state){for(const c of draft){const old=state.canvas.nodes.find(n=>n.id===c.id);if(!old)operations.push({type:'create-card',card:c});else if(old.text!==c.text||old.x!==c.x||old.y!==c.y||old.file!==c.file||old.url!==c.url)operations.push({type:'edit-card',id:c.id,text:c.text,x:c.x,y:c.y,...(c.type==='file'?{file:c.file}:c.type==='link'?{url:c.url}:{})});}for(const old of state.canvas.nodes)if(!draft.some(c=>c.id===old.id))operations.push({type:'delete-card',id:old.id});}
@@ -32,7 +33,7 @@ function App(){
  async function save(){
   if(!state||!operations.length||composition.current||recovery)return;persist();setBusy(true);setError('');
   const patch=retry??{operationId:crypto.randomUUID(),topic,baseRevision:state.revision,author:{kind:'manual' as const,id:'local-user'},readDependencies:[],intent:'explicit-save' as const,operations};setRetry(patch);latest.current={base:state,cards:draft,retry:patch,updated:Date.now()};persist();
-  try{const response=await fetch(endpoint+'/commit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(patch)});const result=await response.json();if(!response.ok)throw Error(result.error);
+  try{const response=await canvasFetch(endpoint+'/commit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(patch)});const result=await response.json();if(!response.ok)throw Error(result.error);
    const canvas={nodes:draft.map(c=>({...c,type:c.type??'text'})),edges:[] as never[]};setState({...state,revision:result.revision,canvas});setRetry(null);latest.current=null;storage.clear();setReceipt(`已保存 · 修订 ${result.revision} · ${result.operationId}`);
   }catch(e){setError(String(e));}finally{setBusy(false);}
  }

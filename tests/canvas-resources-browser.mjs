@@ -1,3 +1,4 @@
+import {canvasRequest} from './canvas-request.mjs';
 // Real Chrome gestures -> real HTTP middleware -> real filesystem -> fresh page.
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -41,7 +42,7 @@ try{
  await cmd('Page.reload');await until(()=>evaluate('document.body.innerText.includes("发现可恢复草稿")'));await button('恢复草稿');
  assert.equal(await evaluate(`document.querySelector('[aria-label="链接地址 4"]').value`),'https://');await type('链接地址 4','https://example.com/paper');
  await button('新增知识卡片');await type('卡片正文 5',raw);
- assert.equal((await (await fetch(url+'/api/canvas/demo/state')).json()).revision,0);
+ assert.equal((await (await canvasRequest(url+'/api/canvas/demo/state')).json()).revision,0);
  await button('保存');await until(()=>evaluate('document.body.innerText.includes("已保存 · 修订 1")'));
  await cmd('Page.reload');await until(()=>evaluate('document.querySelectorAll("textarea").length===5'));
  assert.equal(await evaluate('document.querySelectorAll("textarea")[4].value'),raw);
@@ -50,11 +51,11 @@ try{
  await openDetails(4);assert.equal(await evaluate('document.querySelectorAll("pre")[4].textContent'),raw);
  assert.equal(await evaluate('!!window.unsafeExecuted'),false);
  assert.equal(await evaluate('document.querySelectorAll("iframe,img[src*=example],script[src*=example]").length'),0);
- const state=await (await fetch(url+'/api/canvas/demo/state')).json();assert.equal(state.canvas.nodes[2].type,'file');assert.equal(state.canvas.nodes[3].url,'https://example.com/paper');assert.equal(state.canvas.nodes[4].text,raw);
+ const state=await (await canvasRequest(url+'/api/canvas/demo/state')).json();assert.equal(state.canvas.nodes[2].type,'file');assert.equal(state.canvas.nodes[3].url,'https://example.com/paper');assert.equal(state.canvas.nodes[4].text,raw);
  assert.ok(!requests.some(u=>u.startsWith('https://example.com/')),'resources must not auto-download');
  const shot=await cmd('Page.captureScreenshot',{format:'png'});await fs.writeFile(path.join(root,'canvas-resources-browser.png'),Buffer.from(shot.data,'base64'));
  console.log(JSON.stringify({pass:true,evidence:'real Chrome create file/link/raw cards, explicit save and reopen, missing placeholder, safe complete raw details'}));
 
- }finally{ws?.close();chrome.kill();await new Promise(r=>server.close(r));await delay(500);await fs.rm(temp,{recursive:true,force:true,maxRetries:5,retryDelay:200});}
+ }finally{ws?.close();chrome.kill();await new Promise(r=>server.close(r));await delay(500);spawnSync(process.execPath,[path.join(root,'runtime/canvas/bang.mjs'),'stop','--project',temp]);await fs.rm(temp,{recursive:true,force:true,maxRetries:5,retryDelay:200});}
 
 

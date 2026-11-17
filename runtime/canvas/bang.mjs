@@ -1,13 +1,11 @@
-import {generateBoard,readBoard,readCommitted,commitBoard} from './store.mjs';
+import {runtimeOperation} from '../native/runtime.mjs';
 const [command,...args]=process.argv.slice(2);
 const option=name=>args[args.indexOf(name)+1];
 try{
- if(!args.includes('--project')||!args.includes('--topic'))throw Error('Usage: bang.mjs generate|read|state|commit --project DIR --topic ID');
- const project=option('--project'),topic=option('--topic');
- let result;
- if(command==='generate'||command==='commit'){let input='';for await(const chunk of process.stdin)input+=chunk;result=command==='generate'?await generateBoard(project,topic,JSON.parse(input)):await commitBoard(project,topic,JSON.parse(input));}
- else if(command==='read')result=await readBoard(project,topic);
- else if(command==='state')result=await readCommitted(project,topic);
- else throw Error('Unknown command');
- process.stdout.write(JSON.stringify(result)+'\n');
+ if(!args.includes('--project'))throw Error('Usage: bang.mjs start|status|stop|generate|read|state|commit --project DIR [--topic ID]');
+ const project=option('--project'),topic=args.includes('--topic')?option('--topic'):undefined;
+ let input;
+ if(command==='generate'||command==='commit'){process.stdin.setEncoding('utf8');let body='';for await(const chunk of process.stdin)body+=chunk;input=JSON.parse(body);}
+ process.stdout.write(JSON.stringify(await runtimeOperation(project,command,topic,input))+'\n');
 }catch(error){process.stderr.write(String(error.message)+'\n');process.exitCode=1;}
+

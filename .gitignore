@@ -100,3 +100,15 @@
 # Reviewed ticket 06 browser-local recovery and end-of-interaction regression.
 !/prototypes/whiteboard-integration/src/drafts.ts
 !/tests/canvas-draft-browser.mjs
+
+# Reviewed ticket 04 native OS-lock runtime, prebuilt Windows helper and public tests.
+!/runtime/native/
+/runtime/native/*
+!/runtime/native/lock-host.c
+!/runtime/native/lock-host.exe
+!/runtime/native/build.mjs
+!/runtime/native/runtime.mjs
+!/runtime/native/README.md
+!/prototypes/whiteboard-integration/src/canvas-client.ts
+!/tests/native-runtime.test.mjs
+!/tests/canvas-request.mjs

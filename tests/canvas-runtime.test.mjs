@@ -1,3 +1,4 @@
+import {canvasRequest} from './canvas-request.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
@@ -19,7 +20,7 @@ test('headless generation preserves exact body, stable identity, geometry and ar
   const before=await fs.readFile(path.join(project,'.bang/topics/demo/current.canvas'),'utf8');
   assert.equal(run(project,'read').status,0);
   assert.equal(await fs.readFile(path.join(project,'.bang/topics/demo/current.canvas'),'utf8'),before);
- }finally{await fs.rm(project,{recursive:true,force:true});}
+ }finally{run(project,'stop');await fs.rm(project,{recursive:true,force:true});}
 });
 test('compiler is deterministic and pure, and rejects invalid standard geometry and duplicate identity',()=>{
  const input=Object.freeze({cards:Object.freeze(cards.map(c=>Object.freeze({...c})))});
@@ -35,7 +36,7 @@ test('invalid generation creates no current file and generation cannot overwrite
   assert.equal(run(project,'generate',{cards}).status,0);
   assert.notEqual(run(project,'generate',{cards:[]}).status,0);
   assert.equal(JSON.parse(run(project,'read').stdout).nodes.length,2);
- }finally{await fs.rm(project,{recursive:true,force:true});}
+ }finally{run(project,'stop');await fs.rm(project,{recursive:true,force:true});}
 });
 test('HTTP read exposes the generated standard Canvas without writes, and rejects mutations',async()=>{
  const project=await fs.mkdtemp(path.join(os.tmpdir(),'bang-http-'));
@@ -46,8 +47,10 @@ test('HTTP read exposes the generated standard Canvas without writes, and reject
   server=http.createServer(createCanvasMiddleware({project}));await new Promise(r=>server.listen(0,'127.0.0.1',r));
   const url=`http://127.0.0.1:${server.address().port}/api/canvas/demo`;
   const file=path.join(project,'.bang/topics/demo/current.canvas'),before=await fs.stat(file);
-  const response=await fetch(url);assert.equal(response.status,200);assert.deepEqual(await response.json(),JSON.parse(run(project,'read').stdout));
-  assert.equal((await fetch(url,{method:'POST',body:'{}'})).status,405);
+  const response=await canvasRequest(url);assert.equal(response.status,200);assert.deepEqual(await response.json(),JSON.parse(run(project,'read').stdout));
+  assert.equal((await canvasRequest(url,{method:'POST',body:'{}'})).status,405);
   assert.equal((await fs.stat(file)).mtimeMs,before.mtimeMs);
- }finally{if(server)await new Promise(r=>server.close(r));await fs.rm(project,{recursive:true,force:true});}
+ }finally{if(server)await new Promise(r=>server.close(r));run(project,'stop');await fs.rm(project,{recursive:true,force:true});}
 });
+
+
