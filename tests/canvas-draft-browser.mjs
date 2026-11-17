@@ -14,7 +14,7 @@ const cards=[{id:'back',text:'中文 **原文**',x:-20,y:10,width:300,height:180
 const cli=spawnSync(process.execPath,[path.join(root,'runtime/canvas/bang.mjs'),'generate','--project',temp,'--topic','demo'],{input:JSON.stringify({cards}),encoding:'utf8'});assert.equal(cli.status,0,cli.stderr);
 assert.equal(spawnSync(process.execPath,[path.join(root,'runtime/canvas/bang.mjs'),'generate','--project',temp,'--topic','other'],{input:JSON.stringify({cards}),encoding:'utf8'}).status,0);
 const boardFile=path.join(temp,'.bang/topics/demo/current.canvas');const before=await fs.readFile(boardFile,'utf8');const beforeStat=await fs.stat(boardFile);
-const middleware=createCanvasMiddleware({project:temp});
+let middleware=createCanvasMiddleware({project:temp});
 const dist=path.join(root,'prototypes/whiteboard-integration/dist');
 const server=http.createServer((req,res)=>middleware(req,res,async()=>{
  try{const pathname=new URL(req.url,'http://localhost').pathname;const file=path.join(dist,pathname==='/'?'index.html':pathname);const content=await fs.readFile(file);res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.html')?'text/html':'application/octet-stream');res.end(content);}catch{res.statusCode=404;res.end();}
@@ -70,10 +70,10 @@ try{
  assert.equal((await (await canvasRequest(url+'/api/canvas/demo/state')).json()).canvas.nodes[0].x,moved);
  await button('新增知识卡片');
  // A separate tab starts with committed content; concurrent save makes this page stale.
- const first=ws;const target=await cmd('Target.createTarget',{url:url+'/canvas.html?topic=demo'});
+ const first=ws;const inheritedName=await evaluate('window.name');const target=await cmd('Target.createTarget',{url:'about:blank'});
  const tabs=await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();ws=new WebSocket(tabs.find(t=>t.id===target.targetId).webSocketDebuggerUrl);await new Promise(r=>ws.onopen=r);
  ws.onmessage=event=>{const m=JSON.parse(event.data);if(m.id){const p=pending.get(m.id);pending.delete(m.id);m.error?p.reject(Error(m.error.message)):p.resolve(m.result)}};
- await cmd('Page.enable');await until(()=>evaluate('document.querySelectorAll("textarea").length===5'));
+ await cmd('Page.enable');await evaluate(`window.name=${JSON.stringify(inheritedName)}`);await cmd('Page.navigate',{url:url+'/canvas.html?topic=demo'});await until(()=>evaluate('document.querySelectorAll("textarea").length===5'));assert.notEqual(await evaluate('window.name'),inheritedName);
  assert.equal(await evaluate('document.body.innerText.includes("发现可恢复草稿")'),false);
  await type('卡片正文 1','第二页已提交');await button('保存');await until(()=>evaluate('document.body.innerText.includes("已保存 · 修订 5")'));
  await type('卡片正文 1','第二页独立草稿');await button('新增知识卡片');const second=ws;ws=first;
@@ -85,7 +85,11 @@ try{
  const summary=await evaluate('(()=>{const r=document.querySelector("summary").getBoundingClientRect();return {x:r.x+20,y:r.y+10}})()');await click(summary.x,summary.y);await button(await evaluate('document.querySelector("details button").textContent'));await button('恢复草稿');assert.equal(await evaluate('document.querySelector("textarea").value'),'中文确认');
  ws=first;await cmd('Page.navigate',{url:url+'/canvas.html?topic=other'});await delay(250);await until(()=>evaluate('document.querySelectorAll("textarea").length===2'));assert.equal(await evaluate('document.body.innerText.includes("发现可恢复草稿")'),false);
  await type('卡片正文 1','其他专题草稿');await button('新增知识卡片');await cmd('Page.navigate',{url:url+'/canvas.html?topic=demo'});await delay(250);await until(()=>evaluate('document.body.innerText.includes("发现可恢复草稿")'));await button('恢复草稿');assert.equal(await evaluate('document.querySelector("textarea").value'),'中文确认');
- second.close();console.log(JSON.stringify({pass:true,evidence:'real Chrome two tabs, pointer drag, Chromium simulated IME, reload recovery/discard, stale save retains draft; no API interception or state injection'})); }finally{ws?.close();chrome.kill();await new Promise(r=>server.close(r));await delay(500);spawnSync(process.execPath,[path.join(root,'runtime/canvas/bang.mjs'),'stop','--project',temp],{encoding:'utf8'});await fs.rm(temp,{recursive:true,force:true,maxRetries:5,retryDelay:200});}
+ const otherProject=path.join(temp,'workspace-b');await fs.mkdir(otherProject);assert.equal(spawnSync(process.execPath,[path.join(root,'runtime/canvas/bang.mjs'),'generate','--project',otherProject,'--topic','demo'],{input:JSON.stringify({cards}),encoding:'utf8'}).status,0);
+ middleware=createCanvasMiddleware({project:otherProject});await cmd('Page.reload');await delay(250);await until(()=>evaluate('document.querySelectorAll("textarea").length===2'));assert.equal(await evaluate('document.body.innerText.includes("发现可恢复草稿")'),false);assert.equal(await evaluate('!!document.querySelector("details")'),false);
+ middleware=createCanvasMiddleware({project:temp});await cmd('Page.reload');await delay(250);await until(()=>evaluate('document.body.innerText.includes("发现可恢复草稿")'));await button('恢复草稿');assert.equal(await evaluate('document.querySelector("textarea").value'),'中文确认');
+ spawnSync(process.execPath,[path.join(root,'runtime/canvas/bang.mjs'),'stop','--project',otherProject],{encoding:'utf8'});
+ second.close();console.log(JSON.stringify({pass:true,evidence:'real Chrome two tabs/topics/workspaces, simulated inherited tab name, pointer drag, Chromium simulated IME, reload recovery/discard, stale save retains draft; no API interception or editor state injection'})); }finally{ws?.close();chrome.kill();await new Promise(r=>server.close(r));await delay(500);spawnSync(process.execPath,[path.join(root,'runtime/canvas/bang.mjs'),'stop','--project',temp],{encoding:'utf8'});await fs.rm(temp,{recursive:true,force:true,maxRetries:5,retryDelay:200});}
 
 
 
