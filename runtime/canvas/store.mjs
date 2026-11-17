@@ -1,40 +1,37 @@
+import {applyOperation as applyParsedOperation,orderOperations,operationIdentity} from './operations.ts';
+import {recoveryStatus,recoverUnknown,reconcile,publish,observed,recoveryError} from './publication.mjs';
 import {revisionState,revisionList,boardDiff,parseUndo,compensate} from './history.mjs';
 import {parseEdge,relationFields,semanticRelations} from './relations.ts';
 import {validateResources,resourceStatus} from './resources.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
-import {createHash} from 'node:crypto';
 import {DatabaseSync} from 'node:sqlite';
 import {compileCanvas,validateCanvas,parsePatch,parseCard,editableFields,layoutFields} from './contract.ts';
 export function topicPath(project,topic){
  if(!project||!topic||! /^[a-zA-Z0-9_-]+$/.test(topic))throw Error('Explicit project and safe topic are required');
  return path.join(path.resolve(project),'.bang','topics',topic,'current.canvas');
 }
-const hash=s=>createHash('sha256').update(s).digest('hex');
-const bytes=board=>JSON.stringify(board,null,2)+'\n';
 function open(project,readonly=false){
- const db=new DatabaseSync(path.join(path.resolve(project),'.bang','board.sqlite'),{readOnly:readonly});
+ const database=path.join(path.resolve(project),'.bang','board.sqlite'),fresh=!fs.existsSync(database);
+ const db=new DatabaseSync(database,{readOnly:readonly});if(fresh&&process.platform!=='win32')fs.chmodSync(database,0o600);
  if(!readonly){db.exec(`PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS topics(topic TEXT PRIMARY KEY, revision INTEGER NOT NULL, state TEXT NOT NULL, hash TEXT NOT NULL); CREATE TABLE IF NOT EXISTS revisions(topic TEXT, revision INTEGER, state TEXT NOT NULL, PRIMARY KEY(topic,revision)); CREATE TABLE IF NOT EXISTS intents(topic TEXT, operation TEXT, request TEXT NOT NULL, state TEXT NOT NULL, hash TEXT NOT NULL, receipt TEXT NOT NULL, status TEXT NOT NULL, PRIMARY KEY(topic,operation));`);}
  return db;
 }
 export async function readBoard(project,topic){return (await readCommitted(project,topic)).canvas;}
 export async function readCommitted(project,topic){
- const file=topicPath(project,topic),db=open(project,true);
- try{const row=db.prepare('SELECT * FROM topics WHERE topic=?').get(topic);if(!row)throw Error('Unknown topic');if(hash(fs.readFileSync(file))!==row.hash)throw Error('Canvas publication pending or externally changed; recovery required');return JSON.parse(row.state);}finally{db.close();}
+ const file=topicPath(project,topic),db=open(project);
+ try{reconcile(db,project,topic,file);const row=db.prepare('SELECT * FROM topics WHERE topic=?').get(topic);if(!row)throw Error('Unknown topic');if(observed(file)!==row.hash)throw recoveryError('Canvas publication pending or externally changed; recovery required');return JSON.parse(row.state);}finally{db.close();}
 }
 export async function generateBoard(project,topic,input){
- const board=compileCanvas(input),file=topicPath(project,topic);validateResources(project,board);fs.mkdirSync(path.dirname(file),{recursive:true});
- fs.writeFileSync(file,bytes(board),{flag:'wx'});
+ const board=compileCanvas(input),file=topicPath(project,topic);validateResources(project,board);fs.mkdirSync(path.dirname(file),{recursive:true,mode:0o700});
  const state={revision:0,canvas:board,relations:semanticRelations(board.edges),deletionIntents:[],editorExtras:[],metadata:Object.fromEntries([...board.nodes,...board.edges].map(n=>[n.id,{source:{kind:'bootstrap'},modifiedRevision:0}]))},db=open(project);
- try{db.exec('BEGIN IMMEDIATE');db.prepare('INSERT INTO topics VALUES(?,?,?,?)').run(topic,0,JSON.stringify(state),hash(bytes(board)));db.prepare('INSERT INTO revisions VALUES(?,?,?)').run(topic,0,JSON.stringify(state));db.exec('COMMIT');}finally{db.close();}return board;
+ try{reconcile(db,project,topic,file);if(db.prepare('SELECT 1 FROM topics WHERE topic=?').get(topic)||observed(file)!==null)throw Error('Topic already exists; refusing overwrite');publish(db,project,topic,file,{operation:'$bootstrap',request:JSON.stringify(input),state,receipt:{topic,revision:0,status:'committed'}},null);}finally{db.close();}return board;
 }
-function applyOperation(canvas,op){
- if(op.type.endsWith('relation')){const i=canvas.edges.findIndex(e=>e.id===op.id);if(op.type==='create-relation')canvas.edges.push(parseEdge(op.edge));else if(op.type==='delete-relation')canvas.edges.splice(i,1);else for(const field of relationFields)if(op[field]!==undefined)canvas.edges[i][field]=op[field];return;}
- const id=op.type==='create-card'?op.card.id:op.id,index=canvas.nodes.findIndex(n=>n.id===id);
- if(op.type==='create-card')canvas.nodes.push(parseCard(op.card));
- else if(op.type==='delete-card'){canvas.nodes.splice(index,1);canvas.edges=canvas.edges.filter(e=>e.fromNode!==id&&e.toNode!==id);}
- else for(const field of editableFields)if(op[field]!==undefined)canvas.nodes[index][field]=op[field];
- if(op.zIndex!==undefined){const ranks=new Map(canvas.nodes.map((node,i)=>[node.id,node.zIndex??i]));canvas.nodes.sort((a,b)=>ranks.get(a.id)-ranks.get(b.id));}
+// Persistence canonicalizes newly supplied objects; draft merging deliberately
+// permits incomplete resource strings until an explicit save validates them.
+function applyOperation(board,op){
+ const parsed=op.type==='create-card'?{...op,card:parseCard(op.card)}:op.type==='create-relation'?{...op,edge:parseEdge(op.edge)}:op;
+ return applyParsedOperation(board,parsed);
 }
 // All comparisons use persisted historical fields, including local acknowledged overlays.
 function inspectPatch(db,topic,patch,row,project){
@@ -46,10 +43,10 @@ function inspectPatch(db,topic,patch,row,project){
   if(op.type.endsWith('extra')){
    const id=op.extra?.id??op.id,now=(current.editorExtras??[]).find(e=>e.id===id),old=(baseline(op.fieldRevisions?.element??patch.baseRevision).editorExtras??[]).find(e=>e.id===id);
    const failed=touched.has('extra:'+id)||dependencyConflict||(op.type==='create-extra'?!!now:!now||JSON.stringify(old)!==JSON.stringify(now));touched.add('extra:'+id);
-   if(failed)conflicts.push({operationIndex,id,field:'element',base:old?.element??null,current:now?.element??null,proposed:op.element??op.extra?.element??null,reason:'Editor element changed'});else legalOperations.push(op);continue;
+   if(failed)conflicts.push({operationIndex,id,field:'element',base:old?.element??null,current:now?.element??null,proposed:op.element??op.extra?.element??null,reason:'Editor element changed'});continue;
   }
   const relation=op.type.endsWith('relation'),collection=relation?'edges':'nodes',creating=op.type.startsWith('create-'),deleting=op.type.startsWith('delete-');
-  const id=creating?(relation?op.edge.id:op.card.id):op.id,now=current.canvas[collection].find(n=>n.id===id),before=conflicts.length;
+  const id=creating?(relation?op.edge.id:op.card.id):op.id,now=current.canvas[collection].find(n=>n.id===id);
   const conflict=(field,base,current,proposed,reason)=>conflicts.push({operationIndex,id,field,base:base??null,current:current??null,proposed:proposed??null,reason});
   if(touched.has(id))conflict('id',id,id,id,'Repeated object operation');touched.add(id);
   if(dependencyConflict)conflict('$dependency',null,null,null,'Read dependency changed');
@@ -66,10 +63,43 @@ function inspectPatch(db,topic,patch,row,project){
    for(const field of fields){const old=baseline(op.fieldRevisions?.[field]??patch.baseRevision).canvas[collection].find(n=>n.id===id);if(!old||old[field]!==now[field])conflict(field,old?.[field],now[field],op.type==='delete-card'?null:op[field],'Field changed');}
    if(op.type==='edit-card'&&((op.file!==undefined&&now.type!=='file')||(op.url!==undefined&&now.type!=='link')))conflict('type',null,now.type,null,'Resource type mismatch');
   }
-  if(conflicts.length===before){
-   try{const candidate=structuredClone(current.canvas);for(const accepted of [...legalOperations,op])if(!accepted.type.endsWith('extra'))applyOperation(candidate,accepted);validateCanvas(candidate);validateResources(project,candidate);legalOperations.push(op);}
-   catch(error){conflict('$constraints',null,null,null,error.message);}
+ }
+ // Group only structural dependencies. A failed rewire must not leave its former
+ // endpoint deletion in a supposedly safe subset. Independent field edits survive.
+ const groups=patch.operations.map((op,i)=>new Set([i]));
+ const join=(a,b)=>{const combined=new Set([...groups[a],...groups[b]]);for(const i of combined)groups[i]=combined;};
+ for(const [i,card] of patch.operations.entries())if(card.type==='create-card'||card.type==='delete-card'){
+  const id=operationIdentity(card);
+  for(const [j,relation] of patch.operations.entries())if(relation.type.endsWith('relation')){
+   const edgeId=operationIdentity(relation),old=original.canvas.edges.find(e=>e.id===edgeId),now=current.canvas.edges.find(e=>e.id===edgeId);
+   const proposed=relation.type==='create-relation'?relation.edge:relation;
+   const historical=['id','fromNode','toNode'].map(field=>baseline(relation.fieldRevisions?.[field]??patch.baseRevision).canvas.edges.find(e=>e.id===edgeId));
+   if([old,now,proposed,...historical].some(e=>e&&(e.fromNode===id||e.toNode===id)))join(i,j);
   }
+ }
+ for(const group of new Set(groups)){
+  const reject=(reason)=>{for(const operationIndex of group)if(!conflicts.some(c=>c.operationIndex===operationIndex))conflicts.push({operationIndex,id:operationIdentity(patch.operations[operationIndex]),field:'$constraints',base:null,current:null,proposed:null,reason});};
+  if(conflicts.some(c=>group.has(c.operationIndex))){reject('Dependent operation conflicts; structural intent retained');continue;}
+  const operations=orderOperations([...group].map(i=>patch.operations[i]));let candidate=current;
+  try{
+   for(const accepted of orderOperations(legalOperations))candidate=applyOperation(candidate,accepted);
+   for(const op of operations){
+    if(op.type==='delete-card'){
+     const oldEdges=baseline(op.fieldRevisions?.id??patch.baseRevision).canvas.edges;
+     for(const edge of candidate.canvas.edges.filter(e=>e.fromNode===op.id||e.toNode===op.id)){
+      const old=oldEdges.find(e=>e.id===edge.id),now=current.canvas.edges.find(e=>e.id===edge.id);
+      // New relations intentionally created in this transaction have no competing head.
+      if(now&&JSON.stringify(old)!==JSON.stringify(now)){
+       conflicts.push({operationIndex:patch.operations.indexOf(op),id:op.id,field:'$incidentRelations',base:old??null,current:now,proposed:null,reason:'Incident relation changed since deletion baseline'});
+      }
+     }
+    }
+    candidate=applyOperation(candidate,op);
+   }
+   if(conflicts.some(c=>group.has(c.operationIndex))){reject('Dependent operation conflicts; structural intent retained');continue;}
+   if(operations.some(op=>(op.type==='create-relation'||op.type==='edit-relation')&&!candidate.canvas.edges.some(edge=>edge.id===operationIdentity(op))))throw Error('Explicit relation intent would be removed by endpoint deletion');
+   validateCanvas(candidate.canvas);validateResources(project,candidate.canvas);legalOperations.push(...operations);
+  }catch(error){reject(error.message);}
  }
  // A preview never publishes. A subsequent subset commit repeats every check.
  return {headRevision:row.revision,conflicts,legalOperations};
@@ -88,11 +118,12 @@ async function publishPatch(project,topic,value,undo){
  const patch=undo?parseUndo(value):parsePatch(value),file=topicPath(project,topic);if(patch.topic!==topic)throw Error('Patch topic mismatch');
  const db=open(project);const request=JSON.stringify(patch);
  try{
+  reconcile(db,project,topic,file);
   const prior=db.prepare('SELECT * FROM intents WHERE topic=? AND operation=?').get(topic,patch.operationId);
   if(prior){if(prior.request!==request)throw Error('Operation identity reused for different content');if(prior.status==='confirmed')return JSON.parse(prior.receipt);throw Error('Prepared publication requires recovery');}
   if(db.prepare("SELECT 1 FROM intents WHERE topic=? AND status='prepared'").get(topic))throw Error('Prepared publication requires recovery');
   const row=db.prepare('SELECT * FROM topics WHERE topic=?').get(topic);if(!row)throw Error('Unknown topic');
-  if(hash(fs.readFileSync(file))!==row.hash)throw Error('Canvas externally changed; refusing overwrite');
+  if(observed(file)!==row.hash)throw recoveryError('Canvas externally changed; recovery required');
   let next;
   if(undo)next=compensate(db,topic,patch,JSON.parse(row.state));
   else {
@@ -101,13 +132,13 @@ async function publishPatch(project,topic,value,undo){
   next=JSON.parse(row.state);next.revision++;
   for(const dependency of patch.readDependencies)if(![...next.canvas.nodes,...next.canvas.edges].some(n=>n.id===dependency))throw Error('Missing read dependency');
   const touched=new Set();
-  for(const op of patch.operations){
-   if(op.type.endsWith('extra')){const extras=next.editorExtras??=[],id=op.extra?.id??op.id,i=extras.findIndex(e=>e.id===id);if(op.type==='create-extra')extras.push(op.extra);else if(op.type==='delete-extra')extras.splice(i,1);else extras[i]={id,element:op.element};continue;}
+  for(const op of orderOperations(patch.operations)){
+   if(op.type.endsWith('extra')){next=applyOperation(next,op);continue;}
    const identity=op.type==='create-card'?op.card.id:op.type==='create-relation'?op.edge.id:op.id;
    if(touched.has(identity))throw Error('Repeated object operation');touched.add(identity);
    const deleted=op.type==='delete-card'?[...next.canvas.edges.filter(e=>e.fromNode===identity||e.toNode===identity),next.canvas.nodes.find(n=>n.id===identity)]:op.type==='delete-relation'?[next.canvas.edges.find(e=>e.id===identity)]:[];
    for(const object of deleted){(next.deletionIntents??=[]).push({id:object.id,object,revision:next.revision,authorId:patch.author.id,operationId:patch.operationId});delete next.metadata[object.id];}
-   applyOperation(next.canvas,op);
+   next=applyOperation(next,op);
    if(op.type.startsWith('delete-'))delete next.metadata[identity];
    else {
     const previous=next.metadata[identity]??{},changed=op.type==='create-card'?Object.keys(op.card):op.type==='create-relation'?Object.keys(op.edge):(op.type==='edit-relation'?relationFields:editableFields).filter(k=>op[k]!==undefined);
@@ -119,15 +150,8 @@ async function publishPatch(project,topic,value,undo){
   }
   next.relations=semanticRelations(next.canvas.edges);
   validateCanvas(next.canvas);validateResources(project,next.canvas);
-  const content=bytes(next.canvas),digest=hash(content),state=JSON.stringify(next);
   const receipt={operationId:patch.operationId,topic,revision:next.revision,status:'committed'};
-  db.prepare('INSERT INTO intents VALUES(?,?,?,?,?,?,?)').run(topic,patch.operationId,request,state,digest,JSON.stringify(receipt),'prepared');
-  const temporary=path.join(path.dirname(file),'publish.tmp');
-  const fd=fs.openSync(temporary,'wx');try{fs.writeFileSync(fd,content);fs.fsyncSync(fd);}finally{fs.closeSync(fd);}
-  if(hash(fs.readFileSync(file))!==row.hash)throw Error('Canvas externally changed during preparation; recovery required');
-  fs.renameSync(temporary,file);
-  db.exec('BEGIN IMMEDIATE');
-  try{db.prepare('UPDATE topics SET revision=?,state=?,hash=? WHERE topic=?').run(next.revision,state,digest,topic);db.prepare('INSERT INTO revisions VALUES(?,?,?)').run(topic,next.revision,state);db.prepare("UPDATE intents SET status='confirmed' WHERE topic=? AND operation=?").run(topic,patch.operationId);db.exec('COMMIT');}catch(e){db.exec('ROLLBACK');throw e;}
+  publish(db,project,topic,file,{operation:patch.operationId,request,state:next,receipt},row.hash);
   return receipt;
  }finally{db.close();}
 }
@@ -142,3 +166,6 @@ export async function readHistory(project,topic){await readCommitted(project,top
 export async function previewHistory(project,topic,input){await readCommitted(project,topic);const db=open(project,true);try{return revisionState(db,topic,input?.revision);}finally{db.close();}}
 export async function diffHistory(project,topic,input){await readCommitted(project,topic);const db=open(project,true);try{return boardDiff(revisionState(db,topic,input?.fromRevision),revisionState(db,topic,input?.toRevision));}finally{db.close();}}
 
+
+export async function readRecoveryStatus(project,topic){const file=topicPath(project,topic),db=open(project);try{return recoveryStatus(db,topic,file);}finally{db.close();}}
+export async function recoverBoard(project,topic,input){const file=topicPath(project,topic),db=open(project);try{return recoverUnknown(db,project,topic,file,input);}finally{db.close();}}

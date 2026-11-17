@@ -2,14 +2,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {randomUUID,randomBytes,createHash,createPublicKey} from 'node:crypto';
 import {DatabaseSync} from 'node:sqlite';
-import {generateBoard} from './store.mjs';
+import {generateBoard,readCommitted} from './store.mjs';
 import {SignedSessionConnector} from '../native/session-connector.mjs';
 
 // Called only by the project Runtime owner. Metadata shares the board database;
 // board creation always goes through the existing committed-board publisher.
 function open(project){
- fs.mkdirSync(path.join(project,'.bang'),{recursive:true});
- const db=new DatabaseSync(path.join(project,'.bang','board.sqlite'));
+ fs.mkdirSync(path.join(project,'.bang'),{recursive:true,mode:0o700});
+ const database=path.join(project,'.bang','board.sqlite'),fresh=!fs.existsSync(database);
+ const db=new DatabaseSync(database);if(fresh&&process.platform!=='win32')fs.chmodSync(database,0o600);
  db.exec('PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS topic_names(topic TEXT PRIMARY KEY, name TEXT NOT NULL)');
  db.exec(`CREATE TABLE IF NOT EXISTS session_connectors(id TEXT PRIMARY KEY, registration TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS verified_sessions(session_key TEXT PRIMARY KEY, token_hash TEXT UNIQUE NOT NULL, claims TEXT NOT NULL);
@@ -71,6 +72,7 @@ export async function enableBinding(project,input,epoch){
   if(!topic&&topics.length===1)topic=topics[0];
   if(!topic)return {status:'selection-required',topics};
   if(!s.claims.scope.includes('*')&&!s.claims.scope.includes(topic.id))throw Error('Topic outside authorized scope');
+  await readCommitted(project,topic.id);
   const old=db.prepare('SELECT * FROM binding_sources WHERE topic=? AND active=1').get(topic.id);
   const observed=hash(JSON.stringify([old?.id,old?.metadata,db.prepare('SELECT revision FROM topics WHERE topic=?').get(topic.id).revision,epoch]));
   if(input.confirmation){
@@ -99,12 +101,13 @@ export function listTopics(project){
  const db=open(project);
  try{
   if(!db.prepare("SELECT 1 FROM sqlite_master WHERE name='topics'").get())return [];
-  return db.prepare('SELECT t.topic AS id, COALESCE(n.name,t.topic) AS name FROM topics t LEFT JOIN topic_names n ON t.topic=n.topic ORDER BY t.topic').all().map(row=>({...row}));
+  return db.prepare("SELECT t.topic AS id, COALESCE(n.name,t.topic) AS name FROM (SELECT topic FROM topics UNION SELECT topic FROM intents WHERE status='prepared') t LEFT JOIN topic_names n ON t.topic=n.topic ORDER BY t.topic").all().map(row=>({...row}));
  }finally{db.close();}
 }
 export async function createTopic(project,input){
  if(typeof input?.name!=='string'||!input.name.trim()||input.name.length>120)throw Error('Topic name required (1–120 characters)');
- const id=randomUUID();await generateBoard(project,id,{cards:[]});
+ const id=randomUUID();
  const db=open(project);try{db.prepare('INSERT INTO topic_names VALUES(?,?)').run(id,input.name.trim());}finally{db.close();}
+ await generateBoard(project,id,{cards:[]});
  return {id,name:input.name.trim()};
 }

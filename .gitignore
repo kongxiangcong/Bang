@@ -145,3 +145,7 @@
 !/prototypes/whiteboard-integration/src/TopicPicker.tsx
 !/tests/topic-binding.test.mjs
 !/tests/topic-binding-browser.mjs
+
+# Core review shared transaction application and browser regression.
+!/runtime/canvas/operations.ts
+!/tests/canvas-transaction-browser.mjs

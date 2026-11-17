@@ -20,8 +20,8 @@ export async function draftStore(workspace:string,topic:string){
  if(!window.name.startsWith('bang-editor:'))window.name='bang-editor:'+crypto.randomUUID();
  const key=prefix+(await editorIdentity());
  return {
-  others():Draft[]{return Object.keys(localStorage).filter(k=>k.startsWith(prefix)&&k!==key).map(k=>{try{const d=JSON.parse(localStorage.getItem(k)!);validateCanvas(d.base.canvas);d.cards.forEach(validateDraftCard);d.edges?.forEach(parseEdge);d.extras?.forEach(parseExtra);d.base.editorExtras?.forEach(parseExtra);return d as Draft;}catch{return null;}}).filter((d):d is Draft=>!!d);},
-  read():Draft|null {const raw=localStorage.getItem(key);if(!raw)return null;const d=JSON.parse(raw) as Draft;validateCanvas(d.base.canvas);d.cards.forEach(validateDraftCard);d.edges?.forEach(parseEdge);d.extras?.forEach(parseExtra);d.base.editorExtras?.forEach(parseExtra);return d;},
+  others():Draft[]{return Object.keys(localStorage).filter(k=>k.startsWith(prefix)&&k!==key).map(k=>{try{return parseDraft(localStorage.getItem(k)!);}catch{return null;}}).filter((d):d is Draft=>!!d);},
+  read():Draft|null {const raw=localStorage.getItem(key);if(!raw)return null;return parseDraft(raw);},
   write(d:Draft){localStorage.setItem(key,JSON.stringify(d));},
   clear(){localStorage.removeItem(key);},
  };
@@ -34,4 +34,10 @@ function validateDraftCard(card:Card){
  parseCard({...card,type:'text'});
  if(card.type!==undefined&&!['text','file','link'].includes(card.type))throw Error('Invalid draft card type');
  if(card.type==='file'&&typeof card.file!=='string'||card.type==='link'&&typeof card.url!=='string')throw Error('Invalid draft resource');
+}
+
+function parseDraft(raw:string):Draft {
+ const d=JSON.parse(raw) as Draft;
+ validateCanvas(d.base.canvas);d.cards.forEach(validateDraftCard);d.edges?.forEach(parseEdge);d.extras?.forEach(parseExtra);d.base.editorExtras?.forEach(parseExtra);
+ return d;
 }

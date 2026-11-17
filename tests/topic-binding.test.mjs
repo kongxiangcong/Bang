@@ -7,6 +7,8 @@ import {runtimeOperation} from '../runtime/native/runtime.mjs';
 import {generateKeyPairSync,sign,randomUUID} from 'node:crypto';
 import {createServer} from 'node:http';
 import {createCanvasMiddleware} from '../runtime/canvas/http.mjs';
+import {spawnSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
 
 async function fixture(){
  const project=await fs.mkdtemp(path.join(os.tmpdir(),'bang-binding-'));
@@ -31,6 +33,20 @@ test('public topics create one committed board and survive a fresh native owner'
   assert.deepEqual((await runtimeOperation(project,'state',created.id)).canvas,{nodes:[],edges:[]});
   await call('stop');
   assert.deepEqual(await call('topics'),[created]);
+ }finally{await call('stop');await fs.rm(project,{recursive:true,force:true});}
+});
+
+test('failed named topic publication stays discoverable for recovery instead of creating a hidden duplicate',async()=>{
+ const project=await fs.mkdtemp(path.join(os.tmpdir(),'bang-topic-recovery-'));
+ const call=(command,input)=>runtimeOperation(project,command,undefined,input);
+ try{
+  const started=spawnSync(process.execPath,[fileURLToPath(new URL('../runtime/canvas/bang.mjs',import.meta.url)),'start','--project',project],{encoding:'utf8',env:{...process.env,BANG_PUBLICATION_TEST_PROJECT:project,BANG_PUBLICATION_TEST_FAULT:'write:full'}});
+  assert.equal(started.status,0,started.stderr);
+  await assert.rejects(call('topic-create',{name:'待恢复专题'}),/Save blocked/);
+  const topics=await call('topics');assert.equal(topics.length,1);assert.equal(topics[0].name,'待恢复专题');
+  await call('stop');
+  assert.deepEqual((await runtimeOperation(project,'state',topics[0].id)).canvas,{nodes:[],edges:[]});
+  assert.deepEqual(await call('topics'),topics);
  }finally{await call('stop');await fs.rm(project,{recursive:true,force:true});}
 });
 

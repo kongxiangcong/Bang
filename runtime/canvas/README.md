@@ -360,7 +360,7 @@ Received cursor/turn counts/backlog are initially empty/zero; ingestion is ticke
 14 and real Codex/DSH adapters are tickets 24/27. These are not host acceptance.
 
 Validation on Windows / Node v25.8.1 / Chrome headless (2026-11-18):
-- `node --test tests/topic-binding.test.mjs`: six public Runtime/HTTP scenarios;
+- `node --test tests/topic-binding.test.mjs`: seven public Runtime/HTTP scenarios;
   creation and restart, single/multiple selection, concurrent default enable,
   signed proof adversaries/scope, same-session idempotency, stale takeover.
 - `npm --prefix prototypes/whiteboard-integration run build`: passed; existing
@@ -375,3 +375,68 @@ Validation on Windows / Node v25.8.1 / Chrome headless (2026-11-18):
   initially clicked before operation completion; now waits for enabled controls.
 - No real user transcript, paid model, host installation, Linux binding UI,
   screen-reader or full lifecycle/ingestion acceptance is claimed.
+
+## Core review corrections (2026-11-18)
+
+The review's two spec findings are fixed: card deletion checks every relation
+actually removed by its cascade against the deletion's persisted baseline (also
+when a refresh carries an older field overlay). New, relabeled and reconnected
+incident relations therefore block the whole stale save. Acknowledged local
+relation changes use explicit relation deletions with their own field baselines,
+so the page need not refresh merely to delete a relation it just saved.
+
+A shared pure `operations.ts` now orders creations/rewiring before endpoint
+removal and applies card, relation, extra, cascade and stacking changes identically
+in the Runtime, browser acknowledgement and keep-and-merge. It does not mutate its
+input. Conflict/dependency/provenance and publication logic stay in the Runtime;
+draft overlays stay in the browser. Structural dependency groups are validated
+against their final graph; a failed rewire cannot leave its endpoint deletion in
+the legal subset. Explicitly retained relations cannot be silently cascaded away.
+Draft recovery has one parser with existing caller-specific error handling.
+
+Red evidence retained: CLI stale relabel + deletion initially succeeded; HTTP
+rewire + deletion initially failed with missing `fromNode`; an explicit relation
+edit plus endpoint deletion initially silently removed that relation. Real Chrome
+caught two further cases: keep-and-merge grouping lost historical endpoint
+baselines, and deletion after a locally acknowledged label edit was over-rejected.
+Both have passing regression assertions in `canvas-transaction-browser.mjs`.
+The first sandbox run failed with native `spawn UNKNOWN`; authorized native runs
+worked. A test-file generator initially used Windows GBK rather than UTF-8; no
+product result is inferred from that harness failure.
+
+Validation uses synthetic temporary projects, public CLI/HTTP and real Chrome
+pointer/keyboard input, with no API interception or editor state injection.
+An initial 33-test public regression suite passed; final additional relation cases
+cover new attachments/reconnections, both request orders and safe subset intent.
+The TypeScript/production build passed (existing large-chunk warning). Browser
+regressions passed for transactions, native relations, layout, conflicts, draft
+recovery and annotations. Detailed final commands/results are in the local tracker
+`.scratch/collaborative-whiteboard/review-fixes.md`.
+No real model/host roundtrip, physical IME, accessibility or performance claim is
+made. This correction does not close any later implementation tickets.
+## Ticket 05 — recoverable publication (2026-11-18)
+
+Public `recovery-status` and `recover` commands and protected `/api/canvas/:topic/recovery-status` (GET), `/recover` (POST `{expectedHash}`) expose interrupted publication and explicit repair. The browser presents a recovery panel when reading/saving fails. Repair first preserves unknown bytes in a hash-named file beside the Canvas, then completes a pending save or republishes the last committed Canvas. The observed fingerprint must still match; unknown/corrupt content is never silently imported or discarded. This repairs physical publication, not historical version restoration (ticket 23) or external editing merge/import (ticket 35).
+
+Bootstrap and edits now share one protocol: persist SQLite prepared state with FULL synchronous mode; write/fsync a reserved temporary file in the Canvas directory; recheck the baseline hash; atomic rename; confirm topic, immutable revision and operation deduplication together. Linux also fsyncs the directory. Public reads first reconcile known old/new hashes or return `RECOVERY_REQUIRED`/`SAVE_BLOCKED`, never an intermediate state. Old hash retries from durable material; new hash finishes confirmation without applying an operation twice. A confirmed retry returns its original receipt. Native owner retains the OS lock throughout publication. Four bounded attempts with 40ms between retries handle sharing/full-disk failures; the destination is never deleted to make rename work.
+
+Fresh `.bang` roots use the native private-directory boundary (Windows current SID only, Linux 0700); fresh topic directories are 0700 and SQLite/temporary/Canvas/recovery files 0600 on Linux. Existing unrelated project ACLs are not rewritten. Capability tokens remain only in the private connection descriptor, never board state/recovery files. This is not a migration of previously broad data-directory permissions.
+
+Q22 evidence: `tests/canvas-recovery.test.mjs` drives only public CLI/HTTP operations and documented files, actual native daemon kills at prepared/replaced/confirmed for both save and initial generation, fresh-owner reopen, success-receipt durability, unknown/corrupt preservation, fingerprint refusal, real Windows deny-delete sharing handle, and private Linux data. Fault injection replaces only controlled failure sources, not the commit chain: exact-workspace opt-in environment variables `BANG_PUBLICATION_TEST_PROJECT`/`BANG_PUBLICATION_TEST_FAULT`, fixed markers in that workspace, no public fault route or caller-selected write destination. Disk-full and confirm-full are controlled failures, not an actual filled filesystem. `tests/canvas-recovery-browser.mjs` uses real Chrome mouse/input events, protected HTTP, native daemon and filesystem.
+
+TDD failures retained: recovery-status initially rejected Unknown runtime operation; process-kill test initially could not reach the configured prepared phase; HTTP initially lacked the stable RECOVERY_REQUIRED code. Each passed after its corresponding slice. A Python UI edit initially failed decoding UTF-8 under Windows GBK default and was rerun with explicit UTF-8; no partial UI edit resulted.
+
+Validation on Windows 11 / Node 25.8.1: initial recovery/save/history run 21 passed, 1 Linux-only skipped; added real sharing-denial and confirm-full tests 2 passed. Frontend `npm --prefix prototypes/whiteboard-integration run build` passed (existing chunk-size warning). Real headless Chrome recovery, preserved corrupt bytes, edit/save and recovery reopen passed. Ubuntu 24.04.4 WSL2/ext4 with Linux Node 25.8.1, uid 65534: initial recovery suite 13/13 passed, including all process kills and private storage boundaries. Final expanded runs recorded below.
+
+These results establish process-crash recovery on the tested systems, not power-loss durability, filesystem/SQLite cross-file ACID, Windows 10, a standalone Ubuntu release matrix, or actual Codex/DSH host consumption. External programs ignoring the lock can still race the final recheck/rename; arbitrary simultaneous external editing is not promised.
+
+Final expanded Windows command: `node --test tests/canvas-recovery.test.mjs tests/native-runtime.test.mjs tests/canvas-save.test.mjs tests/canvas-history.test.mjs` — **36 passed, 0 failed, 2 Linux-only skipped; 38 total**, 63.5 seconds. Final expanded Linux recovery suite — **14 passed, 0 failed, 1 Windows-only skipped; 15 total**, 33.6 seconds. A final review moved prepared-material validation before both old/new-hash branches; replacement/confirmation/repair regressions were rerun after that change. No power-loss test was performed.
+
+Ticket 13 composition with ticket 05/core review: pending bootstrap topics remain
+discoverable by name after publication failure; selection reconciles their durable
+intent before binding. First binding-created SQLite uses the same Linux 0600 rule.
+An added public failure/reopen test initially found zero topics and now passes.
+Post-merge frontend build passed; seven binding tests pass. Recovery regressions
+passed 14 with one Linux-only skip; the initial combined run retained the new
+red topic-discovery test, then the corrected binding suite passed in full.
+Both real Chrome binding and publication-recovery scenarios passed after the merge.
