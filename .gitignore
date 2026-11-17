@@ -155,3 +155,9 @@
 !/prototypes/whiteboard-integration/src/ProjectBackup.tsx
 !/tests/canvas-backup.test.mjs
 !/tests/canvas-backup-browser.mjs
+# Ticket 15 restricted Organizer and public/browser acceptance.
+!/runtime/canvas/organizer.mjs
+!/runtime/canvas/ORGANIZER.md
+!/prototypes/whiteboard-integration/src/OrganizerPanel.tsx
+!/tests/organizer.test.mjs
+!/tests/organizer-browser.mjs

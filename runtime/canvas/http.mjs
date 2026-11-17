@@ -23,6 +23,8 @@ export function createCanvasMiddleware({project:rootProject}){
     const command={'create-topic':'topic-create',connect:'session-connect',enable:'binding-enable',binding:'binding-status',ingest:'turn-ingest',backfill:'turn-backfill'}[action];
     res.end(JSON.stringify(await runtimeOperation(project,command,undefined,JSON.parse(body))));return;
    }
+   if(action==='organizer-enable'&&req.method==='POST'){res.end(JSON.stringify(await runtimeOperation(project,'organizer-enable',undefined,{topicId:topic})));return;}
+   if(action==='organizer'&&req.method==='GET'){res.end(JSON.stringify(await runtimeOperation(project,'organizer-status',undefined,{topicId:topic})));return;}
    if(req.method==='POST'&&['backup-verify','backup-restore','import-preview','import-canvas','commit','preview','undo','recover'].includes(action)){
     if(!req.headers['content-type']?.startsWith('application/json'))throw Error('JSON content type required');
     req.setEncoding('utf8');let body='';for await(const chunk of req){body+=chunk;if(Buffer.byteLength(body)>(action.startsWith('backup-')?64*1024*1024:1024*1024))throw Error('Patch too large');}
