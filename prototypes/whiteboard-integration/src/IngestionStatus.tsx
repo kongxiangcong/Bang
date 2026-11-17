@@ -1,7 +1,7 @@
 import React,{useEffect,useState} from 'react';
 import {canvasFetch} from './canvas-client';
 type Version={id:string;bindingId:string;turnId:string;versionId:string;current:boolean;processing:string};
-type Answer=Version&{user:{content:string};assistant:{content:string}};
+type Answer=Version&{history:Version[];user:{content:string};assistant:{content:string}};
 type Progress={versions:Version[];received:number;frozen:number;frozenSources:{id:string;turnId:string;versionId:string}[];organized:number;backlog:number;pending:{id:string;turnId:string;versionId:string}[];gaps:{cursor:string;reason:string}[]};
 export function IngestionStatus({topic}:{topic:string}){
  const [progress,setProgress]=useState<Progress|null>(null),[error,setError]=useState(''),[answer,setAnswer]=useState<Answer|null>(null);
@@ -11,7 +11,8 @@ export function IngestionStatus({topic}:{topic:string}){
   setAnswer(null);setProgress(null);if(!topic)return;void refresh();const timer=setInterval(refresh,2000);return()=>{cancelled=true;clearInterval(timer);};
  },[topic]);
  if(!topic)return null;
- const current=answer&&progress?.versions.find(v=>v.bindingId===answer.bindingId&&v.turnId===answer.turnId&&v.current);
+ const visibleHistory=answer?(progress?.versions.filter(v=>v.bindingId===answer.bindingId&&v.turnId===answer.turnId)??[]):[];
+ const current=answer&&(visibleHistory.length>=answer.history.length?visibleHistory:answer.history).find(v=>v.current);
  const labels:Record<string,string>={pending:'待整理',organized:'已整理',superseded:'已被新回答替代',frozen:'还原后冻结',skipped:'已跳过'};
  return <section aria-label="完成轮接收状态">
   {error&&<p role="alert">接收状态暂不可用：{error}；上次显示不代表最新状态。</p>}

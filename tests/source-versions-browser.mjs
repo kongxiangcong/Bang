@@ -11,6 +11,7 @@ import {runtimeOperation} from '../runtime/native/runtime.mjs';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const temp=await fs.mkdtemp(path.join(os.tmpdir(),'bang-binding-browser-'));
 const call=(command,input)=>runtimeOperation(temp,command,undefined,input);
+const model=http.createServer(async(req,res)=>{let raw='';for await(const c of req)raw+=c;const input=JSON.parse(raw);res.end(JSON.stringify({version:1,changes:[{type:'create-card',id:'finding',text:'保留的旧回答结论',conditions:[],uncertainty:'未验证',sources:[input.completedTurns[0].id]}]}));});await new Promise(r=>model.listen(0,'127.0.0.1',r));process.env.BANG_ORGANIZER_ENDPOINT=`http://127.0.0.1:${model.address().port}`;
 const {workspaceId}=await call('start'),{privateKey,publicKey}=generateKeyPairSync('ed25519');
 await call('connector-register',{id:'browser-controlled',host:'controlled-browser',versions:['1'],publicKey:publicKey.export({format:'pem',type:'spki'})});
 async function connect(sessionId){const now=Date.now();const payload=Buffer.from(JSON.stringify({host:'controlled-browser',version:'1',instanceId:'fixture',sessionId,workspaceId,role:'primary',scope:['*'],turnId:'enable-turn',cursor:'start',issuedAt:now,expiresAt:now+300000,nonce:randomUUID()})).toString('base64url');return call('session-connect',{connectorId:'browser-controlled',payload,signature:sign(null,Buffer.from(payload),privateKey).toString('base64url')});}
@@ -42,8 +43,14 @@ try{
   const payload=Buffer.from(JSON.stringify({host:'controlled-browser',version:'1',instanceId:'fixture',sessionId:'current-A',workspaceId,role:'primary',scope:['*'],turnId:'enable-turn',cursor:'start',issuedAt:now,expiresAt:now+300000,nonce:randomUUID(),purpose:'completed-turn-ingestion',sourceId:binding.source.id,batchHash:digest(JSON.stringify(batch))})).toString('base64url');
   return call('turn-ingest',{batch,proof:{connectorId:'browser-controlled',payload,signature:sign(null,Buffer.from(payload),privateKey).toString('base64url')}});
  }
+ await button('启用后台整理');
  await ingest('enable-turn','c1','start');
+ await until(async()=>(await call('turn-status',{topicId:id})).organized===1);
+ await call('organizer-control',{topicId:id,action:'pause'});
  await ingest('enable-turn','c2','c1','v2');
+ await button('刷新');
+ await until(()=>evaluate(`document.querySelector('[aria-label="依据复核"]')?.textContent.includes('依据待复核')`));
+ assert.equal((await runtimeOperation(temp,'state',id)).canvas.nodes.find(n=>n.id==='finding').text,'保留的旧回答结论');
  await until(()=>evaluate(`document.querySelector('[aria-label="来源版本历史"]')!==null`));
  await evaluate(`document.querySelector('[aria-label="来源版本历史"]').open=true`);
  await button('查看回答 enable-turn / v1');
@@ -54,6 +61,6 @@ try{
  await call('stop');await cmd('Page.reload');
  await until(()=>evaluate(`document.querySelector('[aria-label="来源版本历史"]')?.textContent.includes('当前回答')`));
  assert.equal((await call('turn-status',{topicId:id})).received,2);
- console.log('PASS real Chrome historical/current answer selection, preserved text, superseded processing and Runtime reopen');}finally{if(ws)ws.close();chrome.kill();await new Promise(r=>server.close(r));await call('stop');await delay(800);await fs.rm(temp,{recursive:true,force:true,maxRetries:5,retryDelay:200});}
+ console.log('PASS real Chrome historical/current answer selection, preserved text, source replacement needs-review, preserved body and Runtime reopen');}finally{if(ws)ws.close();chrome.kill();model.closeAllConnections();await new Promise(r=>model.close(r));delete process.env.BANG_ORGANIZER_ENDPOINT;await new Promise(r=>server.close(r));await call('stop');await delay(800);await fs.rm(temp,{recursive:true,force:true,maxRetries:5,retryDelay:200});}
 
 

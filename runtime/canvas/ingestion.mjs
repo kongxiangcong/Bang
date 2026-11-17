@@ -106,6 +106,9 @@ export function turnStatus(project,input){
  const db=open(project);try{
   const topic=input?.topicId??'',rows=db.prepare('SELECT s.id,s.binding,s.turn_id,s.version_id,s.source_hash,s.body,q.state FROM completed_sources s JOIN ingestion_queue q ON q.source_id=s.id WHERE s.topic=? ORDER BY s.rowid').all(topic);
   const versions=rows.map((s,i)=>({id:s.id,bindingId:s.binding,turnId:s.turn_id,versionId:s.version_id,sourceHash:s.source_hash,processing:s.state,current:JSON.parse(s.body).current??!rows.slice(i+1).some(n=>n.binding===s.binding&&n.turn_id===s.turn_id)}));
+  // Legacy rows predate explicit current flags. Their last received version is
+  // current, and an obsolete pending version must never be scheduled again.
+  versions.forEach((v,i)=>{if(!v.current&&rows[i].state==='pending'){rows[i].state='superseded';v.processing='superseded';}});
   return {versions,received:rows.length,frozen:rows.filter(s=>s.state==='frozen').length,frozenSources:rows.filter(s=>s.state==='frozen').map(s=>({id:s.id,bindingId:s.binding,turnId:s.turn_id,versionId:s.version_id,sourceHash:s.source_hash})),organized:rows.filter(s=>s.state==='organized').length,backlog:rows.filter(s=>s.state==='pending').length,pending:rows.filter(s=>s.state==='pending').map(s=>({id:s.id,bindingId:s.binding,turnId:s.turn_id,versionId:s.version_id,sourceHash:s.source_hash})),gaps:db.prepare('SELECT binding AS bindingId,cursor,reason FROM ingestion_gaps WHERE topic=? ORDER BY rowid').all(topic),ignored:db.prepare('SELECT binding AS bindingId,cursor,reason FROM ingestion_ignored WHERE topic=? ORDER BY rowid').all(topic)};
  }finally{db.close();}
 }
