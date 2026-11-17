@@ -1,3 +1,4 @@
+import {revisionState,revisionList,boardDiff,parseUndo,compensate} from './history.mjs';
 import {parseEdge,relationFields,semanticRelations} from './relations.ts';
 import {validateResources,resourceStatus} from './resources.mjs';
 import fs from 'node:fs';
@@ -75,8 +76,10 @@ export async function previewBoard(project,topic,value){
 export async function readHead(project,topic){const state=await readCommitted(project,topic);return {revision:state.revision};}
 // Native Runtime ownership supplies the single writer; synchronous publication
 // keeps comparison and publication together without another request interleaving.
-export async function commitBoard(project,topic,value){
- const patch=parsePatch(value),file=topicPath(project,topic);if(patch.topic!==topic)throw Error('Patch topic mismatch');
+export async function commitBoard(project,topic,value){return publishPatch(project,topic,value,false);}
+export async function undoBoard(project,topic,value){return publishPatch(project,topic,value,true);}
+async function publishPatch(project,topic,value,undo){
+ const patch=undo?parseUndo(value):parsePatch(value),file=topicPath(project,topic);if(patch.topic!==topic)throw Error('Patch topic mismatch');
  const db=open(project);const request=JSON.stringify(patch);
  try{
   const prior=db.prepare('SELECT * FROM intents WHERE topic=? AND operation=?').get(topic,patch.operationId);
@@ -84,9 +87,12 @@ export async function commitBoard(project,topic,value){
   if(db.prepare("SELECT 1 FROM intents WHERE topic=? AND status='prepared'").get(topic))throw Error('Prepared publication requires recovery');
   const row=db.prepare('SELECT * FROM topics WHERE topic=?').get(topic);if(!row)throw Error('Unknown topic');
   if(hash(fs.readFileSync(file))!==row.hash)throw Error('Canvas externally changed; refusing overwrite');
+  let next;
+  if(undo)next=compensate(db,topic,patch,JSON.parse(row.state));
+  else {
   const preview=inspectPatch(db,topic,patch,row,project);
   if(preview.conflicts.length)throw Object.assign(Error('Baseline conflict; full draft retained'),{preview});
-  const next=JSON.parse(row.state);next.revision++;
+  next=JSON.parse(row.state);next.revision++;
   for(const dependency of patch.readDependencies)if(![...next.canvas.nodes,...next.canvas.edges].some(n=>n.id===dependency))throw Error('Missing read dependency');
   const touched=new Set();
   for(const op of patch.operations){
@@ -102,6 +108,7 @@ export async function commitBoard(project,topic,value){
     const source=layoutOnly?previous.source:{kind:'manual',authorId:patch.author.id,operationId:patch.operationId};
     Object.defineProperty(next.metadata,identity,{value:{...previous,source,modifiedRevision:next.revision,fields:{...previous.fields,...Object.fromEntries(changed.map(k=>[k,{modifiedRevision:next.revision,authorId:patch.author.id,operationId:patch.operationId}]))}},enumerable:true,configurable:true,writable:true});
    }
+  }
   }
   next.relations=semanticRelations(next.canvas.edges);
   validateCanvas(next.canvas);validateResources(project,next.canvas);
@@ -123,3 +130,8 @@ export async function readResourceStatus(project,topic,id){
  if(!card||card.type!=='file')throw Error('Unknown file resource');
  try{return resourceStatus(project,card.file);}catch{return {status:'blocked'};}
 }
+
+export async function readHistory(project,topic){await readCommitted(project,topic);const db=open(project,true);try{return revisionList(db,topic);}finally{db.close();}}
+export async function previewHistory(project,topic,input){await readCommitted(project,topic);const db=open(project,true);try{return revisionState(db,topic,input?.revision);}finally{db.close();}}
+export async function diffHistory(project,topic,input){await readCommitted(project,topic);const db=open(project,true);try{return boardDiff(revisionState(db,topic,input?.fromRevision),revisionState(db,topic,input?.toRevision));}finally{db.close();}}
+

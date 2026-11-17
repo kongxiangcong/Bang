@@ -236,3 +236,37 @@ These are real browser/native Runtime persistence tests with synthetic cards. Ne
 
 
 Final integration check: merged relation final `7cb3e38` and integration `034b46c`; the 8 layout/relation public tests and TypeScript/Vite build passed. Both `canvas-layout-browser.mjs` and `canvas-relations-browser.mjs` passed on the combined tree, including actual endpoint drag A→B to A→C. The working tree was clean at the integration check.
+
+## Ticket 12: revision history and committed undo
+
+Public CLI `history`, `history-preview` (stdin `{revision}`), `history-diff`
+(stdin `{fromRevision,toRevision}`), and `undo` use the native owner. Protected
+browser routes expose the same read-only previews and explicit POST compensation.
+Undo requests identify the target revision, operationId, topic, manual author,
+and `intent: "undo-committed"`. Only the original author can compensate a revision;
+this is the same single-workspace local capability trust boundary as manual save,
+not a multi-user login system. Retrying an identical request returns its receipt.
+
+History UI is separate from current page state and input undo. It exposes stable
+revision/operation identity, complete committed snapshots and field differences
+including content, relation endpoints/semantics, provenance, layout/order and any
+persisted editor extras. Committed undo creates a new revision. It reverses only
+the affected fields and checks later revisions for conflicting writes (including
+change-away-and-back), preserving unrelated later content. Deleted cards and their
+cascaded relations/metadata can be restored with the same identities exclusively
+through compensation; ordinary create still rejects previously used identities.
+Deletion intent audit history remains retained. Graph/resource validation and the
+existing prepared/publication transaction apply before confirmation. Full version
+restoration and queue invalidation remain ticket 23.
+
+Validation (Windows 11, Node v25.8.1, actual Chrome headless):
+- `node --test tests/canvas-history.test.mjs`: 4 public native CLI/HTTP cases passed;
+  initial history and undo tests failed with unknown runtime operation before code.
+- `npm --prefix prototypes/whiteboard-integration run build`: passed (existing
+  large-bundle warning).
+- `node tests/canvas-history-browser.mjs`: actual keyboard/pointer save, history
+  preview/diff, own committed undo, manual refresh, reload, delete/undo identity
+  recovery passed. No application state injection.
+- Existing save/conflict/relation/layout public regressions: 14 passed.
+- No actual model/host integration, Windows 10/Linux, physical IME, accessibility
+  audit, 10,000-revision latency or full restore acceptance is claimed here.
