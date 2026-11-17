@@ -1,0 +1,32 @@
+✔ file and link cards save as standard Canvas and reopen with complete raw text (1919.446046ms)
+✔ unsafe resources fail atomically without echoing credentials; symlink escapes cannot save (5488.537214ms)
+✔ resource status changes to missing after removal and blocks a replaced junction (1249.830611ms)
+✔ headless generation preserves exact body, stable identity, geometry and array stacking through a fresh runtime read (1378.642401ms)
+✔ compiler is deterministic and pure, and rejects invalid standard geometry and duplicate identity (1.659599ms)
+✔ invalid generation creates no current file and generation cannot overwrite an existing topic (1659.533424ms)
+✔ HTTP read exposes the generated standard Canvas without writes, and rejects mutations (1205.815658ms)
+✔ explicit save returns an idempotent receipt and reopens manual knowledge at the committed revision (1662.209866ms)
+✔ edit/delete and whole-patch validation preserve committed state on conflicts (3000.511816ms)
+✔ HTTP explicit patch publishes the same revision exposed by public state (1092.39343ms)
+✔ project daemon reuses ownership across CLI launches and survives independent clients (2695.157944ms)
+✔ browser proxy rejects missing capability, forged Host and foreign Origin before reading board (1284.341381ms)
+✔ different projects isolate writes and capabilities; daemon loss releases ownership with a fresh epoch (3173.869621ms)
+✔ stale discovery does not steal a live OS lock (6490.552022ms)
+✔ helper death closes an in-flight client before a new owner can commit (2107.618469ms)
+﹣ read-only installation keeps runtime state in the private project directory (0.183027ms) # SKIP
+✔ Linux read-only installation runs without a compiler and keeps discovery private (1061.894846ms)
+✔ simultaneous public starts converge on one native writer (1062.353414ms)
+✔ split UTF-8 request bodies retain exact Chinese text at both public HTTP boundaries (1426.198899ms)
+✔ failed public start reports bounded nonsecret startup stage and exit code (476.63666ms)
+✔ rapid public stop and restart preserves ownership and saved data (13003.240243ms)
+✔ native setup failure reports OS error stage without exposing project paths (379.317204ms)
+﹣ restart waits for transient Windows discovery sharing conflict (0.232669ms) # SKIP
+﹣ restart bounds persistent Windows discovery sharing conflict (0.078878ms) # SKIP
+ℹ tests 24
+ℹ suites 0
+ℹ pass 21
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 3
+ℹ todo 0
+ℹ duration_ms 33304.749454

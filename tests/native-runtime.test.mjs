@@ -68,6 +68,22 @@ test('read-only installation keeps runtime state in the private project director
 
 
 
+test('Linux read-only installation runs without a compiler and keeps discovery private',{skip:process.platform!=='linux'},async()=>{
+ assert.notEqual(process.getuid(),0,'run this acceptance test as an unprivileged user');
+ const temp=await fs.mkdtemp(path.join(os.tmpdir(),'bang-linux-readonly-')),install=path.join(temp,'只读 安装'),project=path.join(temp,'项目 数据');
+ await fs.mkdir(install);await fs.mkdir(project);
+ async function permissions(dir,readonly){for(const entry of await fs.readdir(dir,{withFileTypes:true})){const item=path.join(dir,entry.name);if(entry.isDirectory())await permissions(item,readonly);else await fs.chmod(item,readonly?(entry.name==='lock-host'?0o555:0o444):0o600);}await fs.chmod(dir,readonly?0o555:0o700);}
+ try{
+  await fs.cp(new URL('../runtime/',import.meta.url),path.join(install,'runtime'),{recursive:true});await permissions(install,true);
+  await assert.rejects(fs.writeFile(path.join(install,'probe'),'denied'),{code:'EACCES'});
+  const result=spawnSync(process.execPath,[path.join(install,'runtime/canvas/bang.mjs'),'generate','--project',project,'--topic','demo'],{env:{...process.env,PATH:'/no-compiler'},input:JSON.stringify({cards:[]}),encoding:'utf8',timeout:15000});
+  assert.equal(result.status,0,result.stderr);assert.deepEqual(run(project,'read').nodes,[]);
+  const privateRoot=path.join(project,'.bang/runtime');assert.equal((await fs.stat(privateRoot)).mode&0o777,0o700);
+  for(const file of ['connection.json','workspace.json','writer.lock'])assert.equal((await fs.stat(path.join(privateRoot,file))).mode&0o777,0o600,file);
+  assert.deepEqual(await fs.readdir(install),['runtime']);
+ }finally{try{run(project,'stop');}finally{await permissions(install,false);await fs.rm(temp,{recursive:true,force:true});}}
+});
+
 test('simultaneous public starts converge on one native writer',async()=>{
  const p=await fs.mkdtemp(path.join(os.tmpdir(),'bang-race-'));
  try{const starts=await Promise.all(Array.from({length:6},()=>new Promise((resolve,reject)=>{const child=spawn(process.execPath,[cli,'start','--project',p],{windowsHide:true});let out='',err='';child.stdout.on('data',b=>out+=b);child.stderr.on('data',b=>err+=b);child.on('error',reject);child.on('close',code=>code===0?resolve(JSON.parse(out)):reject(Error(err)));const timeout=setTimeout(()=>{child.kill();reject(Error('start deadline'));},15000);child.on('close',()=>clearTimeout(timeout));})));
