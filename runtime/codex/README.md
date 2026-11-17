@@ -30,6 +30,7 @@ After reviewing those files, install **only in the isolated acceptance project**
 
 ```powershell
 New-Item -ItemType Directory -Force D:/dsh-proj/Bang/.scratch/codex-24-acceptance/.codex
+if (Test-Path -LiteralPath D:/dsh-proj/Bang/.scratch/codex-24-acceptance/.codex/hooks.json) { throw 'Existing hooks must be preserved and merged explicitly' }
 Copy-Item -LiteralPath D:/dsh-proj/Bang/.scratch/codex-24-acceptance/.scratch/codex-hook-review/hooks.json -Destination D:/dsh-proj/Bang/.scratch/codex-24-acceptance/.codex/hooks.json
 & $env:CODEX_APP_RUNTIME_CLI_PATH -C D:/dsh-proj/Bang/.scratch/codex-24-acceptance
 ```
@@ -53,3 +54,5 @@ Remaining gates: normal hook trust/execution on pinned native host, correct host
 Primary references: [official hooks](https://learn.chatgpt.com/docs/hooks) for review and unstable transcript/Stop semantics; [public App Server](https://learn.chatgpt.com/docs/app-server) for read-only paginated stored history. Local generated version-pinned types, rather than latest docs alone, determined this implementation's field names. Prior read-only reports: `native-host-exploration.md` and `executor-readiness.md` in the task's visualization directory; new observations above supersede only their missing public-read route, not their real-acceptance limits.
 
 Source implementation commit: `db6156b` (subsequent integration/review corrections remain on `codex/whiteboard-24`). Merged ticket36 integration `a083c67`; overlapping CLI command lists and native owner declarations preserve both backup and watcher behavior. Final Windows connector/ingestion/binding suite: **18 passed**.
+
+Final post-merge Linux controlled adapter rerun: **5 passed**. Ticket36 backup regression: **4 passed**. No frontend UI changed in this ticket, so no new browser acceptance is claimed.
