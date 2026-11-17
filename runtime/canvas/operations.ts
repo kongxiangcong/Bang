@@ -1,4 +1,4 @@
-import {editableFields,type BoardOperation,type Canvas,type EditorExtra} from './contract.ts';
+import {editableFields,type BoardOperation,type Canvas,type EditorExtra,type CanvasImportOperation} from './contract.ts';
 import {relationFields} from './relations.ts';
 
 export const operationIdentity=(op:BoardOperation):string=>op.type==='create-card'?op.card.id:op.type==='create-relation'?op.edge.id:op.type==='create-extra'?op.extra.id:op.id;
@@ -9,8 +9,9 @@ export function orderOperations(operations:BoardOperation[]):BoardOperation[]{
 }
 // Pure application: no input mutation, validation, I/O or collaboration bookkeeping.
 // Draft merging may already have lost a deleted object to a remote cascade.
-export function applyOperation<T extends {canvas:Canvas;editorExtras?:EditorExtra[]}>(input:T,op:BoardOperation):T{
+export function applyOperation<T extends {canvas:Canvas;editorExtras?:EditorExtra[]}>(input:T,op:BoardOperation|CanvasImportOperation):T{
  const board=structuredClone(input);
+ if(op.type==='replace-canvas'){board.canvas=structuredClone(op.canvas);return board;}
  const id=operationIdentity(op),extra=op.type.endsWith('extra'),relation=op.type.endsWith('relation');
  const objects:any[]=extra?(board.editorExtras??=[]):relation?board.canvas.edges:board.canvas.nodes;
  const index=objects.findIndex(object=>object.id===id);

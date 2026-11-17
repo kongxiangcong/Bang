@@ -21,12 +21,13 @@ export function createCanvasMiddleware({project}){
     const command={'create-topic':'topic-create',connect:'session-connect',enable:'binding-enable',binding:'binding-status'}[action];
     res.end(JSON.stringify(await runtimeOperation(project,command,undefined,JSON.parse(body))));return;
    }
-   if(req.method==='POST'&&['commit','preview','undo','recover'].includes(action)){
+   if(req.method==='POST'&&['import-preview','import-canvas','commit','preview','undo','recover'].includes(action)){
     if(!req.headers['content-type']?.startsWith('application/json'))throw Error('JSON content type required');
     req.setEncoding('utf8');let body='';for await(const chunk of req){body+=chunk;if(Buffer.byteLength(body)>1024*1024)throw Error('Patch too large');}
     res.end(JSON.stringify(await runtimeOperation(project,action,topic,JSON.parse(body))));return;
    }
    if(req.method!=='GET'){res.statusCode=405;res.end(JSON.stringify({error:'Use explicit commit endpoint'}));return;}
+   if(action==='export-canvas'){res.end(JSON.stringify(await runtimeOperation(project,action,topic)));return;}
    if(action==='recovery-status'){res.end(JSON.stringify(await runtimeOperation(project,'recovery-status',topic)));return;}
    if(action==='history'){res.end(JSON.stringify(await runtimeOperation(project,'history',topic)));return;}
    if(action==='history-preview'||action==='history-diff'){const input=action==='history-preview'?{revision:Number(url.searchParams.get('revision'))}:{fromRevision:Number(url.searchParams.get('from')),toRevision:Number(url.searchParams.get('to'))};res.end(JSON.stringify(await runtimeOperation(project,action,topic,input)));return;}
@@ -34,7 +35,7 @@ export function createCanvasMiddleware({project}){
    if(action==='head'){res.end(JSON.stringify(await runtimeOperation(project,'head',topic)));return;}
    if(action&&action!=='state')throw Error('Unknown route');
    res.end(JSON.stringify(await runtimeOperation(project,action==='state'?'state':'read',topic)));
-  }catch(error){res.statusCode=error.code==='ENOENT'?404:/conflict|reused|recovery|externally/.test(error.message)?409:400;res.end(JSON.stringify({error:error.message,preview:error.preview,code:error.code}));}
+  }catch(error){res.statusCode=error.code==='ENOENT'?404:error.code==='RECOVERY_REQUIRED'?409:/conflict|reused|recovery|externally/.test(error.message)?409:400;res.end(JSON.stringify({error:error.message,preview:error.preview,code:error.code}));}
  };
 }
 
