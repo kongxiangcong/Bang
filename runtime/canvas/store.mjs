@@ -87,7 +87,7 @@ export async function commitBoard(project,topic,value){
   const preview=inspectPatch(db,topic,patch,row,project);
   if(preview.conflicts.length)throw Object.assign(Error('Baseline conflict; full draft retained'),{preview});
   const next=JSON.parse(row.state);next.revision++;
-  for(const dependency of patch.readDependencies)if(!next.canvas.nodes.some(n=>n.id===dependency))throw Error('Missing read dependency');
+  for(const dependency of patch.readDependencies)if(![...next.canvas.nodes,...next.canvas.edges].some(n=>n.id===dependency))throw Error('Missing read dependency');
   const touched=new Set();
   for(const op of patch.operations){
    const identity=op.type==='create-card'?op.card.id:op.type==='create-relation'?op.edge.id:op.id;

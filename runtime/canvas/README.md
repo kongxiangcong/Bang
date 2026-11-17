@@ -216,3 +216,21 @@ The DOM-free layout compiler uses deterministic 320 px width, bounded 120–600 
 - `node tests/canvas-draft-browser.mjs` and `node tests/canvas-conflicts-browser.mjs`: passed. Draft test initially reused a stale viewport after full reload; fixed it to read the actual current viewport before dragging (local nonoverlap placement changes reload framing). Existing two-tab draft/Chromium IME and manual refresh/viewport coverage retained.
 
 TDD evidence: layout public save first rejected Empty edit, compiler missing geometry and reordered/reduced active context first failed; corresponding slices passed after implementation. Sandboxed native launch failed spawn UNKNOWN; approved native execution passed. No Linux/Windows 10, physical IME, real Codex/DSH or performance/quality claims are made by this ticket.
+
+## Ticket 08 — semantic relation editing
+
+Implemented standard JSON Canvas edges and a semantic projection derived from those exact endpoints. Public `create-relation`, `edit-relation`, `delete-relation` operations share card patch publication, field baselines, conflict preview and explicit save. Edge label, ends, sides and original text survive reopen; blank labels classify as `related`, nonempty labels as `unclassified` (including bidirectional arrows, with no inferred mutual support). Card deletion removes incident relations and metadata in the same prepared publication. `deletionIntents` preserve deleted objects, revision and author; historical identities cannot be reused and a stale baseline cannot recreate a deleted endpoint pair under a fresh identity. Current explicit user creation after reading the deletion remains possible. Edge read dependencies reject stale semantic assumptions.
+
+The Excalidraw bridge reads actual start/end bindings after pointer release; only arrows bound to two knowledge cards become semantic relations. The side panel also supports create, endpoint selection, reverse, label and delete. Edges participate in browser-local draft recovery, field acknowledgements, manual refresh and conflict-preserving merge. This ticket does not implement durable annotation serialization or arbitrary route-point exchange (ticket 10 / export work).
+
+Validation on Windows 11, Node v25.8.1, installed Chrome, Excalidraw 0.18.1:
+
+- TDD red evidence: new relation public test failed `Unknown board operation`; deletion test then failed because a stale fresh-ID edge was accepted; edge dependency test failed `Missing read dependency`. Implementations made each pass. Initial sandbox-only run failed `spawn UNKNOWN`; authorized native-process runs provide the actual results.
+- `node --test tests/canvas-relations.test.mjs`: 4 public CLI/HTTP tests pass, including fresh Runtime reopen, cascade atomicity, durable deletion intent, current/stale relation dependencies, endpoint conflict preview, independent label merge, dangling endpoint rejection.
+- Combined `canvas-relations`, `canvas-conflicts`, `canvas-save`, `canvas-runtime`, `canvas-resources`, `native-runtime` suites: 29 tests passed before adding the fourth relation test; final relation suite separately passed 4/4.
+- `npm --prefix prototypes/whiteboard-integration run build`: TypeScript/Vite pass (existing large bundle advisory remains).
+- `node tests/canvas-relations-browser.mjs`: real headless Chrome pointer selection and endpoint drag A→B to A→C, verifies unchanged committed endpoint before save, reload/recover edge draft, explicit save and reopen, public semantic endpoint C, custom original label, reversal, deletion and unbound-arrow non-semantic behavior. Uses read-only scene/viewport inspection to locate mouse coordinates; no API interception or editor state injection. Screenshot `canvas-relations-browser.png` is local evidence, not a committed binary.
+- `node tests/canvas-conflicts-browser.mjs` and `node tests/canvas-draft-browser.mjs`: pass existing real-browser manual refresh, conflict/subset, viewport and draft isolation flows against relation-aware helpers.
+
+These are real browser/native Runtime persistence tests with synthetic cards. Next-turn Organizer/host consumption is not yet implemented here; no claim of T03/T04 full real-host acceptance, Win10/Linux validation, physical IME, or model semantic use.
+
