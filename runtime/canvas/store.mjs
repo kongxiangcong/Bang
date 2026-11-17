@@ -1,3 +1,4 @@
+import {applyOperation as applyParsedOperation,orderOperations,operationIdentity} from './operations.ts';
 import {revisionState,revisionList,boardDiff,parseUndo,compensate} from './history.mjs';
 import {parseEdge,relationFields,semanticRelations} from './relations.ts';
 import {validateResources,resourceStatus} from './resources.mjs';
@@ -28,13 +29,11 @@ export async function generateBoard(project,topic,input){
  const state={revision:0,canvas:board,relations:semanticRelations(board.edges),deletionIntents:[],editorExtras:[],metadata:Object.fromEntries([...board.nodes,...board.edges].map(n=>[n.id,{source:{kind:'bootstrap'},modifiedRevision:0}]))},db=open(project);
  try{db.exec('BEGIN IMMEDIATE');db.prepare('INSERT INTO topics VALUES(?,?,?,?)').run(topic,0,JSON.stringify(state),hash(bytes(board)));db.prepare('INSERT INTO revisions VALUES(?,?,?)').run(topic,0,JSON.stringify(state));db.exec('COMMIT');}finally{db.close();}return board;
 }
-function applyOperation(canvas,op){
- if(op.type.endsWith('relation')){const i=canvas.edges.findIndex(e=>e.id===op.id);if(op.type==='create-relation')canvas.edges.push(parseEdge(op.edge));else if(op.type==='delete-relation')canvas.edges.splice(i,1);else for(const field of relationFields)if(op[field]!==undefined)canvas.edges[i][field]=op[field];return;}
- const id=op.type==='create-card'?op.card.id:op.id,index=canvas.nodes.findIndex(n=>n.id===id);
- if(op.type==='create-card')canvas.nodes.push(parseCard(op.card));
- else if(op.type==='delete-card'){canvas.nodes.splice(index,1);canvas.edges=canvas.edges.filter(e=>e.fromNode!==id&&e.toNode!==id);}
- else for(const field of editableFields)if(op[field]!==undefined)canvas.nodes[index][field]=op[field];
- if(op.zIndex!==undefined){const ranks=new Map(canvas.nodes.map((node,i)=>[node.id,node.zIndex??i]));canvas.nodes.sort((a,b)=>ranks.get(a.id)-ranks.get(b.id));}
+// Persistence canonicalizes newly supplied objects; draft merging deliberately
+// permits incomplete resource strings until an explicit save validates them.
+function applyOperation(board,op){
+ const parsed=op.type==='create-card'?{...op,card:parseCard(op.card)}:op.type==='create-relation'?{...op,edge:parseEdge(op.edge)}:op;
+ return applyParsedOperation(board,parsed);
 }
 // All comparisons use persisted historical fields, including local acknowledged overlays.
 function inspectPatch(db,topic,patch,row,project){
@@ -46,10 +45,10 @@ function inspectPatch(db,topic,patch,row,project){
   if(op.type.endsWith('extra')){
    const id=op.extra?.id??op.id,now=(current.editorExtras??[]).find(e=>e.id===id),old=(baseline(op.fieldRevisions?.element??patch.baseRevision).editorExtras??[]).find(e=>e.id===id);
    const failed=touched.has('extra:'+id)||dependencyConflict||(op.type==='create-extra'?!!now:!now||JSON.stringify(old)!==JSON.stringify(now));touched.add('extra:'+id);
-   if(failed)conflicts.push({operationIndex,id,field:'element',base:old?.element??null,current:now?.element??null,proposed:op.element??op.extra?.element??null,reason:'Editor element changed'});else legalOperations.push(op);continue;
+   if(failed)conflicts.push({operationIndex,id,field:'element',base:old?.element??null,current:now?.element??null,proposed:op.element??op.extra?.element??null,reason:'Editor element changed'});continue;
   }
   const relation=op.type.endsWith('relation'),collection=relation?'edges':'nodes',creating=op.type.startsWith('create-'),deleting=op.type.startsWith('delete-');
-  const id=creating?(relation?op.edge.id:op.card.id):op.id,now=current.canvas[collection].find(n=>n.id===id),before=conflicts.length;
+  const id=creating?(relation?op.edge.id:op.card.id):op.id,now=current.canvas[collection].find(n=>n.id===id);
   const conflict=(field,base,current,proposed,reason)=>conflicts.push({operationIndex,id,field,base:base??null,current:current??null,proposed:proposed??null,reason});
   if(touched.has(id))conflict('id',id,id,id,'Repeated object operation');touched.add(id);
   if(dependencyConflict)conflict('$dependency',null,null,null,'Read dependency changed');
@@ -66,10 +65,43 @@ function inspectPatch(db,topic,patch,row,project){
    for(const field of fields){const old=baseline(op.fieldRevisions?.[field]??patch.baseRevision).canvas[collection].find(n=>n.id===id);if(!old||old[field]!==now[field])conflict(field,old?.[field],now[field],op.type==='delete-card'?null:op[field],'Field changed');}
    if(op.type==='edit-card'&&((op.file!==undefined&&now.type!=='file')||(op.url!==undefined&&now.type!=='link')))conflict('type',null,now.type,null,'Resource type mismatch');
   }
-  if(conflicts.length===before){
-   try{const candidate=structuredClone(current.canvas);for(const accepted of [...legalOperations,op])if(!accepted.type.endsWith('extra'))applyOperation(candidate,accepted);validateCanvas(candidate);validateResources(project,candidate);legalOperations.push(op);}
-   catch(error){conflict('$constraints',null,null,null,error.message);}
+ }
+ // Group only structural dependencies. A failed rewire must not leave its former
+ // endpoint deletion in a supposedly safe subset. Independent field edits survive.
+ const groups=patch.operations.map((op,i)=>new Set([i]));
+ const join=(a,b)=>{const combined=new Set([...groups[a],...groups[b]]);for(const i of combined)groups[i]=combined;};
+ for(const [i,card] of patch.operations.entries())if(card.type==='create-card'||card.type==='delete-card'){
+  const id=operationIdentity(card);
+  for(const [j,relation] of patch.operations.entries())if(relation.type.endsWith('relation')){
+   const edgeId=operationIdentity(relation),old=original.canvas.edges.find(e=>e.id===edgeId),now=current.canvas.edges.find(e=>e.id===edgeId);
+   const proposed=relation.type==='create-relation'?relation.edge:relation;
+   const historical=['id','fromNode','toNode'].map(field=>baseline(relation.fieldRevisions?.[field]??patch.baseRevision).canvas.edges.find(e=>e.id===edgeId));
+   if([old,now,proposed,...historical].some(e=>e&&(e.fromNode===id||e.toNode===id)))join(i,j);
   }
+ }
+ for(const group of new Set(groups)){
+  const reject=(reason)=>{for(const operationIndex of group)if(!conflicts.some(c=>c.operationIndex===operationIndex))conflicts.push({operationIndex,id:operationIdentity(patch.operations[operationIndex]),field:'$constraints',base:null,current:null,proposed:null,reason});};
+  if(conflicts.some(c=>group.has(c.operationIndex))){reject('Dependent operation conflicts; structural intent retained');continue;}
+  const operations=orderOperations([...group].map(i=>patch.operations[i]));let candidate=current;
+  try{
+   for(const accepted of orderOperations(legalOperations))candidate=applyOperation(candidate,accepted);
+   for(const op of operations){
+    if(op.type==='delete-card'){
+     const oldEdges=baseline(op.fieldRevisions?.id??patch.baseRevision).canvas.edges;
+     for(const edge of candidate.canvas.edges.filter(e=>e.fromNode===op.id||e.toNode===op.id)){
+      const old=oldEdges.find(e=>e.id===edge.id),now=current.canvas.edges.find(e=>e.id===edge.id);
+      // New relations intentionally created in this transaction have no competing head.
+      if(now&&JSON.stringify(old)!==JSON.stringify(now)){
+       conflicts.push({operationIndex:patch.operations.indexOf(op),id:op.id,field:'$incidentRelations',base:old??null,current:now,proposed:null,reason:'Incident relation changed since deletion baseline'});
+      }
+     }
+    }
+    candidate=applyOperation(candidate,op);
+   }
+   if(conflicts.some(c=>group.has(c.operationIndex))){reject('Dependent operation conflicts; structural intent retained');continue;}
+   if(operations.some(op=>(op.type==='create-relation'||op.type==='edit-relation')&&!candidate.canvas.edges.some(edge=>edge.id===operationIdentity(op))))throw Error('Explicit relation intent would be removed by endpoint deletion');
+   validateCanvas(candidate.canvas);validateResources(project,candidate.canvas);legalOperations.push(...operations);
+  }catch(error){reject(error.message);}
  }
  // A preview never publishes. A subsequent subset commit repeats every check.
  return {headRevision:row.revision,conflicts,legalOperations};
@@ -101,13 +133,13 @@ async function publishPatch(project,topic,value,undo){
   next=JSON.parse(row.state);next.revision++;
   for(const dependency of patch.readDependencies)if(![...next.canvas.nodes,...next.canvas.edges].some(n=>n.id===dependency))throw Error('Missing read dependency');
   const touched=new Set();
-  for(const op of patch.operations){
-   if(op.type.endsWith('extra')){const extras=next.editorExtras??=[],id=op.extra?.id??op.id,i=extras.findIndex(e=>e.id===id);if(op.type==='create-extra')extras.push(op.extra);else if(op.type==='delete-extra')extras.splice(i,1);else extras[i]={id,element:op.element};continue;}
+  for(const op of orderOperations(patch.operations)){
+   if(op.type.endsWith('extra')){next=applyOperation(next,op);continue;}
    const identity=op.type==='create-card'?op.card.id:op.type==='create-relation'?op.edge.id:op.id;
    if(touched.has(identity))throw Error('Repeated object operation');touched.add(identity);
    const deleted=op.type==='delete-card'?[...next.canvas.edges.filter(e=>e.fromNode===identity||e.toNode===identity),next.canvas.nodes.find(n=>n.id===identity)]:op.type==='delete-relation'?[next.canvas.edges.find(e=>e.id===identity)]:[];
    for(const object of deleted){(next.deletionIntents??=[]).push({id:object.id,object,revision:next.revision,authorId:patch.author.id,operationId:patch.operationId});delete next.metadata[object.id];}
-   applyOperation(next.canvas,op);
+   next=applyOperation(next,op);
    if(op.type.startsWith('delete-'))delete next.metadata[identity];
    else {
     const previous=next.metadata[identity]??{},changed=op.type==='create-card'?Object.keys(op.card):op.type==='create-relation'?Object.keys(op.edge):(op.type==='edit-relation'?relationFields:editableFields).filter(k=>op[k]!==undefined);
