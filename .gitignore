@@ -74,3 +74,16 @@
 !/baselines/whiteboard-v1/performance.json
 !/baselines/whiteboard-v1/performance-dataset.mjs
 !/.gitattributes
+
+# Reviewed ticket 02 headless text Canvas runtime, read-only adapter and tests.
+!/runtime/canvas/
+/runtime/canvas/*
+!/runtime/canvas/contract.ts
+!/runtime/canvas/store.mjs
+!/runtime/canvas/http.mjs
+!/runtime/canvas/bang.mjs
+!/runtime/canvas/README.md
+!/prototypes/whiteboard-integration/canvas.html
+!/prototypes/whiteboard-integration/src/canvas.tsx
+!/tests/canvas-runtime.test.mjs
+!/tests/canvas-browser.mjs
