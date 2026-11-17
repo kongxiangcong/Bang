@@ -14,6 +14,13 @@ export function createCanvasMiddleware({project}){
    if(supplied.length!==expected.length||!timingSafeEqual(supplied,expected)){res.statusCode=403;res.end(JSON.stringify({error:'Browser capability required'}));return;}
    const [topic,action,...extra]=url.pathname.slice('/api/canvas/'.length).split('/').map(decodeURIComponent);
    if(extra.length)throw Error('Unknown route');
+   if(topic==='session'&&action==='topics'&&req.method==='GET'){res.end(JSON.stringify(await runtimeOperation(project,'topics')));return;}
+   if(topic==='session'&&req.method==='POST'&&['create-topic','connect','enable','binding'].includes(action)){
+    if(!req.headers['content-type']?.startsWith('application/json'))throw Error('JSON content type required');
+    req.setEncoding('utf8');let body='';for await(const chunk of req){body+=chunk;if(Buffer.byteLength(body)>20000)throw Error('Binding request too large');}
+    const command={'create-topic':'topic-create',connect:'session-connect',enable:'binding-enable',binding:'binding-status'}[action];
+    res.end(JSON.stringify(await runtimeOperation(project,command,undefined,JSON.parse(body))));return;
+   }
    if(req.method==='POST'&&['commit','preview','undo','recover'].includes(action)){
     if(!req.headers['content-type']?.startsWith('application/json'))throw Error('JSON content type required');
     req.setEncoding('utf8');let body='';for await(const chunk of req){body+=chunk;if(Buffer.byteLength(body)>1024*1024)throw Error('Patch too large');}

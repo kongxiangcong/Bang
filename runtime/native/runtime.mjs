@@ -5,6 +5,7 @@ import {randomUUID,randomBytes,timingSafeEqual} from 'node:crypto';
 import {spawn,spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import * as store from '../canvas/store.mjs';
+import {listTopics,createTopic,registerConnector,connectSession,enableBinding,bindingStatus,bindingSources} from '../canvas/binding.mjs';
 const here=fileURLToPath(import.meta.url);
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 function location(project){const root=fs.realpathSync(project);for(const dir of [path.join(root,'.bang'),path.join(root,'.bang','runtime')]){try{if(fs.lstatSync(dir).isSymbolicLink())throw Error('Runtime path must not be a symbolic link');}catch(error){if(error.code!=='ENOENT')throw error;}}return path.join(root,'.bang','runtime');}
@@ -75,7 +76,7 @@ async function daemon(project){
  const connection={workspaceId:identity.workspaceId,instanceId:randomUUID(),epoch:String(identity.epoch),pid:process.pid,token:randomBytes(32).toString('hex')};
  const status=()=>({status:'running',ownership:'os-handle',workspaceId:connection.workspaceId,instanceId:connection.instanceId,epoch:connection.epoch,pid:process.pid,supervisorPid:process.ppid,url:connection.url});
  const methods={'recovery-status':store.readRecoveryStatus,recover:store.recoverBoard,undo:store.undoBoard,history:store.readHistory,'history-preview':store.previewHistory,'history-diff':store.diffHistory,generate:store.generateBoard,read:store.readBoard,state:store.readCommitted,commit:store.commitBoard,preview:store.previewBoard,head:store.readHead,'resource-status':(project,topic,input)=>store.readResourceStatus(project,topic,input.id)};
- let stopping=false;
+ let stopping=false,operationQueue=Promise.resolve();
  const server=http.createServer(async(req,res)=>{
   res.setHeader('Content-Type','application/json; charset=utf-8');res.setHeader('Cache-Control','no-store');
   try{
@@ -83,10 +84,24 @@ async function daemon(project){
    if(req.headers.host!==new URL(connection.url).host||(req.headers.origin&&req.headers.origin!==connection.url)||supplied.length!==expected.length||!timingSafeEqual(supplied,expected)||req.headers['x-bang-epoch']!==connection.epoch){res.statusCode=403;res.end(JSON.stringify({error:'Runtime capability, Host, Origin or epoch rejected'}));return;}
    if(req.method!=='POST'||req.url!=='/control'||!req.headers['content-type']?.startsWith('application/json')){res.statusCode=400;res.end(JSON.stringify({error:'JSON control request required'}));return;}
    req.setEncoding('utf8');let body='';for await(const chunk of req){body+=chunk;if(Buffer.byteLength(body)>1024*1024)throw Error('Request too large');}
-   const {command,topic,input}=JSON.parse(body);let result;
+   const {command,topic,input}=JSON.parse(body);
+   // One owner queue covers board publication and binding/default creation.
+   // No metadata transaction is held across an asynchronous board operation.
+   const execute=async()=>{let result;
+   if(stopping)throw Error('Runtime stopping');
    if(command==='status')result=status();
    else if(command==='stop'){stopping=true;result={status:'stopped'};}
+   else if(command==='topics')result=listTopics(project);
+   else if(command==='topic-create')result=await createTopic(project,input);
+   else if(command==='connector-register')result=registerConnector(project,input);
+   else if(command==='session-connect')result=connectSession(project,connection.workspaceId,input);
+   else if(command==='binding-enable')result=await enableBinding(project,input,connection.epoch);
+   else if(command==='binding-status')result=bindingStatus(project,input);
+   else if(command==='binding-sources')result=bindingSources(project,input);
    else {if(stopping)throw Error('Runtime stopping');const method=methods[command];if(!Object.hasOwn(methods,command))throw Error('Unknown runtime operation');result=await method(project,topic,input);}
+   return result;};
+   const pending=operationQueue.then(execute);operationQueue=pending.catch(()=>{});
+   const result=await pending;
    res.end(JSON.stringify(result));if(stopping){server.close(()=>process.exit(0));server.closeIdleConnections();}
   }catch(error){res.statusCode=400;res.end(JSON.stringify({error:error.message,preview:error.preview,code:error.code}));}
  });
