@@ -128,3 +128,8 @@
 !/prototypes/whiteboard-integration/src/canvas-relations.ts
 !/tests/canvas-relations.test.mjs
 !/tests/canvas-relations-browser.mjs
+
+# Ticket 10 annotations and native copy acceptance.
+!/tests/canvas-annotations.test.mjs
+!/tests/canvas-annotations-browser.mjs
+!/prototypes/whiteboard-integration/src/canvas-annotations.ts
