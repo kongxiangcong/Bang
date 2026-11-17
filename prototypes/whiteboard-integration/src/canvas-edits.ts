@@ -9,7 +9,7 @@ export function edits(base:CommittedBoard,cards:Card[],overlay:Overlay,edges:Edg
  const operations:BoardOperation[]=[];
  for(const [kind,objects,oldObjects,fields] of [['card',cards,base.canvas.nodes,editableFields],['relation',edges,base.canvas.edges,relationFields]] as const){
   for(const object of objects){const old=oldObjects.find(n=>n.id===object.id);if(!old)operations.push(kind==='card'?{type:'create-card',card:object as Card}:{type:'create-relation',edge:object as Edge});
-   else {const changed=Object.fromEntries(fields.filter(k=>(old as any)[k]!==(object as any)[k]).map(k=>[k,(object as any)[k]]));if(Object.keys(changed).length)operations.push({type:`edit-${kind}`,id:object.id,...changed,fieldRevisions:overlay[object.id]} as BoardOperation);}}
+   else {const changed=Object.fromEntries(fields.filter(k=>JSON.stringify((old as any)[k])!==JSON.stringify((object as any)[k])).map(k=>[k,(object as any)[k]]));if(Object.keys(changed).length)operations.push({type:`edit-${kind}`,id:object.id,...changed,fieldRevisions:overlay[object.id]} as BoardOperation);}}
   for(const old of oldObjects)if(!objects.some(c=>c.id===old.id)){
    // A locally acknowledged relation carries newer field baselines than the
    // displayed board. Other incident edges remain guarded server-side cascades.

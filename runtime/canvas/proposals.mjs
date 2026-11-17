@@ -3,7 +3,7 @@ import {openBindingDatabase} from './binding.mjs';
 import {readCommitted,commitOrganizerBoard,readOperationReceipt} from './store.mjs';
 import {layoutFields} from './contract.ts';
 const digest=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
-export const semanticObject=object=>Object.fromEntries(Object.entries(object).filter(([k])=>!layoutFields.includes(k)));
+export const semanticObject=object=>Object.fromEntries(Object.entries(object).filter(([k])=>k==='structure'||!layoutFields.includes(k)));
 function tasks(project,topic){const db=openBindingDatabase(project);try{return db.prepare('SELECT body FROM organizer_tasks WHERE topic=? ORDER BY rowid').all(topic).map(r=>JSON.parse(r.body));}finally{db.close();}}
 export function proposals(project,topic){return tasks(project,topic).flatMap(t=>(t.proposals??[]).map(({dependencies,...p})=>p));}
 export function makeProposal(project,task,change,current,knowledge,read){
@@ -31,7 +31,7 @@ export async function reviewProposal(project,topic,input){
  if(!receipt){const current=await readCommitted(project,topic);
   if(input.decision==='reject')receipt={status:'rejected',proposalId:proposal.id,revision:current.revision,baseRevision:proposal.baseRevision};
   else {
-   for(const dep of proposal.dependencies){const now=[...current.canvas.nodes,...current.canvas.edges].find(n=>n.id===dep.object.id),metadata=current.metadata[dep.object.id];const semanticFields=Object.keys(dep.object).filter(k=>!layoutFields.includes(k));if(!now||JSON.stringify(semanticObject(now))!==JSON.stringify(dep.object)||JSON.stringify(metadata?.knowledge)!==JSON.stringify(dep.knowledge)||semanticFields.some(k=>(metadata?.fields?.[k]?.modifiedRevision??0)!==(dep.fields?.[k]?.modifiedRevision??0)))throw Object.assign(Error('Proposal baseline conflict; compare fresh evidence'),{code:'PROPOSAL_STALE'});}
+   for(const dep of proposal.dependencies){const now=[...current.canvas.nodes,...current.canvas.edges].find(n=>n.id===dep.object.id),metadata=current.metadata[dep.object.id];const semanticFields=Object.keys(dep.object).filter(k=>k==='structure'||!layoutFields.includes(k));if(!now||JSON.stringify(semanticObject(now))!==JSON.stringify(dep.object)||JSON.stringify(metadata?.knowledge)!==JSON.stringify(dep.knowledge)||semanticFields.some(k=>(metadata?.fields?.[k]?.modifiedRevision??0)!==(dep.fields?.[k]?.modifiedRevision??0)))throw Object.assign(Error('Proposal baseline conflict; compare fresh evidence'),{code:'PROPOSAL_STALE'});}
    receipt=await commitOrganizerBoard(project,topic,{operationId,topic,baseRevision:current.revision,author:{kind:'organizer',id:'organizer:'+task.id},readDependencies:[],intent:'incremental-organize',operations:[proposal.operation]},{taskId:task.id,attemptId:task.attemptId,sourceId:proposal.sourceId,knowledge:{[proposal.operation.id]:{...proposal.knowledge,humanIntent:{proposalId:proposal.id,baseRevision:proposal.baseRevision}}}});
   }
  }
