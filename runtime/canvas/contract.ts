@@ -61,8 +61,13 @@ export type EditorExtra = {id:string;element:Record<string,any>};
 export function parseExtra(value:unknown):EditorExtra {
  const v=value as EditorExtra;id(v?.id);const e=v.element;
  if(!e||typeof e!=='object'||Array.isArray(e)||e.id!==v.id||!['rectangle','ellipse','diamond','line','arrow','text','freedraw','frame','magicframe'].includes(e.type))throw Error('Invalid editor element');
- for(const key of ['x','y','width','height','angle','fontSize','strokeWidth','opacity'])if(e[key]!==undefined&&(typeof e[key]!=='number'||!Number.isFinite(e[key])))throw Error('Invalid editor geometry');
+ for(const key of ['x','y','width','height','angle','fontSize','strokeWidth','opacity','seed','roughness','fontFamily','lineHeight'])if(e[key]!==undefined&&(typeof e[key]!=='number'||!Number.isFinite(e[key])))throw Error('Invalid editor geometry');
  if(e.points!==undefined&&(!Array.isArray(e.points)||e.points.some((p:unknown)=>!Array.isArray(p)||p.length!==2||p.some(n=>typeof n!=='number'||!Number.isFinite(n)))))throw Error('Invalid editor route');
+ if(e.width!==undefined&&e.width<0||e.height!==undefined&&e.height<0)throw Error('Invalid editor size');
+ for(const key of ['strokeColor','backgroundColor','fillStyle','strokeStyle'])if(e[key]!==undefined&&typeof e[key]!=='string')throw Error('Invalid editor style');
+ if(e.boundElements!=null&&(!Array.isArray(e.boundElements)||e.boundElements.some((b:any)=>!b||typeof b.id!=='string'||!['text','arrow'].includes(b.type))))throw Error('Invalid editor binding');
+ for(const key of ['startBinding','endBinding'])if(e[key]!=null&&(typeof e[key]!=='object'||typeof e[key].elementId!=='string'))throw Error('Invalid editor binding');
+ if(e.customData!=null&&(typeof e.customData!=='object'||Array.isArray(e.customData)))throw Error('Invalid editor metadata');
  if(e.link!=null)safeResourceURL(e.link);
  if(e.text!==undefined&&typeof e.text!=='string'||e.originalText!==undefined&&typeof e.originalText!=='string')throw Error('Invalid editor text');
  if(e.groupIds!==undefined&&(!Array.isArray(e.groupIds)||e.groupIds.some((g:unknown)=>typeof g!=='string')))throw Error('Invalid editor groups');

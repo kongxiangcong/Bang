@@ -61,6 +61,7 @@ try{
  await cmd('Page.reload');await until(()=>evaluate('document.querySelectorAll("textarea").length===3'));
  state=await (await canvasRequest(url+'/api/canvas/demo/state')).json();assert.equal(state.relations.length,0);assert.equal(state.deletionIntents[0].id,relationId);
  // An unbound arrow is annotation only, with no semantic save operation.
+ await until(()=>evaluate('!!window.canvasBoard?.snapshot().length'));
  await cmd('Input.dispatchKeyEvent',{type:'keyDown',key:'a',code:'KeyA',windowsVirtualKeyCode:65});await cmd('Input.dispatchKeyEvent',{type:'keyUp',key:'a',code:'KeyA',windowsVirtualKeyCode:65});
  const blank=await evaluate(`(()=>{const v=window.canvasBoard.viewport();return {x:v.offsetLeft+100,y:v.offsetTop+v.height-70}})()`);
  await cmd('Input.dispatchMouseEvent',{type:'mousePressed',x:blank.x,y:blank.y,button:'left',clickCount:1});
@@ -70,6 +71,7 @@ try{
  assert.equal((await (await canvasRequest(url+'/api/canvas/demo/state')).json()).relations.length,0);
  console.log(JSON.stringify({pass:true,evidence:'real Chrome endpoint drag A→B to A→C, draft recover, save/reopen, reverse label delete -> native Runtime'}));
  }finally{ws?.close();chrome.kill();await new Promise(r=>server.close(r));await delay(500);spawnSync(process.execPath,[path.join(root,'runtime/canvas/bang.mjs'),'stop','--project',temp],{encoding:'utf8'});await fs.rm(temp,{recursive:true,force:true,maxRetries:5,retryDelay:200});}
+
 
 
 

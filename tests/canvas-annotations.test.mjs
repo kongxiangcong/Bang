@@ -38,3 +38,14 @@ test('HTTP annotation rejects unsafe links and nonfinite geometry atomically',as
  const r=await canvasRequest(url+'/commit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(patch('unsafe'+i,0,[{type:'create-extra',extra:{id:'good',element:{id:'good',type:'ellipse',angle:0.1}}},{type:'create-extra',extra:{id:'bad',element}}]))});assert.equal(r.status,400);assert.equal(ok(run(p,'state')).revision,0);}
  }finally{if(server)await new Promise(r=>server.close(r));run(p,'stop');await fs.rm(p,{recursive:true,force:true});}
 });
+test('annotation connector becomes semantic only after both endpoints are explicitly converted',async()=>{
+ const p=await fs.mkdtemp(path.join(os.tmpdir(),'bang-conversion-'));
+ try{ok(run(p,'generate',{cards:[]}));const shape=id=>({id,element:{id,type:'rectangle',x:0,y:0,width:100,height:100,angle:0}});
+ ok(run(p,'commit',patch('draw',0,[{type:'create-extra',extra:shape('one')},{type:'create-extra',extra:shape('two')},{type:'create-extra',extra:{id:'line',element:{id:'line',type:'arrow',points:[[0,0],[150,0]],startBinding:{elementId:'one'},endBinding:{elementId:'two'}}}}])));
+ const card=id=>({id,text:id,x:0,y:0,width:100,height:100});
+ ok(run(p,'commit',patch('convert-first',1,[{type:'create-card',card:card('one')}])));assert.deepEqual(ok(run(p,'state')).relations,[]);
+ assert.notEqual(run(p,'commit',patch('premature-edge',2,[{type:'create-relation',edge:{id:'line',fromNode:'one',toNode:'two'}}])).status,0);
+ ok(run(p,'commit',patch('convert-second',2,[{type:'create-card',card:card('two')},{type:'create-relation',edge:{id:'line',fromNode:'one',toNode:'two'}}])));
+ const state=ok(run(p,'state'));assert.equal(state.relations.length,1);assert.equal(state.relations[0].fromNode,'one');assert.equal(state.relations[0].toNode,'two');assert.equal(state.editorExtras.length,3);
+ }finally{run(p,'stop');await fs.rm(p,{recursive:true,force:true});}
+});
