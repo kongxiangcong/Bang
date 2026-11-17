@@ -25,7 +25,7 @@ export async function readCommitted(project,topic){
 export async function generateBoard(project,topic,input){
  const board=compileCanvas(input),file=topicPath(project,topic);validateResources(project,board);fs.mkdirSync(path.dirname(file),{recursive:true});
  fs.writeFileSync(file,bytes(board),{flag:'wx'});
- const state={revision:0,canvas:board,relations:semanticRelations(board.edges),deletionIntents:[],metadata:Object.fromEntries([...board.nodes,...board.edges].map(n=>[n.id,{source:{kind:'bootstrap'},modifiedRevision:0}]))},db=open(project);
+ const state={revision:0,canvas:board,relations:semanticRelations(board.edges),deletionIntents:[],editorExtras:[],metadata:Object.fromEntries([...board.nodes,...board.edges].map(n=>[n.id,{source:{kind:'bootstrap'},modifiedRevision:0}]))},db=open(project);
  try{db.exec('BEGIN IMMEDIATE');db.prepare('INSERT INTO topics VALUES(?,?,?,?)').run(topic,0,JSON.stringify(state),hash(bytes(board)));db.prepare('INSERT INTO revisions VALUES(?,?,?)').run(topic,0,JSON.stringify(state));db.exec('COMMIT');}finally{db.close();}return board;
 }
 function applyOperation(canvas,op){
@@ -43,6 +43,11 @@ function inspectPatch(db,topic,patch,row,project){
  const original=baseline(patch.baseRevision);
  const dependencyConflict=patch.readDependencies.some(id=>{const old=[...original.canvas.nodes,...original.canvas.edges].find(n=>n.id===id),now=[...current.canvas.nodes,...current.canvas.edges].find(n=>n.id===id);return !old||JSON.stringify(old)!==JSON.stringify(now);});
  for(const [operationIndex,op] of patch.operations.entries()){
+  if(op.type.endsWith('extra')){
+   const id=op.extra?.id??op.id,now=(current.editorExtras??[]).find(e=>e.id===id),old=(baseline(op.fieldRevisions?.element??patch.baseRevision).editorExtras??[]).find(e=>e.id===id);
+   const failed=touched.has('extra:'+id)||dependencyConflict||(op.type==='create-extra'?!!now:!now||JSON.stringify(old)!==JSON.stringify(now));touched.add('extra:'+id);
+   if(failed)conflicts.push({operationIndex,id,field:'element',base:old?.element??null,current:now?.element??null,proposed:op.element??op.extra?.element??null,reason:'Editor element changed'});else legalOperations.push(op);continue;
+  }
   const relation=op.type.endsWith('relation'),collection=relation?'edges':'nodes',creating=op.type.startsWith('create-'),deleting=op.type.startsWith('delete-');
   const id=creating?(relation?op.edge.id:op.card.id):op.id,now=current.canvas[collection].find(n=>n.id===id),before=conflicts.length;
   const conflict=(field,base,current,proposed,reason)=>conflicts.push({operationIndex,id,field,base:base??null,current:current??null,proposed:proposed??null,reason});
@@ -51,6 +56,7 @@ function inspectPatch(db,topic,patch,row,project){
   if(creating){
    const existed=db.prepare("SELECT 1 FROM revisions, json_each(revisions.state, '$.canvas.nodes') AS node WHERE topic=? AND json_extract(node.value,'$.id')=? LIMIT 1").get(topic,id);
    const edgeExisted=db.prepare("SELECT 1 FROM revisions, json_each(revisions.state, '$.canvas.edges') AS edge WHERE topic=? AND json_extract(edge.value,'$.id')=? LIMIT 1").get(topic,id);
+   if(op.card?.derivedFrom&&!current.canvas.nodes.some(n=>n.id===op.card.derivedFrom))conflict('derivedFrom',null,null,op.card.derivedFrom,'Unknown derivation source');
    if(existed||edgeExisted)conflict('id',null,now,op.card??op.edge,now?'Identity already exists':'Deleted identity cannot be reused');
    if(relation&&(current.deletionIntents??[]).some(d=>d.revision>patch.baseRevision&&d.object.fromNode===op.edge.fromNode&&d.object.toNode===op.edge.toNode))conflict('$deletion',null,null,op.edge,'Relation deletion intent is newer than baseline');
   }
@@ -61,7 +67,7 @@ function inspectPatch(db,topic,patch,row,project){
    if(op.type==='edit-card'&&((op.file!==undefined&&now.type!=='file')||(op.url!==undefined&&now.type!=='link')))conflict('type',null,now.type,null,'Resource type mismatch');
   }
   if(conflicts.length===before){
-   try{const candidate=structuredClone(current.canvas);for(const accepted of [...legalOperations,op])applyOperation(candidate,accepted);validateCanvas(candidate);validateResources(project,candidate);legalOperations.push(op);}
+   try{const candidate=structuredClone(current.canvas);for(const accepted of [...legalOperations,op])if(!accepted.type.endsWith('extra'))applyOperation(candidate,accepted);validateCanvas(candidate);validateResources(project,candidate);legalOperations.push(op);}
    catch(error){conflict('$constraints',null,null,null,error.message);}
   }
  }
@@ -96,6 +102,7 @@ async function publishPatch(project,topic,value,undo){
   for(const dependency of patch.readDependencies)if(![...next.canvas.nodes,...next.canvas.edges].some(n=>n.id===dependency))throw Error('Missing read dependency');
   const touched=new Set();
   for(const op of patch.operations){
+   if(op.type.endsWith('extra')){const extras=next.editorExtras??=[],id=op.extra?.id??op.id,i=extras.findIndex(e=>e.id===id);if(op.type==='create-extra')extras.push(op.extra);else if(op.type==='delete-extra')extras.splice(i,1);else extras[i]={id,element:op.element};continue;}
    const identity=op.type==='create-card'?op.card.id:op.type==='create-relation'?op.edge.id:op.id;
    if(touched.has(identity))throw Error('Repeated object operation');touched.add(identity);
    const deleted=op.type==='delete-card'?[...next.canvas.edges.filter(e=>e.fromNode===identity||e.toNode===identity),next.canvas.nodes.find(n=>n.id===identity)]:op.type==='delete-relation'?[next.canvas.edges.find(e=>e.id===identity)]:[];
@@ -106,7 +113,7 @@ async function publishPatch(project,topic,value,undo){
     const previous=next.metadata[identity]??{},changed=op.type==='create-card'?Object.keys(op.card):op.type==='create-relation'?Object.keys(op.edge):(op.type==='edit-relation'?relationFields:editableFields).filter(k=>op[k]!==undefined);
     const layoutOnly=op.type==='edit-card'&&changed.every(k=>layoutFields.includes(k));
     const source=layoutOnly?previous.source:{kind:'manual',authorId:patch.author.id,operationId:patch.operationId};
-    Object.defineProperty(next.metadata,identity,{value:{...previous,source,modifiedRevision:next.revision,fields:{...previous.fields,...Object.fromEntries(changed.map(k=>[k,{modifiedRevision:next.revision,authorId:patch.author.id,operationId:patch.operationId}]))}},enumerable:true,configurable:true,writable:true});
+    Object.defineProperty(next.metadata,identity,{value:{...previous,...(op.type==='create-card'&&op.card.derivedFrom?{derivedFrom:op.card.derivedFrom}:{}),source,modifiedRevision:next.revision,fields:{...previous.fields,...Object.fromEntries(changed.map(k=>[k,{modifiedRevision:next.revision,authorId:patch.author.id,operationId:patch.operationId}]))}},enumerable:true,configurable:true,writable:true});
    }
   }
   }

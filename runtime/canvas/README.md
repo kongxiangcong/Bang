@@ -260,7 +260,7 @@ existing prepared/publication transaction apply before confirmation. Full versio
 restoration and queue invalidation remain ticket 23.
 
 Validation (Windows 11, Node v25.8.1, actual Chrome headless):
-- `node --test tests/canvas-history.test.mjs`: 5 public native CLI/HTTP cases passed;
+- `node --test tests/canvas-history.test.mjs`: 6 public native CLI/HTTP cases passed;
   initial history and undo tests failed with unknown runtime operation before code.
 - `npm --prefix prototypes/whiteboard-integration run build`: passed (existing
   large-bundle warning).
@@ -270,3 +270,5 @@ Validation (Windows 11, Node v25.8.1, actual Chrome headless):
 - Existing save/conflict/relation/layout public regressions: 14 passed.
 - No actual model/host integration, Windows 10/Linux, physical IME, accessibility
   audit, 10,000-revision latency or full restore acceptance is claimed here.
+
+Combined with ticket 10 Runtime commit `1570f9d`: 9 history/annotation public tests, build and real Chrome history script passed. Extras sharing a knowledge-card identity compensate in a separate namespace without deleting its provenance; conversion undo restores exact multi-point routes/rotation and copy provenance remains visible in immutable history. An integration typecheck caught the newly extended operation union in the old identity helper; handling create-extra fixed it.
