@@ -23,9 +23,21 @@ export function parseStructure(value:unknown):StructureIntent|null{
  return {version:1,kind:v.kind,rootId:v.rootId};
 }
 const overlaps=(a:Bounds,b:Bounds)=>a.x<b.x+b.width+24&&a.x+a.width+24>b.x&&a.y<b.y+b.height+24&&a.y+a.height+24>b.y;
+// Semantic agreement is independent of placement, fixed state and root presence.
+export function validateStructureGroups(nodes:Card[]){
+ const dimensions=new Map<string,string>();
+ for(const node of nodes){const intent=parseStructure(node.structure??null);if(!intent)continue;
+  if(node.type==='group')throw Error('Visual regions cannot define knowledge structure');
+  if(intent.kind!=='comparison')continue;
+  const value=JSON.stringify(intent.dimensions),previous=dimensions.get(intent.rootId);
+  if(previous!==undefined&&previous!==value)throw Error('Comparison dimensions must agree');
+  dimensions.set(intent.rootId,value);
+ }
+}
 // Version 1: stable input order chooses a spanning forest. Only explicit classification
 // edges enter that forest; extra parents and cycles remain unchanged Canvas edges.
 export function layoutStructures(result:{nodes:Card[];warnings:LayoutWarning[]},input:Partial<Card>[],edges:Edge[],previous:Card[],selected:string[],bounds:Bounds={x:0,y:0,width:1920,height:1080}){
+ validateStructureGroups(result.nodes);
  const nodes=result.nodes,groups=new Map<string,Card[]>();
  for(const n of nodes){const intent=parseStructure(n.structure??null);if(!intent)continue;if(n.type==='group')throw Error('Visual regions cannot define knowledge structure');const key=intent.rootId+'\0'+intent.kind;groups.set(key,[...(groups.get(key)??[]),n]);}
  for(const members of groups.values()){
@@ -44,7 +56,6 @@ export function layoutStructures(result:{nodes:Card[];warnings:LayoutWarning[]},
    continue;
   }
   if(intent.kind==='comparison'){
-   if(members.some(n=>n.structure?.kind!=='comparison'||JSON.stringify(n.structure.dimensions)!==JSON.stringify(intent.dimensions)))throw Error('Comparison dimensions must agree');
    const options=[...new Set(members.map(n=>(n.structure as ComparisonIntent).option))],rowHeight=Math.max(...members.map(n=>n.height))+48,colWidth=Math.max(...members.map(n=>n.width))+48;
    const occupied=nodes.filter(n=>!movable.has(n.id));
    for(const node of members){if(!movable.has(node.id))continue;const s=node.structure as ComparisonIntent;

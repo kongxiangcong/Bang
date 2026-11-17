@@ -40,3 +40,33 @@ test('comparison additions retain fixed positions, stacking, original content an
  assert.throws(()=>compileCanvas({cards:[{...cards[0],structure:{...cards[0].structure,winner:'A'}}]}),/comparison/i);
 });
 
+
+test('comparison agreement is enforced for coordinate-preserving and fixed edits and rootless groups',()=>{
+ for(const fixed of [false,true]){
+  const previous=compileCanvas({cards:cards.map((c,i)=>({...c,x:i*400,y:100,width:320,height:120,fixed}))});
+  const changed={...cards[1],structure:{...cards[1].structure,dimensions:['latency'],dimension:'latency'}};
+  assert.throws(()=>compileCanvas({cards:[changed],previous}),/dimensions must agree/i);
+  const orphan={nodes:previous.nodes.filter(n=>n.id!=='a-cost'),edges:[]};assert.throws(()=>compileCanvas({cards:[changed],previous:orphan}),/dimensions must agree/i);
+ }
+});
+
+test('public saves reject inconsistent comparison atomically while whole-group changes persist',async()=>{
+ const fs=await import('node:fs/promises'),os=await import('node:os'),path=await import('node:path');const project=await fs.mkdtemp(path.join(os.tmpdir(),'bang-agreement-'));
+ try{for(const fixed of [false,true]){const topic=fixed?'fixed':'positioned';await runtimeOperation(project,'generate',topic,{cards:cards.map((c,i)=>({...c,x:400*i,y:100,width:320,height:120,fixed}))});const before=await runtimeOperation(project,'state',topic);
+ const save=operations=>runtimeOperation(project,'commit',topic,{operationId:crypto.randomUUID(),topic,baseRevision:before.revision,author:{kind:'manual',id:'review'},intent:'explicit-save',readDependencies:[],operations});
+ const changed=c=>({type:'edit-card',id:c.id,structure:{...c.structure,dimensions:['latency'],dimension:'latency'}});
+ await assert.rejects(save([changed(cards[1]),{type:'edit-card',id:cards[0].id,text:'must not leak'}]),/conflict|dimensions/i);assert.deepEqual(await runtimeOperation(project,'state',topic),before);
+ await save(cards.map(changed));const after=await runtimeOperation(project,'state',topic);assert.equal(after.revision,1);assert.ok(after.canvas.nodes.every(n=>n.structure.dimensions[0]==='latency'));assert.deepEqual(after.canvas.nodes.map(({x,y,fixed})=>({x,y,fixed})),before.canvas.nodes.map(({x,y,fixed})=>({x,y,fixed})));
+ await runtimeOperation(project,'stop');assert.deepEqual((await runtimeOperation(project,'state',topic)).canvas,after.canvas);
+ }}finally{await runtimeOperation(project,'stop');await fs.rm(project,{recursive:true,force:true});}
+});
+
+test('whole-group repair can compile a legacy inconsistent baseline without moving fixed cards',()=>{
+ const valid=compileCanvas({cards:cards.map((c,i)=>({...c,x:i*400,y:100,width:320,height:120,fixed:true}))});const previous=structuredClone(valid);previous.nodes[1].structure={...previous.nodes[1].structure,dimensions:['latency'],dimension:'latency'};
+ const repaired=compileCanvas({cards:previous.nodes.map(n=>({...n,structure:{...n.structure,dimensions:['cost'],dimension:'cost'}})),previous,relayoutIds:previous.nodes.map(n=>n.id)});assert.ok(repaired.nodes.every(n=>n.structure.dimension==='cost'));assert.deepEqual(repaired.nodes.map(n=>[n.x,n.y]),previous.nodes.map(n=>[n.x,n.y]));
+});
+
+test('fixed mixed structures validate event times independently of comparison dimensions',()=>{
+ const mixed=[...cards.map((c,i)=>({...c,x:i*400,y:100,width:320,height:120,fixed:true})),{id:'event-root',text:'发生日期未知',x:0,y:800,width:320,height:120,fixed:true,structure:{version:1,kind:'timeline',rootId:'event-root',eventTime:null}},{id:'event-dated',text:'发生于2025-01-01',x:400,y:800,width:320,height:120,fixed:true,structure:{version:1,kind:'timeline',rootId:'event-root',eventTime:'2025-01-01'}}];
+ const previous=compileCanvas({cards:mixed});assert.equal(previous.nodes.length,5);assert.throws(()=>compileCanvas({cards:[{id:'event-dated',structure:{...mixed[4].structure,eventTime:'2025-02-30'}}],previous}),/event time/i);
+});
