@@ -1,7 +1,7 @@
 import http from 'node:http';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {spawnSync} from 'node:child_process';
+import {spawn,spawnSync} from 'node:child_process';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -18,9 +18,10 @@ test('browser proxy rejects missing capability, forged Host and foreign Origin b
  const p=await fs.mkdtemp(path.join(os.tmpdir(),'bang-proxy-'));let server;
  try{run(p,'generate',{cards:[]});const {createServer}=await import('node:http');const {createCanvasMiddleware}=await import('../runtime/canvas/http.mjs');server=createServer(createCanvasMiddleware({project:p}));await new Promise(r=>server.listen(0,'127.0.0.1',r));const base=`http://127.0.0.1:${server.address().port}`;
  assert.equal((await fetch(base+'/api/canvas/demo/state')).status,403);
- const {token}=await (await fetch(base+'/api/canvas/session')).json();assert.equal(typeof token,'string');
+ const {token}=await (await fetch(base+'/api/canvas/session/bootstrap')).json();assert.equal(typeof token,'string');
+ const sessionTopic=spawnSync(process.execPath,[cli,'generate','--project',p,'--topic','session'],{input:JSON.stringify({cards:[]}),encoding:'utf8'});assert.equal(sessionTopic.status,0,sessionTopic.stderr);assert.deepEqual(await (await fetch(base+'/api/canvas/session',{headers:{'x-bang-browser-token':token}})).json(),{nodes:[],edges:[]});
  assert.equal((await fetch(base+'/api/canvas/demo/state',{headers:{'x-bang-browser-token':token}})).status,200);
- for(const headers of [{Origin:'http://evil.invalid'},{Host:'evil.invalid'},{'Sec-Fetch-Site':'cross-site'}])assert.equal(await new Promise((resolve,reject)=>{http.get(base+'/api/canvas/session',{headers},r=>{r.resume();resolve(r.statusCode);}).on('error',reject);}),403,JSON.stringify(headers));
+ for(const headers of [{Origin:'http://evil.invalid'},{Host:'evil.invalid'},{'Sec-Fetch-Site':'cross-site'}])assert.equal(await new Promise((resolve,reject)=>{http.get(base+'/api/canvas/session/bootstrap',{headers},r=>{r.resume();resolve(r.statusCode);}).on('error',reject);}),403,JSON.stringify(headers));
  }finally{if(server)await new Promise(r=>server.close(r));run(p,'stop');await fs.rm(p,{recursive:true,force:true});}
 });
 
@@ -65,3 +66,24 @@ test('read-only installation keeps runtime state in the private project director
  }finally{run(project,'stop');spawnSync('icacls.exe',[install,'/remove:d',`*${sid}`],{encoding:'utf8'});await fs.rm(temp,{recursive:true,force:true});}
 });
 
+
+
+test('simultaneous public starts converge on one native writer',async()=>{
+ const p=await fs.mkdtemp(path.join(os.tmpdir(),'bang-race-'));
+ try{const starts=await Promise.all(Array.from({length:6},()=>new Promise((resolve,reject)=>{const child=spawn(process.execPath,[cli,'start','--project',p],{windowsHide:true});let out='',err='';child.stdout.on('data',b=>out+=b);child.stderr.on('data',b=>err+=b);child.on('error',reject);child.on('close',code=>code===0?resolve(JSON.parse(out)):reject(Error(err)));const timeout=setTimeout(()=>{child.kill();reject(Error('start deadline'));},15000);child.on('close',()=>clearTimeout(timeout));})));
+ assert.equal(new Set(starts.map(s=>s.instanceId)).size,1);assert.equal(new Set(starts.map(s=>s.epoch)).size,1);assert.equal(run(p,'status').instanceId,starts[0].instanceId);
+ }finally{run(p,'stop');await fs.rm(p,{recursive:true,force:true});}
+});
+
+
+
+test('split UTF-8 request bodies retain exact Chinese text at both public HTTP boundaries',async()=>{
+ const p=await fs.mkdtemp(path.join(os.tmpdir(),'bang-utf8-'));let server;
+ async function splitRequest(url,headers,value){const body=Buffer.from(JSON.stringify(value)),offset=body.indexOf(Buffer.from('中文'))+1;assert.ok(offset>0);return new Promise((resolve,reject)=>{const request=http.request(url,{method:'POST',headers:{'content-type':'application/json',...headers}},response=>{let text='';response.setEncoding('utf8');response.on('data',b=>text+=b);response.on('end',()=>resolve({status:response.statusCode,data:JSON.parse(text)}));});request.on('error',reject);request.write(body.subarray(0,offset));setTimeout(()=>request.end(body.subarray(offset)),30);});}
+ try{run(p,'generate',{cards:[]});const {createCanvasMiddleware}=await import('../runtime/canvas/http.mjs');server=http.createServer(createCanvasMiddleware({project:p}));await new Promise(r=>server.listen(0,'127.0.0.1',r));const base=`http://127.0.0.1:${server.address().port}`,{token}=await (await fetch(base+'/api/canvas/session/bootstrap')).json();
+ const patch={operationId:'utf8-first',topic:'demo',baseRevision:0,author:{kind:'manual',id:'test'},readDependencies:[],intent:'explicit-save',operations:[{type:'create-card',card:{id:'unicode',text:'中文第一版',x:0,y:0,width:100,height:100}}]};
+ assert.equal((await splitRequest(base+'/api/canvas/demo/commit',{'x-bang-browser-token':token},patch)).status,200);assert.equal(run(p,'state').canvas.nodes[0].text,'中文第一版');
+ const c=JSON.parse(await fs.readFile(path.join(p,'.bang/runtime/connection.json'),'utf8'));const next={...patch,operationId:'utf8-second',baseRevision:1,operations:[{type:'edit-card',id:'unicode',text:'中文第二版'}]};
+ assert.equal((await splitRequest(c.url+'/control',{'x-bang-token':c.token,'x-bang-epoch':c.epoch},{command:'commit',topic:'demo',input:next})).status,200);assert.equal(run(p,'state').canvas.nodes[0].text,'中文第二版');
+ }finally{if(server)await new Promise(r=>server.close(r));run(p,'stop');await fs.rm(p,{recursive:true,force:true});}
+});
