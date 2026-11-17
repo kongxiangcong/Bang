@@ -1,9 +1,10 @@
+import {reconcileRestoredEvidence} from './restore.mjs';
 import {invalidateBasis,parseBasisReview,applyBasisReview,knowledgeContext} from './evidence.mjs';
 import {isDeepStrictEqual} from 'node:util';
 import {standardCanvas,parseImport,importChanges,exchangeDegradation} from './exchange.mjs';
 import {applyOperation as applyParsedOperation,orderOperations,operationIdentity} from './operations.ts';
 import {recoveryStatus,recoverUnknown,reconcile,publish,observed,recoveryError,hash} from './publication.mjs';
-import {revisionState,revisionList,boardDiff,parseUndo,compensate} from './history.mjs';
+import {revisionState,revisionList,boardDiff,parseUndo,compensate,compensateRestorationMetadata} from './history.mjs';
 import {parseEdge,relationFields,semanticRelations} from './relations.ts';
 import {validateResources,resourceStatus} from './resources.mjs';
 import fs from 'node:fs';
@@ -166,6 +167,7 @@ async function publishPatch(project,topic,value,undo,organizer,review){
   }
   }
   invalidateBasis(JSON.parse(row.state),next);
+  if(undo&&compensateRestorationMetadata(db,topic,patch,next))next=reconcileRestoredEvidence(db,topic,next);
   next.relations=semanticRelations(next.canvas.edges,next.canvas.nodes);
   validateCanvas(next.canvas);validateResources(project,next.canvas);
   const receipt={operationId:patch.operationId,topic,revision:next.revision,status:'committed'};

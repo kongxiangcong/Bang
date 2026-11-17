@@ -213,3 +213,9 @@
 !/prototypes/whiteboard-integration/src/ComparisonTimeline.tsx
 !/tests/canvas-comparison-timeline.test.mjs
 !/tests/canvas-comparison-timeline-browser.mjs
+
+# Ticket 23 previewed restore and durable old-work fences.
+!/runtime/canvas/restore.mjs
+!/tests/canvas-restore.test.mjs
+!/tests/canvas-restore-browser.mjs
+!/runtime/canvas/RESTORE.md
