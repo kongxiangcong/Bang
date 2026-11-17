@@ -182,6 +182,13 @@
 !/runtime/dsh/README.md
 !/tests/dsh-session-connector.test.mjs
 
+# Ticket 17 reviewed native model process supervision and controlled OS fixtures.
+!/runtime/native/process-host.c
+!/runtime/native/process-host.exe
+!/runtime/native/process-host
+!/runtime/native/executor.mjs
+!/tests/native-organizer.test.mjs
+!/tests/native-worker-fixture.mjs
 # Ticket 31 reviewed versioned structure rules, deterministic compiler and public acceptance.
 !/runtime/canvas/structures.ts
 !/runtime/canvas/structure-rules.mjs
