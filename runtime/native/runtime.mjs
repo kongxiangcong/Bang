@@ -52,6 +52,17 @@ export async function runtimeOperation(project,command,topic,input){
  if(command==='status'){const connection=await live(dir);return connection?request(connection,'status'):{status:'unavailable',ownership:'unknown'};}
  const connection=await ensureRuntime(project);return request(connection,command==='start'?'status':command,topic,input);
 }
+// Only the native owner publishes these files. Retry the atomic replacement,
+// never remove the destination or release ownership to recover sharing conflicts.
+async function publishMetadata(temporary,destination){
+ const deadline=Date.now()+2000;
+ for(;;){
+  try{fs.renameSync(temporary,destination);return;}catch(error){
+   if(process.platform!=='win32'||!['EPERM','EBUSY','EACCES'].includes(error.code)||Date.now()>=deadline)throw error;
+   await delay(50);
+  }
+ }
+}
 let startupStage='owner-check';
 async function daemon(project){
  if(process.env.BANG_NATIVE_LOCK_OWNER!==String(process.platform==='win32'?process.ppid:process.pid))throw Error('Daemon must be launched by the native lock owner');
@@ -60,7 +71,7 @@ async function daemon(project){
  let identity;try{identity=JSON.parse(fs.readFileSync(identityFile,'utf8'));}catch(error){if(error.code!=='ENOENT')throw error;identity={workspaceId:randomUUID(),epoch:0};}
  if(typeof identity.workspaceId!=='string'||!Number.isSafeInteger(identity.epoch)||identity.epoch<0)throw Error('Invalid workspace identity; recovery required');
  startupStage='identity-publish';
- identity.epoch++;const identityTemp=path.join(dir,'workspace.tmp');const identityFd=fs.openSync(identityTemp,'w',0o600);try{fs.writeFileSync(identityFd,JSON.stringify(identity));fs.fsyncSync(identityFd);}finally{fs.closeSync(identityFd);}fs.renameSync(identityTemp,identityFile);
+ identity.epoch++;const identityTemp=path.join(dir,'workspace.tmp');const identityFd=fs.openSync(identityTemp,'w',0o600);try{fs.writeFileSync(identityFd,JSON.stringify(identity));fs.fsyncSync(identityFd);}finally{fs.closeSync(identityFd);}await publishMetadata(identityTemp,identityFile);
  const connection={workspaceId:identity.workspaceId,instanceId:randomUUID(),epoch:String(identity.epoch),pid:process.pid,token:randomBytes(32).toString('hex')};
  const status=()=>({status:'running',ownership:'os-handle',workspaceId:connection.workspaceId,instanceId:connection.instanceId,epoch:connection.epoch,pid:process.pid,supervisorPid:process.ppid,url:connection.url});
  const methods={generate:store.generateBoard,read:store.readBoard,state:store.readCommitted,commit:store.commitBoard,'resource-status':(project,topic,input)=>store.readResourceStatus(project,topic,input.id)};
@@ -82,7 +93,7 @@ async function daemon(project){
  startupStage='listen';
  await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});connection.url=`http://127.0.0.1:${server.address().port}`;
  startupStage='discovery-publish';
- const temporary=path.join(dir,'connection.tmp');fs.writeFileSync(temporary,JSON.stringify(connection),{mode:0o600});fs.renameSync(temporary,path.join(dir,'connection.json'));
+ const temporary=path.join(dir,'connection.tmp');fs.writeFileSync(temporary,JSON.stringify(connection),{mode:0o600});startupStage='discovery-replace';await publishMetadata(temporary,path.join(dir,'connection.json'));
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===here&&process.argv[2]==='--daemon'){
  try{await daemon(process.argv[3]);}catch(error){

@@ -121,3 +121,17 @@ test('native setup failure reports OS error stage without exposing project paths
   assert.ok(result.stderr.length<512);assert.doesNotMatch(result.stderr,/bang-lock-error-/);
  }finally{run(p,'stop');await fs.rm(p,{recursive:true,force:true});}
 });
+
+for(const holdMs of [1800,8000])test(`restart ${holdMs===1800?'waits for transient':'bounds persistent'} Windows discovery sharing conflict`,{skip:process.platform!=='win32'},async()=>{
+ const p=await fs.mkdtemp(path.join(os.tmpdir(),'bang-discovery-sharing-'));let holder;
+ try{
+  const before=run(p,'start');run(p,'stop');
+  holder=spawn('powershell.exe',['-NoProfile','-NonInteractive','-Command',"$f=[IO.File]::Open($env:BANG_TEST_DESCRIPTOR,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::ReadWrite); Write-Output 'held'; Start-Sleep -Milliseconds $env:BANG_TEST_HOLD_MS; $f.Dispose()"],{env:{...process.env,BANG_TEST_HOLD_MS:String(holdMs),BANG_TEST_DESCRIPTOR:path.join(p,'.bang/runtime/connection.json')},windowsHide:true});
+  await new Promise((resolve,reject)=>{holder.stdout.once('data',resolve);holder.once('error',reject);holder.once('exit',code=>{if(code!==0)reject(Error('sharing fixture failed'));});});
+  if(holdMs===1800){const after=run(p,'start');assert.equal(after.workspaceId,before.workspaceId);assert.notEqual(after.epoch,before.epoch);}
+  else{
+   const began=Date.now(),result=spawnSync(process.execPath,[cli,'start','--project',p],{encoding:'utf8',timeout:10000});
+   assert.equal(result.status,1);assert.match(result.stderr,/stage=discovery-replace; code=EPERM/);assert.ok(Date.now()-began<6000);
+  }
+ }finally{if(holder&&holder.exitCode===null){const closed=new Promise(resolve=>holder.once('close',resolve));holder.kill();await closed;}run(p,'stop');await fs.rm(p,{recursive:true,force:true});}
+});
