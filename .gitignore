@@ -208,3 +208,10 @@
 !/prototypes/whiteboard-integration/src/ComparisonTimeline.tsx
 !/tests/canvas-comparison-timeline.test.mjs
 !/tests/canvas-comparison-timeline-browser.mjs
+# Ticket 22 authenticated bounded context delivery and public/browser acceptance.
+!/runtime/canvas/context.mjs
+!/runtime/canvas/CONTEXT.md
+!/runtime/native/context-bridge.mjs
+!/prototypes/whiteboard-integration/src/ContextDelivery.tsx
+!/tests/context-delivery.test.mjs
+!/tests/context-delivery-browser.mjs
