@@ -1,3 +1,4 @@
+import {codexConfiguration} from '../codex/executor-config.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import {spawn} from 'node:child_process';
@@ -5,7 +6,8 @@ import {fileURLToPath} from 'node:url';
 const active=new Set();
 export const nativeActiveCount=()=>active.size;
 export function nativeConfiguration(){
- if(!process.env.BANG_ORGANIZER_NATIVE)return null;
+ if(process.env.BANG_ORGANIZER_NATIVE&&process.env.BANG_ORGANIZER_CODEX)throw Object.assign(Error('Conflicting native executor configuration'),{code:'EXECUTOR_CONFIGURATION'});
+ if(!process.env.BANG_ORGANIZER_NATIVE)return codexConfiguration();
  try{const c=JSON.parse(process.env.BANG_ORGANIZER_NATIVE);
   if(c.version!==1||!path.isAbsolute(c.executable)||!fs.statSync(c.executable).isFile()||!Array.isArray(c.args)||c.args.some(a=>typeof a!=='string'||a.includes('\0'))||c.policy!=='no-tools'||!Number.isInteger(c.graceMs)||c.graceMs<10||c.graceMs>2000||Object.keys(c).some(k=>!['version','executable','args','policy','graceMs'].includes(k)))throw Error();
   if(/\.(cmd|bat|ps1)$/i.test(c.executable))throw Error();
@@ -18,6 +20,7 @@ export async function executeNative(task,project,signal){
  const environment={BANG_EXECUTOR_POLICY:'no-tools',BANG_EXECUTOR_PROTOCOL:'1'};
  // Never inherit credentials, runtime capabilities, NODE_OPTIONS or tool paths.
  for(const k of ['SystemRoot','WINDIR','TEMP','TMP','LANG','LC_ALL'])if(process.env[k])environment[k]=process.env[k];
+ if(config.inheritProxy)for(const k of ['HTTP_PROXY','HTTPS_PROXY','ALL_PROXY','NO_PROXY','http_proxy','https_proxy','all_proxy','no_proxy'])if(process.env[k])environment[k]=process.env[k];
  environment.HOME=directory;environment.USERPROFILE=directory;environment.TMPDIR=directory;environment.TEMP=directory;environment.TMP=directory;
  const helper=fileURLToPath(new URL(process.platform==='win32'?'./process-host.exe':'./process-host',import.meta.url));
  const run=new Promise((resolve,reject)=>{
@@ -38,7 +41,7 @@ export async function executeNative(task,project,signal){
    if(receipt[3]==='1')return reject(Object.assign(Error('Native attempt timed out'),{code:'ATTEMPT_TIMEOUT'}));
    if(overflow)return reject(Object.assign(Error('Native output exceeds limit'),{code:'OUTPUT_INVALID'}));
    if(task.process.exitCode!==0)return reject(Object.assign(Error('Native executor failed'),{code:'EXECUTOR_UNAVAILABLE'}));
-   try{resolve(JSON.parse(Buffer.concat(stdout).toString('utf8')));}catch{reject(Object.assign(Error('Invalid native result'),{code:'OUTPUT_INVALID'}));}
+   try{const result=JSON.parse(Buffer.concat(stdout).toString('utf8'));if(Object.keys(result).length===1&&result.error&&Object.keys(result.error).every(k=>['code','stage','reason'].includes(k))&&['AUTH_REQUIRED','EXECUTOR_BUDGET','EXECUTOR_CONFIGURATION','OUTPUT_INVALID','EXECUTOR_UNAVAILABLE'].includes(result.error.code)){if(['input','version','authorization','catalog','model'].includes(result.error.stage)&&['unknown','authentication','budget','sandbox','network','model','configuration'].includes(result.error.reason))task.process.executor={stage:result.error.stage,reason:result.error.reason};reject(Object.assign(Error('Restricted executor failed'),{code:result.error.code}));}else resolve(result);}catch{reject(Object.assign(Error('Invalid native result'),{code:'OUTPUT_INVALID'}));}
   });
   const payload=Buffer.from(JSON.stringify(task.input)+'\n');child.stdin.write(Buffer.from(String(payload.length)+'\n'));child.stdin.write(payload);if(signal.aborted)stop();
  });
@@ -50,4 +53,3 @@ export async function executeNative(task,project,signal){
  }
 }
 export async function waitNativeExit(){await Promise.allSettled([...active]);}
-
