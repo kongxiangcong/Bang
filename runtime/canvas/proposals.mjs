@@ -13,7 +13,10 @@ export function makeProposal(project,task,change,current,knowledge,read){
  const intentKey=digest([{type:operation.type,id:operation.id},semanticObject(before),current.metadata[before.id]?.fields?.text?.modifiedRevision??0]);
  const evidenceHash=digest(evidence.assistant.trim().replace(/\s+/g,' ')),prior=proposals(project,task.topic).filter(p=>p.intentKey===intentKey);
  if(prior.some(p=>!p.frozen&&p.evidenceHash===evidenceHash&&['pending','rejected','accepted'].includes(p.status)))return null;
- return {id:randomUUID(),taskId:task.id,status:'pending',intentKey,evidenceHash,evidence,sourceId:source.id,classification:source.humanIntent?.classification??'unspecified',baseRevision:current.revision,before,operation,knowledge,dependencies:read.map(n=>({object:semanticObject(n),knowledge:current.metadata[n.id]?.knowledge,fields:current.metadata[n.id]?.fields})),evidenceDifference:prior.length?{previousSourceId:prior.at(-1).sourceId,currentSourceId:source.id,previous:prior.at(-1).evidence,current:evidence}:null};
+ const proposal={id:randomUUID(),taskId:task.id,status:'pending',intentKey,evidenceHash,evidence,sourceId:source.id,classification:source.humanIntent?.classification??'unspecified',baseRevision:current.revision,before,operation,knowledge,dependencies:read.map(n=>({object:semanticObject(n),knowledge:current.metadata[n.id]?.knowledge,fields:current.metadata[n.id]?.fields})),evidenceDifference:prior.length?{previousSourceId:prior.at(-1).sourceId,currentSourceId:source.id,previous:prior.at(-1).evidence,current:evidence}:null};
+ const rejected=proposals(project,task.topic).filter(p=>p.status==='rejected'&&p.operation.id===operation.id&&p.operation.type===operation.type);
+ if(rejected.length){proposal.status='suppressed';proposal.rejectedId=rejected.at(-1).id;(task.suppressedProposals??=[]).push(proposal);return null;}
+ return proposal;
 }
 export async function reviewProposal(project,topic,input){
  if(!input||!['accept','reject'].includes(input.decision)||typeof input.id!=='string')throw Error('Explicit proposal decision required');
@@ -34,4 +37,28 @@ export async function reviewProposal(project,topic,input){
  }
  proposal.status=input.decision==='accept'?'accepted':'rejected';proposal.receipt=receipt;
  const db=openBindingDatabase(project);try{db.prepare('UPDATE organizer_tasks SET body=? WHERE id=?').run(JSON.stringify(task),task.id);}finally{db.close();}return receipt;
+}
+export async function reconsiderPreview(project,topic,input){
+ const all=tasks(project,topic),rejected=all.flatMap(t=>t.proposals??[]).find(p=>p.id===input?.id&&p.status==='rejected');
+ if(!rejected)throw Error('A rejected proposal is required for reconsideration');
+ const candidates=all.flatMap(t=>t.suppressedProposals??[]).filter(p=>p.operation.id===rejected.operation.id&&p.operation.type===rejected.operation.type),candidate=candidates.at(-1)??rejected;
+ const current=await readCommitted(project,topic),objects=[...current.canvas.nodes,...current.canvas.edges],before=objects.find(n=>n.id===candidate.operation.id);
+ if(!before||candidate.dependencies.some(d=>!objects.some(n=>n.id===d.object.id)))throw Error('Proposal target or dependency deleted; fresh analysis required');
+ const evidenceDifference={previousSourceId:rejected.sourceId,currentSourceId:candidate.sourceId,previous:rejected.evidence,current:candidate.evidence};
+ // The review capability binds the exact project, original rejection, actual source,
+ // full current baseline and selected candidate. It never travels across restore.
+ const reviewKey=digest([project,topic,rejected.id,rejected.receipt,candidate,current]);
+ return {id:rejected.id,reviewKey,baseRevision:current.revision,before,operation:candidate.operation,evidenceDifference};
+}
+export async function reconsiderProposal(project,topic,input){
+ if(!input||!['new-evidence','reconsider'].includes(input.reason)||typeof input.reviewKey!=='string')throw Error('Explicit human reconsideration reason and preview required');
+ const all=tasks(project,topic),owner=all.find(t=>t.proposals?.some(p=>p.id===input.id&&p.status==='rejected'));if(!owner)throw Error('Rejected proposal required');
+ const id='reconsider-'+input.reviewKey,existing=owner.proposals.find(p=>p.id===id);
+ if(existing){if(existing.reviewReceipt.reason!==input.reason)throw Error('Reconsideration identity reused');if(existing.frozen)throw Error('Restored reconsideration authority is frozen');return existing.reviewReceipt;}
+ const preview=await reconsiderPreview(project,topic,input);if(preview.reviewKey!==input.reviewKey)throw Object.assign(Error('Reconsideration baseline or evidence conflict; preview again'),{code:'PROPOSAL_STALE'});
+ if(owner.proposals.some(p=>p.rejectedId===input.id&&p.status==='pending'&&!p.frozen))throw Error('Reconsideration already pending');
+ const rejected=owner.proposals.find(p=>p.id===input.id),candidate=all.flatMap(t=>t.suppressedProposals??[]).filter(p=>p.operation.id===rejected.operation.id&&p.operation.type===rejected.operation.type).at(-1)??rejected,current=await readCommitted(project,topic),objects=[...current.canvas.nodes,...current.canvas.edges];
+ const receipt={status:'reconsidered',proposalId:id,rejectedId:rejected.id,baseRevision:current.revision,reason:input.reason};
+ const next={...candidate,id,taskId:owner.id,status:'pending',frozen:false,rejectedId:rejected.id,baseRevision:current.revision,before:preview.before,evidenceDifference:preview.evidenceDifference,reviewReceipt:receipt,dependencies:candidate.dependencies.map(d=>({object:semanticObject(objects.find(n=>n.id===d.object.id)),knowledge:current.metadata[d.object.id]?.knowledge,fields:current.metadata[d.object.id]?.fields}))};delete next.receipt;owner.proposals.push(next);
+ const db=openBindingDatabase(project);try{db.prepare('UPDATE organizer_tasks SET body=? WHERE id=?').run(JSON.stringify(owner),owner.id);}finally{db.close();}return receipt;
 }

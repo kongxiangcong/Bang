@@ -49,7 +49,9 @@ try{
  await until(()=>evaluate(`document.querySelector('[aria-label="修改建议"]')?.textContent.includes('建议 enable-turn')`));
  assert.equal((await runtimeOperation(temp,'state',id)).canvas.nodes[0].text,'人工保留原文');
  await button('拒绝建议');await until(()=>evaluate(`document.querySelector('[aria-label="修改建议"]')?.textContent.includes('已拒绝')`));
- await ingest('new-evidence','c2','c1');await until(()=>evaluate(`document.querySelector('[aria-label="修改建议"]')?.textContent.includes('建议 new-evidence')`));
+ await ingest('new-evidence','c2','c1');await until(async()=> (await call('turn-status',{topicId:id})).organized===2);assert.equal((await runtimeOperation(temp,'proposals',id)).length,1);
+ await button('重审已拒绝建议');await until(()=>evaluate(`document.querySelector('[aria-label="人工重审比较"]')?.textContent.includes('浏览器合成回答 new-evidence')`));
+ await button('认可新依据并重审');await until(()=>evaluate(`document.querySelector('[aria-label="修改建议"]')?.textContent.includes('建议 new-evidence')`));
  await button('采纳建议');await until(()=>evaluate(`document.querySelector('[aria-label="修改建议"]')?.textContent.includes('已采纳')`));
  assert.equal((await runtimeOperation(temp,'state',id)).canvas.nodes[0].text,'建议 new-evidence');
  await button('刷新');await until(()=>evaluate(`[...document.querySelectorAll('textarea')].some(t=>t.value==='建议 new-evidence')`));

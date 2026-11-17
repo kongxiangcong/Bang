@@ -1,4 +1,4 @@
-import {proposals,reviewProposal} from '../canvas/proposals.mjs';
+import {proposals,reviewProposal,reconsiderPreview,reconsiderProposal} from '../canvas/proposals.mjs';
 import {exportProject,verifyProject,restoreProject} from '../canvas/backup.mjs';
 import {organizerStatus,enableOrganizer,controlOrganizer,configureOrganizer,organizerTopics,prepareOrganizer,executeOrganizer,finishOrganizer,recoverOrganizer} from '../canvas/organizer.mjs';
 import fs from 'node:fs';
@@ -112,6 +112,8 @@ async function daemon(project){
    else if(command==='binding-status')result=bindingStatus(project,input);
    else if(command==='binding-sources')result=bindingSources(project,input);
    else if(command==='proposals')result=proposals(project,topic);
+   else if(command==='proposal-reconsider-preview')result=await reconsiderPreview(project,topic,input);
+   else if(command==='proposal-reconsider')result=await reconsiderProposal(project,topic,input);
    else if(command==='proposal-review')result=await reviewProposal(project,topic,input);
    else if(command==='organizer-status')result=organizerStatus(project,input);
    else if(command==='organizer-configure')result=configureOrganizer(project,input);
