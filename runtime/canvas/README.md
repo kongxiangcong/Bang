@@ -132,3 +132,5 @@ Real-browser test failed at the missing resource-create button before UI wiring.
   now checks absence of other-page draft recovery specifically, and passes. Its
   failure cleanup was hardened to stop the second temporary project daemon and
   close server connections; the interrupted temporary daemon was publicly stopped.
+- Integration verification after merging 06: production build and `node tests/canvas-draft-browser.mjs` passed. Combined native/Canvas CLI/HTTP run was 14/15: `project daemon reuses ownership across CLI launches and survives independent clients` failed with `Native runtime startup failed` while the build ran concurrently. Its isolated rerun passed; the intermittent startup failure remains recorded and its cause is not established. Native security and simultaneous-start tests passed in that combined run. Ticket 04's corrected validation commands were preserved.
+
