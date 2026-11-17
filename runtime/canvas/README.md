@@ -88,3 +88,6 @@ concurrent process ownership, performance or real Codex/DSH host acceptance clai
 
 - Follow-up isolation acceptance: two real temporary workspaces served sequentially at the same HTTP origin stayed isolated. A controlled inherited-window-name fixture on a second Chrome tab was assigned a distinct editor identity. This simulates duplicate-tab identity; actual Chrome Duplicate Tab UI was not exercised. Interrupted pointer gesture then reload produced no recovery draft; successful pointer-end recovery saved the exact moved coordinate.
 
+
+- Final 06 rerun after native commit 19dcfbb: build and complete draft browser script passed with /api/canvas/session/bootstrap. Build reports a temporary missing readResourceStatus export from ticket04's forward resource route until ticket11 is integrated; this does not affect the tested text draft endpoints. Seven committed-state CLI/HTTP regressions also passed after native integration.
+

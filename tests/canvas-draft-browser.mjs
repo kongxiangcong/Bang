@@ -21,7 +21,7 @@ const server=http.createServer((req,res)=>middleware(req,res,async()=>{
 }));
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
 const url=`http://127.0.0.1:${server.address().port}`;
-async function canvasRequest(endpoint){const {token}=await (await fetch(url+'/api/canvas/session')).json();return fetch(endpoint,{headers:{'x-bang-browser-token':token}});}
+async function canvasRequest(endpoint){const {token}=await (await fetch(url+'/api/canvas/session/bootstrap')).json();return fetch(endpoint,{headers:{'x-bang-browser-token':token}});}
 const chrome=spawn(process.env.BANG_CHROME??'C:/Program Files/Google/Chrome/Application/chrome.exe',['--headless=new','--disable-gpu','--no-sandbox','--remote-debugging-port=0',`--user-data-dir=${path.join(temp,'chrome')}`,'--window-size=1440,960','about:blank'],{stdio:'ignore',windowsHide:true});
 const delay=ms=>new Promise(r=>setTimeout(r,ms));let ws;let n=0;const pending=new Map();
 async function until(fn){for(let i=0;i<100;i++){try{const result=await fn();if(result)return result}catch{}await delay(100)}throw Error('timed out')}
@@ -90,6 +90,7 @@ try{
  middleware=createCanvasMiddleware({project:temp});await cmd('Page.reload');await delay(250);await until(()=>evaluate('document.body.innerText.includes("发现可恢复草稿")'));await button('恢复草稿');assert.equal(await evaluate('document.querySelector("textarea").value'),'中文确认');
  spawnSync(process.execPath,[path.join(root,'runtime/canvas/bang.mjs'),'stop','--project',otherProject],{encoding:'utf8'});
  second.close();console.log(JSON.stringify({pass:true,evidence:'real Chrome two tabs/topics/workspaces, simulated inherited tab name, pointer drag, Chromium simulated IME, reload recovery/discard, stale save retains draft; no API interception or editor state injection'})); }finally{ws?.close();chrome.kill();await new Promise(r=>server.close(r));await delay(500);spawnSync(process.execPath,[path.join(root,'runtime/canvas/bang.mjs'),'stop','--project',temp],{encoding:'utf8'});await fs.rm(temp,{recursive:true,force:true,maxRetries:5,retryDelay:200});}
+
 
 
 
