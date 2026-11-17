@@ -96,3 +96,7 @@
 !/prototypes/whiteboard-integration/src/ResourceDetails.tsx
 !/tests/canvas-resources.test.mjs
 !/tests/canvas-resources-browser.mjs
+
+# Reviewed ticket 06 browser-local recovery and end-of-interaction regression.
+!/prototypes/whiteboard-integration/src/drafts.ts
+!/tests/canvas-draft-browser.mjs
