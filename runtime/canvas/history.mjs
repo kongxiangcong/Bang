@@ -33,6 +33,12 @@ export function compensate(db,topic,request,current){
  const entry=revisionList(db,topic).find(e=>e.revision===request.revision);
  if(!entry||entry.author?.kind!=='manual'||entry.author.id!==request.author.id)throw Error('Only the author can undo a committed operation');
  const before=revisionState(db,topic,request.revision-1),after=revisionState(db,topic,request.revision);
+ if(entry.intent==='restore-version'){
+  for(const c of boardDiff(before,after).changes.filter(c=>c.collection==='metadata'&&!['fields','modifiedRevision','semanticRevision'].includes(c.field))){
+   const states=db.prepare('SELECT state FROM revisions WHERE topic=? AND revision>? ORDER BY revision').all(topic,request.revision).map(r=>JSON.parse(r.state));
+   for(const state of states){const m=state.metadata[c.id],original=after.metadata[c.id];if(c.field==='$object'?!equal(m,original):!equal(m?.[c.field],original?.[c.field]))throw Error('Undo conflict; restored knowledge changed after restore');}
+  }
+ }
  if(entry.intent==='basis-review'){
   const next=structuredClone(current);next.revision++;
   for(const id of Object.keys(after.metadata).filter(id=>!equal(before.metadata[id]?.basis,after.metadata[id]?.basis))){
@@ -77,4 +83,18 @@ export function compensate(db,topic,request,current){
  // Retain deletion intent audit records: explicit compensation is the sole identity-reuse path.
  next.compensation={operationId:request.operationId,undoOf:request.revision,authorId:request.author.id};
  return next;
+}
+
+// Apply after semantic invalidation so exact historical basis/conditions can be
+// compensated, while newly derived dependants remain withdrawn by that pass.
+export function compensateRestorationMetadata(db,topic,request,next){
+ if(revisionList(db,topic).find(r=>r.revision===request.revision)?.intent!=='restore-version')return false;
+ const before=revisionState(db,topic,request.revision-1),after=revisionState(db,topic,request.revision);
+ for(const c of boardDiff(before,after).changes.filter(c=>c.collection==='metadata'&&!['fields','modifiedRevision','semanticRevision'].includes(c.field))){
+  if(c.field==='$object')continue; // Object compensation already restores/removes its metadata.
+  const target=next.metadata[c.id];if(!target)continue;
+  if(Object.hasOwn(before.metadata[c.id]??{},c.field))target[c.field]=structuredClone(before.metadata[c.id][c.field]);else delete target[c.field];
+  target.modifiedRevision=next.revision;target.semanticRevision=next.revision;
+ }
+ return true;
 }
