@@ -56,10 +56,11 @@ try{
  assert.equal(await evaluate('document.querySelector("textarea").value'),'中文确认');
  await button('保存');await until(()=>evaluate('document.body.innerText.includes("已保存 · 修订 3")'));
  // Real mouse drag on the current Canvas becomes a draft only at pointer-up.
- const pos=await evaluate('(()=>{const e=window.canvasBoard.snapshot().find(e=>e.id==="back");const a=window.canvasBoard.viewport();return {x:(e.x+a.scrollX+20)*a.zoom.value+a.offsetLeft,y:(e.y+a.scrollY+20)*a.zoom.value+a.offsetTop,bx:e.x,by:e.y}})()');
+ let pos=await evaluate('(()=>{const e=window.canvasBoard.snapshot().find(e=>e.id==="back");const a=window.canvasBoard.viewport();return {x:(e.x+a.scrollX+20)*a.zoom.value+a.offsetLeft,y:(e.y+a.scrollY+20)*a.zoom.value+a.offsetTop,bx:e.x,by:e.y}})()');
  await cmd('Input.dispatchMouseEvent',{type:'mousePressed',x:pos.x,y:pos.y,button:'left',clickCount:1});await cmd('Input.dispatchMouseEvent',{type:'mouseMoved',x:pos.x+40,y:pos.y+30,button:'left',buttons:1});await delay(600);
  await cmd('Page.reload');await delay(250);await until(()=>evaluate('!!window.canvasBoard?.snapshot().length'));assert.equal(await evaluate('document.body.innerText.includes("发现可恢复草稿")'),false);
  await cmd('Input.dispatchMouseEvent',{type:'mouseReleased',x:pos.x+40,y:pos.y+30,button:'left',clickCount:1});
+ pos=await evaluate('(()=>{const e=window.canvasBoard.snapshot().find(e=>e.id==="back");const a=window.canvasBoard.viewport();return {x:(e.x+a.scrollX+20)*a.zoom.value+a.offsetLeft,y:(e.y+a.scrollY+20)*a.zoom.value+a.offsetTop,bx:e.x,by:e.y}})()');
  await cmd('Input.dispatchMouseEvent',{type:'mousePressed',x:pos.x,y:pos.y,button:'left',clickCount:1});
  await cmd('Input.dispatchMouseEvent',{type:'mouseMoved',x:pos.x+70,y:pos.y+50,button:'left',buttons:1});await delay(600);
  assert.equal((await (await canvasRequest(url+'/api/canvas/demo/state')).json()).revision,3);

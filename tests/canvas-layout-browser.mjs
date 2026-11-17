@@ -40,7 +40,7 @@ try{
 
  async function control(label){const p=await evaluate(`(()=>{const e=document.querySelector('[aria-label="${label}"]');e.scrollIntoView({block:'nearest'});const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);await click(p.x,p.y);}
  const geometry=()=>evaluate('(()=>{const e=window.canvasBoard.snapshot().find(e=>e.id==="back");const a=window.canvasBoard.viewport();return {x:(e.x+a.scrollX)*a.zoom.value+a.offsetLeft,y:(e.y+a.scrollY)*a.zoom.value+a.offsetTop,w:e.width*a.zoom.value,h:e.height*a.zoom.value,bx:e.x,by:e.y,width:e.width,height:e.height}})()');
- let p=await geometry();await click(p.x+20,p.y+20);
+ let p=await geometry();
  await cmd('Input.dispatchMouseEvent',{type:'mousePressed',x:p.x+20,y:p.y+20,button:'left',clickCount:1});
  await cmd('Input.dispatchMouseEvent',{type:'mouseMoved',x:p.x+80,y:p.y+60,button:'left',buttons:1});await delay(200);
  assert.equal((await (await canvasRequest(url+'/api/canvas/demo/state')).json()).revision,0);
@@ -51,10 +51,10 @@ try{
  await cmd('Input.dispatchMouseEvent',{type:'mouseMoved',x:moved.x+moved.w+84,y:moved.y+moved.h+64,button:'left',buttons:1});await delay(150);
  await cmd('Input.dispatchMouseEvent',{type:'mouseReleased',x:moved.x+moved.w+84,y:moved.y+moved.h+64,button:'left',clickCount:1});await delay(150);
  const resized=await geometry();assert.ok(resized.width>moved.width,'resize width');assert.ok(resized.height>moved.height,'resize height');
- await control('布局选择 1');await control('布局选择 2');await button('选区视觉分组');await button('固定选区位置');await button('选区置顶');
+ await control('布局选择 1');await button('选区置顶');await control('布局选择 1');await button('选区视觉分组');await button('固定选区位置');
  assert.equal((await (await canvasRequest(url+'/api/canvas/demo/state')).json()).revision,0);
  await button('保存');await until(()=>evaluate('document.body.innerText.includes("已保存 · 修订 1")'));
- const saved=await (await canvasRequest(url+'/api/canvas/demo/state')).json();assert.equal(saved.canvas.edges.length,0);assert.equal(saved.canvas.nodes[0].regionId,saved.canvas.nodes[1].regionId);assert.equal(saved.canvas.nodes[0].fixed,true);
+ const saved=await (await canvasRequest(url+'/api/canvas/demo/state')).json();assert.deepEqual(saved.canvas.nodes.map(n=>n.id),['front','back']);assert.equal(saved.canvas.edges.length,0);assert.equal(saved.canvas.nodes[0].regionId,saved.canvas.nodes[1].regionId);assert.equal(saved.canvas.nodes[0].fixed,true);
  const original=saved.canvas.nodes.find(n=>n.id==='back');assert.equal(original.width,resized.width);assert.equal(original.x,resized.bx);
  await cmd('Page.reload');await delay(250);await until(()=>evaluate('!!window.canvasBoard?.snapshot().length'));
  const reopened=await geometry();assert.equal(reopened.width,resized.width);assert.equal(reopened.bx,resized.bx);
@@ -62,7 +62,7 @@ try{
  await button('新增知识卡片');await button('保存');await until(()=>evaluate('document.body.innerText.includes("已保存 · 修订 2")'));
  const added=await (await canvasRequest(url+'/api/canvas/demo/state')).json();assert.deepEqual(added.canvas.nodes.find(n=>n.id==='back'),original);
  await button('刷新');await until(()=>evaluate('document.body.innerText.includes("显示版本 2")'));
- await control('布局选择 1');await button('显式重新布局选区');await button('保存');await until(()=>evaluate('document.body.innerText.includes("已保存 · 修订 3")'));
+ await control('布局选择 2');await button('显式重新布局选区');await button('保存');await until(()=>evaluate('document.body.innerText.includes("已保存 · 修订 3")'));
  const relayout=await (await canvasRequest(url+'/api/canvas/demo/state')).json();assert.deepEqual(relayout.canvas.nodes.find(n=>n.id==='front'),added.canvas.nodes.find(n=>n.id==='front'));
  console.log(JSON.stringify({pass:true,evidence:'real Chrome drag/resize, visual grouping, fixed position, layering, explicit save/reload, local insertion and selected relayout; real native HTTP; no interception'}));
 }finally{ws?.close();chrome.kill();server.closeAllConnections();await new Promise(r=>server.close(r));await delay(500);spawnSync(process.execPath,[path.join(root,'runtime/canvas/bang.mjs'),'stop','--project',temp],{encoding:'utf8'});await fs.rm(temp,{recursive:true,force:true,maxRetries:5,retryDelay:200});}

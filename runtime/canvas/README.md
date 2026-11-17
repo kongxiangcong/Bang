@@ -201,3 +201,18 @@ Coverage is the ticket's T08/T09/T24 save/refresh behavior, not complete cross-h
 acceptance. Windows 10, Linux, physical IME, performance targets, semantic relations,
 AI read-dependency authorization and end-to-end Codex/DSH loops remain separate
 work. Native startup fixes were merged from integration, not duplicated here.
+
+## Ticket 09: manual layout and visual discussion regions
+
+Implemented: width/height, region membership, fixed-position flag and z-order use explicit field patches; standard Canvas array order carries stacking. Layout-only saves preserve knowledge source and existing metadata, with additive field-level edit provenance. Visual grouping creates no semantic edges. Browser drag/resize end in recoverable drafts and require Save. Selected relayout explicitly authorizes only the chosen cards, including fixed cards; other coordinates and layer order remain stable.
+
+The DOM-free layout compiler uses deterministic 320 px width, bounded 120–600 px height and 24 px spacing. It preserves previous positions/sizes, prior array order and unseen nodes when the active input shrinks. Additions occupy available local space; exhaustion returns NO_LOCAL_SPACE and places the new card outside the bounds, with a visible suggestion to enlarge the area or explicitly relayout. Text is never truncated. Region membership is visual grouping; structured region-intent rules remain ticket 15 scope.
+
+2026-11-18 Windows 11 / Node 25.8.1 / installed Chrome, real native Runtime:
+
+- `node --test tests/canvas-layout.test.mjs tests/canvas-relations.test.mjs tests/canvas-conflicts.test.mjs tests/canvas-runtime.test.mjs tests/canvas-save.test.mjs tests/canvas-resources.test.mjs`: 19 passed. CLI/HTTP readback and fresh native Runtime reopen; compiler purity/determinism, fixed geometry, no-space diagnostics, prior stacking/unseen cards, field conflicts and provenance.
+- `npm run build --prefix prototypes/whiteboard-integration`: passed; pre-existing large bundle warnings remain.
+- `node tests/canvas-layout-browser.mjs`: real Chrome drag, resize handle, group/fix, layer-order reversal, no intermediate durable revision, explicit save/reload, local addition and selected relayout passed; real HTTP and disk, no interception or editor-state injection.
+- `node tests/canvas-draft-browser.mjs` and `node tests/canvas-conflicts-browser.mjs`: passed. Draft test initially reused a stale viewport after full reload; fixed it to read the actual current viewport before dragging (local nonoverlap placement changes reload framing). Existing two-tab draft/Chromium IME and manual refresh/viewport coverage retained.
+
+TDD evidence: layout public save first rejected Empty edit, compiler missing geometry and reordered/reduced active context first failed; corresponding slices passed after implementation. Sandboxed native launch failed spawn UNKNOWN; approved native execution passed. No Linux/Windows 10, physical IME, real Codex/DSH or performance/quality claims are made by this ticket.
