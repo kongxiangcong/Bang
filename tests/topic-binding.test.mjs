@@ -16,7 +16,8 @@ async function fixture(){
  const {workspaceId}=await call('start'),{privateKey,publicKey}=generateKeyPairSync('ed25519');
  await call('connector-register',{id:'controlled',host:'controlled-host',versions:['1'],publicKey:publicKey.export({format:'pem',type:'spki'})});
  function proof(sessionId,overrides={}){
-  const claims={host:'controlled-host',version:'1',instanceId:'test-instance',sessionId,workspaceId,role:'primary',scope:['*'],turnId:'calling-turn',cursor:'cursor-7',issuedAt:Date.now(),expiresAt:Date.now()+300000,nonce:randomUUID(),...overrides};
+  const now=Date.now();
+  const claims={host:'controlled-host',version:'1',instanceId:'test-instance',sessionId,workspaceId,role:'primary',scope:['*'],turnId:'calling-turn',cursor:'cursor-7',issuedAt:now,expiresAt:now+300000,nonce:randomUUID(),...overrides};
   const payload=Buffer.from(JSON.stringify(claims)).toString('base64url');
   return {connectorId:'controlled',payload,signature:sign(null,Buffer.from(payload),privateKey).toString('base64url')};
  }

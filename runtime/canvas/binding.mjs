@@ -7,7 +7,7 @@ import {SignedSessionConnector} from '../native/session-connector.mjs';
 
 // Called only by the project Runtime owner. Metadata shares the board database;
 // board creation always goes through the existing committed-board publisher.
-function open(project){
+export function openBindingDatabase(project){
  fs.mkdirSync(path.join(project,'.bang'),{recursive:true,mode:0o700});
  const database=path.join(project,'.bang','board.sqlite'),fresh=!fs.existsSync(database);
  const db=new DatabaseSync(database);if(fresh&&process.platform!=='win32')fs.chmodSync(database,0o600);
@@ -26,11 +26,11 @@ export function registerConnector(project,input){
  if(!input||!/^[-a-zA-Z0-9_]+$/.test(input.id)||typeof input.host!=='string'||!input.host||input.host.length>256)throw Error('Invalid connector registration');
  if(!Array.isArray(input.versions)||!input.versions.length||input.versions.some(v=>typeof v!=='string'||!v||v.length>256))throw Error('Explicit supported connector versions required');
  if(createPublicKey(input.publicKey).asymmetricKeyType!=='ed25519')throw Error('Ed25519 connector key required');
- const db=open(project);try{db.prepare('INSERT INTO session_connectors VALUES(?,?)').run(input.id,JSON.stringify({host:input.host,versions:input.versions,publicKey:input.publicKey}));}finally{db.close();}
+ const db=openBindingDatabase(project);try{db.prepare('INSERT INTO session_connectors VALUES(?,?)').run(input.id,JSON.stringify({host:input.host,versions:input.versions,publicKey:input.publicKey}));}finally{db.close();}
  return {id:input.id,host:input.host};
 }
 export function connectSession(project,workspaceId,proof){
- const db=open(project);try{
+ const db=openBindingDatabase(project);try{
   const row=db.prepare('SELECT registration FROM session_connectors WHERE id=?').get(proof?.connectorId??'');
   if(!row)throw Error('Binding unavailable: trusted connector not installed');
   const claims=new SignedSessionConnector(JSON.parse(row.registration)).verifyProof(proof,workspaceId);
@@ -54,13 +54,13 @@ function session(db,input){
 }
 function boundResult(project,row){return {status:'bound',topic:listTopics(project).find(t=>t.id===row.topic),source:{id:row.id,...JSON.parse(row.metadata)}};}
 export function bindingStatus(project,input){
- const db=open(project);try{const s=session(db,input),row=db.prepare('SELECT * FROM binding_sources WHERE session_key=? AND active=1').get(s.session_key);return row?boundResult(project,row):{status:'unbound',identity:{host:s.claims.host,sessionId:s.claims.sessionId}};}finally{db.close();}
+ const db=openBindingDatabase(project);try{const s=session(db,input),row=db.prepare('SELECT * FROM binding_sources WHERE session_key=? AND active=1').get(s.session_key);return row?boundResult(project,row):{status:'unbound',identity:{host:s.claims.host,sessionId:s.claims.sessionId}};}finally{db.close();}
 }
 export function bindingSources(project,input){
- const db=open(project);try{return db.prepare('SELECT * FROM binding_sources WHERE topic=? ORDER BY rowid').all(input?.topicId??'').map(row=>({id:row.id,active:!!row.active,...JSON.parse(row.metadata)}));}finally{db.close();}
+ const db=openBindingDatabase(project);try{return db.prepare('SELECT * FROM binding_sources WHERE topic=? ORDER BY rowid').all(input?.topicId??'').map(row=>({id:row.id,active:!!row.active,...JSON.parse(row.metadata)}));}finally{db.close();}
 }
 export async function enableBinding(project,input,epoch){
- const db=open(project);try{
+ const db=openBindingDatabase(project);try{
   const s=session(db,input),current=db.prepare('SELECT * FROM binding_sources WHERE session_key=? AND active=1').get(s.session_key);
   if(current&&(!input.topicId||input.topicId===current.topic)){
    if(!s.claims.scope.includes('*')&&!s.claims.scope.includes(current.topic))throw Error('Topic outside authorized scope');
@@ -98,7 +98,7 @@ export async function enableBinding(project,input,epoch){
  }finally{db.close();}
 }
 export function listTopics(project){
- const db=open(project);
+ const db=openBindingDatabase(project);
  try{
   if(!db.prepare("SELECT 1 FROM sqlite_master WHERE name='topics'").get())return [];
   return db.prepare("SELECT t.topic AS id, COALESCE(n.name,t.topic) AS name FROM (SELECT topic FROM topics UNION SELECT topic FROM intents WHERE status='prepared') t LEFT JOIN topic_names n ON t.topic=n.topic ORDER BY t.topic").all().map(row=>({...row}));
@@ -107,7 +107,7 @@ export function listTopics(project){
 export async function createTopic(project,input){
  if(typeof input?.name!=='string'||!input.name.trim()||input.name.length>120)throw Error('Topic name required (1–120 characters)');
  const id=randomUUID();
- const db=open(project);try{db.prepare('INSERT INTO topic_names VALUES(?,?)').run(id,input.name.trim());}finally{db.close();}
+ const db=openBindingDatabase(project);try{db.prepare('INSERT INTO topic_names VALUES(?,?)').run(id,input.name.trim());}finally{db.close();}
  await generateBoard(project,id,{cards:[]});
  return {id,name:input.name.trim()};
 }
