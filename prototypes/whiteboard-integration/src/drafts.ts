@@ -1,5 +1,5 @@
 import {parseCard, validateCanvas, type Card, type CommittedBoard, type BoardPatch} from '../../../runtime/canvas/contract';
-export type Draft = {base:CommittedBoard;cards:Card[];retry:BoardPatch|null;updated:number};
+export type Draft = {base:CommittedBoard;cards:Card[];retry:BoardPatch|null;updated:number;overlay?:Record<string,Record<string,number>>;ackRevision?:number};
 async function editorIdentity():Promise<string>{
  if(!window.name.startsWith('bang-editor:'))window.name='bang-editor:'+crypto.randomUUID();
  // A duplicated tab can inherit window.name. A document-lifetime lock makes

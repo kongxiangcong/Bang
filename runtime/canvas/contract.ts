@@ -41,7 +41,9 @@ export function compileCanvas(input:unknown):Canvas {
  return validateCanvas({nodes:(input as {cards:unknown[]}).cards.map(parseCard),edges:[]});
 }
 
-export type BoardOperation = {type:'create-card';card:Card}|{type:'edit-card';id:string;text:string;file?:string;url?:string;x?:number;y?:number}|{type:'delete-card';id:string};
+export const editableFields=['text','x','y','file','url'] as const;
+export type FieldRevisions=Record<string,number>;
+export type BoardOperation = ({type:'create-card';card:Card}|{type:'edit-card';id:string;text?:string;file?:string;url?:string;x?:number;y?:number}|{type:'delete-card';id:string}) & {fieldRevisions?:FieldRevisions};
 export type BoardPatch = {operationId:string;topic:string;baseRevision:number;author:{kind:'manual';id:string};readDependencies:string[];intent:'explicit-save';operations:BoardOperation[]};
 export type CardMetadata = {source:{kind:'manual';authorId:string;operationId:string}|{kind:'bootstrap'};modifiedRevision:number};
 export type CommittedBoard = {revision:number;canvas:Canvas;metadata:Record<string,CardMetadata>};
@@ -50,7 +52,9 @@ export function parsePatch(value:unknown):BoardPatch {
  if(!p||typeof p!=='object'||!p.author||p.author.kind!=='manual'||!p.author.id||p.intent!=='explicit-save')throw Error('Expected explicit manual save');
  id(p.operationId);id(p.topic);id(p.author.id);
  if(!Number.isSafeInteger(p.baseRevision)||p.baseRevision<0||!Array.isArray(p.readDependencies)||p.readDependencies.some(d=>typeof d!=='string')||!Array.isArray(p.operations)||!p.operations.length)throw Error('Invalid patch baseline or operations');
- for(const op of p.operations){if(op?.type==='create-card')parseCard(op.card);else if(op?.type==='edit-card'){id(op.id);string(op.text);if(op.x!==undefined)number(op.x);if(op.y!==undefined)number(op.y);if(op.file!==undefined)safeResourcePath(op.file);if(op.url!==undefined)safeResourceURL(op.url);}else if(op?.type==='delete-card')id(op.id);else throw Error('Unknown board operation');}
+ for(const op of p.operations){if(op?.type==='create-card')parseCard(op.card);else if(op?.type==='edit-card'){id(op.id);if(!editableFields.some(k=>op[k]!==undefined))throw Error('Empty edit');if(op.text!==undefined)string(op.text);if(op.x!==undefined)number(op.x);if(op.y!==undefined)number(op.y);if(op.file!==undefined)safeResourcePath(op.file);if(op.url!==undefined)safeResourceURL(op.url);}else if(op?.type==='delete-card')id(op.id);else throw Error('Unknown board operation');
+  if(op.fieldRevisions!==undefined&&(!op.fieldRevisions||typeof op.fieldRevisions!=='object'||Array.isArray(op.fieldRevisions)||Object.entries(op.fieldRevisions).some(([k,v])=>!['id','type','text','x','y','width','height','file','url'].includes(k)||!Number.isSafeInteger(v)||v<0)))throw Error('Invalid field baseline');
+ }
  return p;
 }
 

@@ -112,3 +112,8 @@
 !/prototypes/whiteboard-integration/src/canvas-client.ts
 !/tests/native-runtime.test.mjs
 !/tests/canvas-request.mjs
+
+# Reviewed ticket 07 field baselines, conflict preview and manual refresh acceptance.
+!/prototypes/whiteboard-integration/src/canvas-edits.ts
+!/tests/canvas-conflicts.test.mjs
+!/tests/canvas-conflicts-browser.mjs

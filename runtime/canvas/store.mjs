@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {DatabaseSync} from 'node:sqlite';
-import {compileCanvas,validateCanvas,parsePatch,parseCard} from './contract.ts';
+import {compileCanvas,validateCanvas,parsePatch,parseCard,editableFields} from './contract.ts';
 export function topicPath(project,topic){
  if(!project||!topic||! /^[a-zA-Z0-9_-]+$/.test(topic))throw Error('Explicit project and safe topic are required');
  return path.join(path.resolve(project),'.bang','topics',topic,'current.canvas');
@@ -26,6 +26,47 @@ export async function generateBoard(project,topic,input){
  const state={revision:0,canvas:board,metadata:Object.fromEntries(board.nodes.map(n=>[n.id,{source:{kind:'bootstrap'},modifiedRevision:0}]))},db=open(project);
  try{db.exec('BEGIN IMMEDIATE');db.prepare('INSERT INTO topics VALUES(?,?,?,?)').run(topic,0,JSON.stringify(state),hash(bytes(board)));db.prepare('INSERT INTO revisions VALUES(?,?,?)').run(topic,0,JSON.stringify(state));db.exec('COMMIT');}finally{db.close();}return board;
 }
+function applyOperation(canvas,op){
+ const id=op.type==='create-card'?op.card.id:op.id,index=canvas.nodes.findIndex(n=>n.id===id);
+ if(op.type==='create-card')canvas.nodes.push(parseCard(op.card));
+ else if(op.type==='delete-card')canvas.nodes.splice(index,1);
+ else for(const field of editableFields)if(op[field]!==undefined)canvas.nodes[index][field]=op[field];
+}
+// All comparisons use persisted historical fields, including local acknowledged overlays.
+function inspectPatch(db,topic,patch,row,project){
+ const snapshots=new Map(),current=JSON.parse(row.state),conflicts=[],legalOperations=[],touched=new Set();
+ const baseline=revision=>{if(revision>row.revision)throw Error('Unknown baseline');if(!snapshots.has(revision)){const old=db.prepare('SELECT state FROM revisions WHERE topic=? AND revision=?').get(topic,revision);if(!old)throw Error('Unknown baseline');snapshots.set(revision,JSON.parse(old.state));}return snapshots.get(revision);};
+ const original=baseline(patch.baseRevision);
+ const dependencyConflict=patch.readDependencies.some(id=>{const old=original.canvas.nodes.find(n=>n.id===id),now=current.canvas.nodes.find(n=>n.id===id);return !old||JSON.stringify(old)!==JSON.stringify(now);});
+ for(const [operationIndex,op] of patch.operations.entries()){
+  const id=op.type==='create-card'?op.card.id:op.id,now=current.canvas.nodes.find(n=>n.id===id),before=conflicts.length;
+  const conflict=(field,base,current,proposed,reason)=>conflicts.push({operationIndex,id,field,base:base??null,current:current??null,proposed:proposed??null,reason});
+  if(touched.has(id))conflict('id',id,id,id,'Repeated object operation');touched.add(id);
+  if(dependencyConflict)conflict('$dependency',null,null,null,'Read dependency changed');
+  if(op.type==='create-card'){
+   const existed=db.prepare("SELECT 1 FROM revisions, json_each(revisions.state, '$.canvas.nodes') AS node WHERE topic=? AND json_extract(node.value,'$.id')=? LIMIT 1").get(topic,id);
+   if(existed)conflict('id',null,now,op.card,now?'Card already exists':'Deleted identity cannot be reused');
+  }
+  else if(!now)conflict('id',id,null,op.type==='delete-card'?null:op,'Card deleted');
+  else {
+   const fields=op.type==='delete-card'?['id','type','text','x','y','width','height','file','url']:['id',...editableFields.filter(k=>op[k]!==undefined)];
+   for(const field of fields){const old=baseline(op.fieldRevisions?.[field]??patch.baseRevision).canvas.nodes.find(n=>n.id===id);if(!old||old[field]!==now[field])conflict(field,old?.[field],now[field],op.type==='delete-card'?null:op[field],'Field changed');}
+   if(op.type==='edit-card'&&((op.file!==undefined&&now.type!=='file')||(op.url!==undefined&&now.type!=='link')))conflict('type',null,now.type,null,'Resource type mismatch');
+  }
+  if(conflicts.length===before){
+   try{const candidate=structuredClone(current.canvas);for(const accepted of [...legalOperations,op])applyOperation(candidate,accepted);validateCanvas(candidate);validateResources(project,candidate);legalOperations.push(op);}
+   catch(error){conflict('$constraints',null,null,null,error.message);}
+  }
+ }
+ // A preview never publishes. A subsequent subset commit repeats every check.
+ return {headRevision:row.revision,conflicts,legalOperations};
+}
+export async function previewBoard(project,topic,value){
+ const patch=parsePatch(value);if(patch.topic!==topic)throw Error('Patch topic mismatch');
+ await readCommitted(project,topic);const db=open(project,true);
+ try{const row=db.prepare('SELECT * FROM topics WHERE topic=?').get(topic);return inspectPatch(db,topic,patch,row,project);}finally{db.close();}
+}
+export async function readHead(project,topic){const state=await readCommitted(project,topic);return {revision:state.revision};}
 // Synchronous publication prevents interleaving within this process. Cross-process
 // ownership is the native single-writer ticket; do not run competing writers yet.
 export async function commitBoard(project,topic,value){
@@ -37,16 +78,15 @@ export async function commitBoard(project,topic,value){
   if(db.prepare("SELECT 1 FROM intents WHERE topic=? AND status='prepared'").get(topic))throw Error('Prepared publication requires recovery');
   const row=db.prepare('SELECT * FROM topics WHERE topic=?').get(topic);if(!row)throw Error('Unknown topic');
   if(hash(fs.readFileSync(file))!==row.hash)throw Error('Canvas externally changed; refusing overwrite');
-  if(row.revision!==patch.baseRevision)throw Error('Baseline conflict; reload and compare before saving');
+  const preview=inspectPatch(db,topic,patch,row,project);
+  if(preview.conflicts.length)throw Object.assign(Error('Baseline conflict; full draft retained'),{preview});
   const next=JSON.parse(row.state);next.revision++;
   for(const dependency of patch.readDependencies)if(!next.canvas.nodes.some(n=>n.id===dependency))throw Error('Missing read dependency');
   const touched=new Set();
   for(const op of patch.operations){
    const identity=op.type==='create-card'?op.card.id:op.id;
    if(touched.has(identity))throw Error('Repeated object operation');touched.add(identity);
-   const index=next.canvas.nodes.findIndex(n=>n.id===identity);
-   if(op.type==='create-card'){if(index!==-1)throw Error('Card already exists');next.canvas.nodes.push(parseCard(op.card));}
-   else {if(index===-1)throw Error('Card not found');if(op.type==='edit-card'){const card=next.canvas.nodes[index];card.text=op.text;if(op.x!==undefined)card.x=op.x;if(op.y!==undefined)card.y=op.y;if(op.file!==undefined){if(card.type!=='file')throw Error('Not a file card');card.file=op.file;}if(op.url!==undefined){if(card.type!=='link')throw Error('Not a link card');card.url=op.url;}}else next.canvas.nodes.splice(index,1);}
+   applyOperation(next.canvas,op);
    if(op.type==='delete-card')delete next.metadata[identity];
    else Object.defineProperty(next.metadata,identity,{value:{source:{kind:'manual',authorId:patch.author.id,operationId:patch.operationId},modifiedRevision:next.revision},enumerable:true,configurable:true,writable:true});
   }
