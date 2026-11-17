@@ -73,6 +73,7 @@ function inspect(backup){
   }
   for(const row of [...tables.revisions,...tables.intents])if(!tables.topics.some(t=>t.topic===row.topic)||!/^[a-zA-Z0-9_-]+$/.test(row.topic))throw Error('Backup references unknown topic');
   if(tables.binding_sources.some(r=>r.active!==0)||tables.ingestion_queue.some(r=>!['frozen','organized'].includes(r.state)))throw Error('Backup authority must be frozen');
+  for(const row of tables.organizer_project){const config=JSON.parse(row.body),bounds={concurrency:[1,8],timeoutMs:[10,3600000],callsPerHour:[1,10000],batchSize:[1,100]};if(row.id!==1||config.pauseReason!=='RESTORED_FROZEN'||!Array.isArray(config.calls)||config.calls.length>10000||config.calls.some(t=>!Number.isSafeInteger(t)||t<0)||!config.limits||Object.keys(config.limits).sort().join()!==Object.keys(bounds).sort().join()||Object.entries(bounds).some(([k,[min,max]])=>!Number.isSafeInteger(config.limits[k])||config.limits[k]<min||config.limits[k]>max))throw Error('Backup Organizer policy invalid or unfrozen');}
   if(tables.organizer_topics.some(r=>r.enabled!==0)||tables.organizer_tasks.some(r=>{const t=JSON.parse(r.body);return !['committed','no-change','failed','cancelled','skipped'].includes(t.status)||t.input!==undefined||t.baseline!==undefined||(t.proposals??[]).some(p=>p.status==='pending'&&!p.frozen);}))throw Error('Backup Organizer authority must be frozen');
   if(tables.completed_sources.some(r=>{const s=JSON.parse(r.body);return s.humanIntent?.classification==='explicit'&&!s.humanIntent.frozen;}))throw Error('Backup conversational authority must be frozen');
   if(tables.intents.some(r=>r.status!=='confirmed'))throw Error('Backup contains uncommitted publication');
@@ -103,6 +104,7 @@ export async function exportProject(project){
  }finally{db.close();}
  // A migration never carries authority to resume a host or replay old work.
  for(const row of tables.binding_sources){row.active=0;const m=JSON.parse(row.metadata);m.endCursor=m.receivedCursor??m.startCursor;m.restoredFrozen=true;m.frozenBacklog=m.backlog??0;m.backlog=0;row.metadata=JSON.stringify(m);}
+ for(const row of tables.organizer_project){const config=JSON.parse(row.body);config.pauseReason='RESTORED_FROZEN';row.body=JSON.stringify(config);}
  for(const row of tables.organizer_topics)row.enabled=0;
  for(const row of tables.organizer_tasks){const task=JSON.parse(row.body);delete task.input;delete task.baseline;for(const proposal of task.proposals??[])if(proposal.status==='pending')proposal.frozen=true;if(['running','retry'].includes(task.status)){task.status='failed';task.error={code:'ATTEMPT_INTERRUPTED',message:'Restored attempt cannot resume'};}row.body=JSON.stringify(task);}
  for(const row of tables.completed_sources){const source=JSON.parse(row.body);if(source.humanIntent?.classification==='explicit')source.humanIntent.frozen=true;row.body=JSON.stringify(source);}
