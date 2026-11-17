@@ -552,3 +552,7 @@ Final ticket 36 UI verification on the merged tree:
 
 See [Organizer contract and evidence](ORGANIZER.md) for restricted execution, public task receipts, dependency fencing, common publication and controlled-model/browser limits.
 
+
+## Ticket 19 human intent and proposals
+
+See [human intent contract and evidence](HUMAN-INTENT.md) for exact conversational scope, proposal decisions, durable rejection, baseline fencing and restore freezing.

@@ -1,0 +1,13 @@
+import React,{useEffect,useState} from 'react';
+import {canvasFetch} from './canvas-client';
+type Proposal={id:string;status:string;frozen?:boolean;baseRevision:number;sourceId:string;classification:string;before:Record<string,unknown>;operation:Record<string,unknown>;evidence:{assistant:string;conditions:string[];uncertainty:string};evidenceDifference?:{previous:unknown;current:unknown}|null;receipt?:{status:string;revision:number}};
+export function ProposalsPanel({topic}:{topic:string}){
+ const [items,setItems]=useState<Proposal[]>([]),[error,setError]=useState(''),[busy,setBusy]=useState(false);
+ const endpoint='/api/canvas/'+encodeURIComponent(topic);
+ async function load(){const r=await canvasFetch(endpoint+'/proposals'),v=await r.json();if(!r.ok)throw Error(v.error);return v as Proposal[];}
+ useEffect(()=>{if(!topic)return;let active=true;setItems([]);const poll=async()=>{try{const v=await load();if(active)setItems(v);}catch(e){if(active)setError(String(e));}};poll();const timer=setInterval(poll,1000);return()=>{active=false;clearInterval(timer);};},[topic]);
+ async function decide(id:string,decision:'accept'|'reject'){setBusy(true);setError('');try{const r=await canvasFetch(endpoint+'/proposal-review',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,decision})}),v=await r.json();if(!r.ok)throw Error(v.error);setItems(await load());}catch(e){setError(String(e));}finally{setBusy(false);}}
+ if(!topic||(!items.length&&!error))return null;
+ const labels:Record<string,string>={pending:'待采纳',accepted:'已采纳',rejected:'已拒绝'};
+ return <section aria-label="修改建议" style={{padding:8}}><h3>修改建议</h3><p>主回复不代表保存成功。采纳以提交回执为准；人工意图不等于事实已验证。</p>{error&&<p role="alert">{error}</p>}{items.map(p=><details open key={p.id}><summary>{labels[p.status]} · 对象 {String(p.operation.id)} · 比较基线 {p.baseRevision}</summary><p>原内容</p><pre style={{whiteSpace:'pre-wrap'}}>{String(p.before.text??JSON.stringify(p.before))}</pre><p>建议内容</p><pre style={{whiteSpace:'pre-wrap'}}>{p.operation.type==='delete-relation'?'删除关系':String(p.operation.text)}</pre><p>来源 {p.sourceId} · {p.classification==='hypothetical'?'设想不是授权':'需明确采纳'}</p><blockquote>{p.evidence.assistant}</blockquote><p>条件：{p.evidence.conditions.join('；')} · 不确定性：{p.evidence.uncertainty}</p>{p.evidenceDifference&&<details><summary>与此前建议的依据差异</summary><pre style={{whiteSpace:'pre-wrap'}}>{JSON.stringify(p.evidenceDifference,null,2)}</pre></details>}{p.frozen?<p>还原的建议已冻结，请重新分析。</p>:p.status==='pending'&&<><button disabled={busy} onClick={()=>decide(p.id,'accept')}>采纳建议</button> <button disabled={busy} onClick={()=>decide(p.id,'reject')}>拒绝建议</button></>}{p.receipt&&<p>回执：{p.receipt.status} · 修订 {p.receipt.revision}（刷新后查看）</p>}</details>)}</section>;
+}

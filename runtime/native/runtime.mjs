@@ -1,3 +1,4 @@
+import {proposals,reviewProposal} from '../canvas/proposals.mjs';
 import {exportProject,verifyProject,restoreProject} from '../canvas/backup.mjs';
 import {organizerStatus,enableOrganizer,organizerTopics,prepareOrganizer,executeOrganizer,finishOrganizer,recoverOrganizer} from '../canvas/organizer.mjs';
 import fs from 'node:fs';
@@ -110,6 +111,8 @@ async function daemon(project){
    else if(command==='binding-enable')result=await enableBinding(project,input,connection.epoch);
    else if(command==='binding-status')result=bindingStatus(project,input);
    else if(command==='binding-sources')result=bindingSources(project,input);
+   else if(command==='proposals')result=proposals(project,topic);
+   else if(command==='proposal-review')result=await reviewProposal(project,topic,input);
    else if(command==='organizer-status')result=organizerStatus(project,input);
    else if(command==='organizer-enable')result=await enableOrganizer(project,input);
    else if(command==='turn-ingest')result=ingestTurns(project,connection.workspaceId,input);

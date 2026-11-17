@@ -161,3 +161,11 @@
 !/prototypes/whiteboard-integration/src/OrganizerPanel.tsx
 !/tests/organizer.test.mjs
 !/tests/organizer-browser.mjs
+
+# Ticket 19 human intent and reviewable proposals.
+!/runtime/canvas/human-intent.mjs
+!/runtime/canvas/proposals.mjs
+!/runtime/canvas/HUMAN-INTENT.md
+!/prototypes/whiteboard-integration/src/ProposalsPanel.tsx
+!/tests/human-intent.test.mjs
+!/tests/human-intent-browser.mjs
