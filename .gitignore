@@ -198,3 +198,17 @@
 # Ticket 18 controlled namespace switching and backlog recovery.
 !/tests/source-switch.test.mjs
 
+
+# Ticket 25 reviewed Codex executor, bounded acceptance drivers and evidence.
+!/runtime/codex/
+/runtime/codex/*
+!/runtime/codex/executor.mjs
+!/runtime/codex/executor-config.mjs
+!/runtime/codex/result-schema.mjs
+!/runtime/codex/EXECUTOR.md
+!/tests/codex-executor-fixture.mjs
+!/tests/codex-executor.test.mjs
+!/tests/codex-executor-auth.test.mjs
+!/tests/codex-capability-audit.mjs
+!/tests/codex-executor-real.mjs
+!/tests/codex-executor-real-browser.mjs
