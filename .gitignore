@@ -169,3 +169,15 @@
 !/prototypes/whiteboard-integration/src/ProposalsPanel.tsx
 !/tests/human-intent.test.mjs
 !/tests/human-intent-browser.mjs
+# Ticket 16 lifecycle controls and bounded resource policy.
+!/tests/organizer-controls.test.mjs
+!/tests/organizer-controls-browser.mjs
+# Ticket 27 pinned DSH adapter and public Runtime tests.
+!/runtime/dsh/
+/runtime/dsh/*
+!/runtime/dsh/session-connector.mjs
+!/runtime/dsh/plugin.mjs
+!/runtime/dsh/prepare.mjs
+!/runtime/dsh/package.json
+!/runtime/dsh/README.md
+!/tests/dsh-session-connector.test.mjs
