@@ -240,6 +240,16 @@
 !/tests/context-delivery.test.mjs
 !/tests/context-delivery-browser.mjs
 
+# Ticket 28 reviewed DSH Organizer executor and bounded native acceptance.
+!/runtime/dsh/executor.mjs
+!/runtime/dsh/executor-config.mjs
+!/runtime/dsh/executor-guard.mjs
+!/runtime/dsh/EXECUTOR.md
+!/tests/dsh-executor-fixture.mjs
+!/tests/dsh-executor.test.mjs
+!/tests/dsh-executor-auth.test.mjs
+!/tests/dsh-capability-audit.mjs
+!/tests/dsh-executor-real.mjs
 # Ticket 32 argument and cyclic flow acceptance.
 !/tests/canvas-argument-flow.test.mjs
 !/tests/canvas-argument-flow-browser.mjs
