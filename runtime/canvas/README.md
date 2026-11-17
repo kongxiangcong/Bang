@@ -727,3 +727,9 @@ binary changes were made.
 
 No real model quality, real Codex/DSH end-to-end host, Windows 10/Linux browser
 matrix, performance or optimal graph-layout claim. These remain later acceptance.
+
+Final integration: merged `d4bed95` (ticket 23 restore) as `853c9db`.
+Six focused Compiler/model Runtime/comparison validation tests passed, including
+fixed/rootless agreement and atomic public rejection. Final production build and
+actual Chrome argument/flow browser script passed again on that merged tree.
+`git diff --check` passed. No broad model/host/platform claims were added.
