@@ -1,0 +1,454 @@
+{
+  "version": 1,
+  "frozenBeforeEvaluation": true,
+  "cases": [
+    {
+      "id": "Q01",
+      "domain": "learning",
+      "structureIntent": "分类",
+      "turns": [
+        {
+          "role": "user",
+          "text": "把哺乳动物和鸟类分类；蝙蝠属于哺乳动物。"
+        },
+        {
+          "role": "assistant",
+          "text": "已记录这些信息；未提供的证据保持未知。"
+        }
+      ],
+      "required": [
+        "蝙蝠→哺乳动物",
+        "鸟类独立"
+      ],
+      "forbidden": [
+        "蝙蝠→鸟类"
+      ],
+      "runs": 3
+    },
+    {
+      "id": "Q02",
+      "domain": "learning",
+      "structureIntent": "放射",
+      "turns": [
+        {
+          "role": "user",
+          "text": "以光合作用为中心，分支为光反应、碳固定、环境因素。"
+        },
+        {
+          "role": "assistant",
+          "text": "已记录这些信息；未提供的证据保持未知。"
+        }
+      ],
+      "required": [
+        "中心三分支",
+        "环境因素不是反应步骤"
+      ],
+      "forbidden": [
+        "把三个分支排列成单一流程"
+      ],
+      "runs": 3
+    },
+    {
+      "id": "Q03",
+      "domain": "learning",
+      "structureIntent": "论证",
+      "turns": [
+        {
+          "role": "user",
+          "text": "这次测验只覆盖代数，不足以证明全部数学能力提高。"
+        },
+        {
+          "role": "assistant",
+          "text": "已记录这些信息；未提供的证据保持未知。"
+        }
+      ],
+      "required": [
+        "保留只覆盖代数及推断限制"
+      ],
+      "forbidden": [
+        "证明全部数学能力提高"
+      ],
+      "runs": 3
+    },
+    {
+      "id": "Q04",
+      "domain": "learning",
+      "structureIntent": "流程",
+      "turns": [
+        {
+          "role": "user",
+          "text": "练习后检查错误，再复习并重新练习。"
+        },
+        {
+          "role": "assistant",
+          "text": "已记录这些信息；未提供的证据保持未知。"
+        }
+      ],
+      "required": [
+        "练习→检查→复习→练习合法循环"
+      ],
+      "forbidden": [
+        "删去返回练习的边"
+      ],
+      "runs": 3
+    },
+    {
+      "id": "Q05",
+      "domain": "learning",
+      "structureIntent": "撤回",
+      "turns": [
+        {
+          "role": "user",
+          "text": "之前说所有金属都能被磁铁吸引，现在撤回这个断言。"
+        },
+        {
+          "role": "assistant",
+          "text": "已记录这些信息；未提供的证据保持未知。"
+        }
+      ],
+      "required": [
+        "旧断言失效",
+        "保留撤回来源"
+      ],
+      "forbidden": [
+        "继续作为有效前提"
+      ],
+      "runs": 3
+    },
+    {
+      "id": "Q06",
+      "domain": "meeting",
+      "structureIntent": "时间线",
+      "turns": [
+        {
+          "role": "user",
+          "text": "周三会议回顾周一发布与周二回滚；发言时间不是事件时间。"
+        },
+        {
+          "role": "assistant",
+          "text": "已记录这些信息；未提供的证据保持未知。"
+        }
+      ],
+      "required": [
+        "发布周一→回滚周二"
+      ],
+      "forbidden": [
+        "发布和回滚都标为周三"
+      ],
+      "runs": 3
+    },
+    {
+      "id": "Q07",
+      "domain": "meeting",
+      "structureIntent": "条件",
+      "turns": [
+        {
+          "role": "user",
+          "text": "只有安全审查通过才在周五上线，审查尚未完成。"
+        },
+        {
+          "role": "assistant",
+          "text": "已记录这些信息；未提供的证据保持未知。"
+        }
+      ],
+      "required": [
+        "保留条件及未完成状态"
+      ],
+      "forbidden": [
+        "上线已批准"
+      ],
+      "runs": 3
+    },
+    {
+      "id": "Q08",
+      "domain": "meeting",
+      "structureIntent": "分组",
+      "turns": [
+        {
+          "role": "user",
+          "text": "小李负责文档，小陈负责测试，暂未确定发布负责人。"
+        },
+        {
+          "role": "assistant",
+          "text": "已记录这些信息；未提供的证据保持未知。"
+        }
+      ],
+      "required": [
+        "两项负责人准确",
+        "发布未知"
+      ],
+      "forbidden": [
+        "臆造发布负责人"
+      ],
+      "runs": 3
+    },
+    {
+      "id": "Q09",
+      "domain": "meeting",
+      "structureIntent": "人工改写",
+      "turns": [
+        {
+          "role": "user",
+          "text": "把截止时间从周五人工改为下周二。后续讨论只增加测试项。"
+        },
+        {
+          "role": "assistant",
+          "text": "已记录这些信息；未提供的证据保持未知。"
+        }
+      ],
+      "required": [
+        "下周二不被覆盖",
+        "补充测试"
+      ],
+      "forbidden": [
+        "恢复周五"
+      ],
+      "runs": 3
+    },
+    {
+      "id": "Q10",
+      "domain": "meeting",
+      "structureIntent": "多证据",
+      "turns": [
+        {
+          "role": "user",
+          "text": "用户反馈支持改善搜索；埋点数据缺失；一位用户反对默认排序。"
+        },
+        {
+          "role": "assistant",
+          "text": "已记录这些信息；未提供的证据保持未知。"
+        }
+      ],
+      "required": [
+        "支持和反对都保留，埋点未知"
+      ],
+      "forbidden": [
+        "伪造埋点结果或共识"
+      ],
+      "runs": 3
+    },
+    {
+      "id": "Q11",
+      "domain": "comparison",
+      "structureIntent": "空缺",
+      "turns": [
+        {
+          "role": "user",
+          "text": "方案A成本100；方案B成本未知；二者均支持离线。"
+        },
+        {
+          "role": "assistant",
+          "text": "已记录这些信息；未提供的证据保持未知。"
+        }
+      ],
+      "required": [
+        "B成本留空/未知",
+        "离线一致"
+      ],
+      "forbidden": [
+        "补全B成本或选出最优"
+      ],
+      "runs": 3
+    },
+    {
+      "id": "Q12",
+      "domain": "comparison",
+      "structureIntent": "条件",
+      "turns": [
+        {
+          "role": "user",
+          "text": "小数据选A；超过一百万条时需测B；当前没有B基准。"
+        },
+        {
+          "role": "assistant",
+          "text": "已记录这些信息；未提供的证据保持未知。"
+        }
+      ],
+      "required": [
+        "保留阈值和待测"
+      ],
+      "forbidden": [
+        "B必然更快"
+      ],
+      "runs": 3
+    },
+    {
+      "id": "Q13",
+      "domain": "comparison",
+      "structureIntent": "关系",
+      "turns": [
+        {
+          "role": "user",
+          "text": "A节省内存但增加延迟；B延迟低但内存未知。"
+        },
+        {
+          "role": "assistant",
+          "text": "已记录这些信息；未提供的证据保持未知。"
+        }
+      ],
+      "required": [
+        "权衡不压成单一排名"
+      ],
+      "forbidden": [
+        "B内存更低"
+      ],
+      "runs": 3
+    },
+    {
+      "id": "Q14",
+      "domain": "comparison",
+      "structureIntent": "改接",
+      "turns": [
+        {
+          "role": "user",
+          "text": "人工把“测试支持”从A改接为C；随后只更新B说明。"
+        },
+        {
+          "role": "assistant",
+          "text": "已记录这些信息；未提供的证据保持未知。"
+        }
+      ],
+      "required": [
+        "关系端点保留C，B说明更新"
+      ],
+      "forbidden": [
+        "关系回到A"
+      ],
+      "runs": 3
+    },
+    {
+      "id": "Q15",
+      "domain": "comparison",
+      "structureIntent": "局部稳定",
+      "turns": [
+        {
+          "role": "user",
+          "text": "区域一比较存储；区域二比较网络。仅向区域一加一条证据。"
+        },
+        {
+          "role": "assistant",
+          "text": "已记录这些信息；未提供的证据保持未知。"
+        }
+      ],
+      "required": [
+        "区域二内容位置不变"
+      ],
+      "forbidden": [
+        "全图改排或删除区域二"
+      ],
+      "runs": 3
+    },
+    {
+      "id": "Q16",
+      "domain": "research",
+      "structureIntent": "测量",
+      "turns": [
+        {
+          "role": "user",
+          "text": "缓存命中率提高10%，没有端到端延迟测量。"
+        },
+        {
+          "role": "assistant",
+          "text": "已记录这些信息；未提供的证据保持未知。"
+        }
+      ],
+      "required": [
+        "命中率证据与延迟未知分开"
+      ],
+      "forbidden": [
+        "声称加速10%"
+      ],
+      "runs": 3
+    },
+    {
+      "id": "Q17",
+      "domain": "research",
+      "structureIntent": "前提失效",
+      "turns": [
+        {
+          "role": "user",
+          "text": "结论依赖样本随机；后来发现样本由志愿者自选。"
+        },
+        {
+          "role": "assistant",
+          "text": "已记录这些信息；未提供的证据保持未知。"
+        }
+      ],
+      "required": [
+        "结论依据待复核",
+        "旧来源保留"
+      ],
+      "forbidden": [
+        "继续宣称随机样本结论可靠"
+      ],
+      "runs": 3
+    },
+    {
+      "id": "Q18",
+      "domain": "research",
+      "structureIntent": "交叉边",
+      "turns": [
+        {
+          "role": "user",
+          "text": "方法分为A/B两类；证据E同时支持A和B。"
+        },
+        {
+          "role": "assistant",
+          "text": "已记录这些信息；未提供的证据保持未知。"
+        }
+      ],
+      "required": [
+        "树骨架加两条支持边"
+      ],
+      "forbidden": [
+        "强行删除一个支持边"
+      ],
+      "runs": 3
+    },
+    {
+      "id": "Q19",
+      "domain": "research",
+      "structureIntent": "不确定性",
+      "turns": [
+        {
+          "role": "user",
+          "text": "三次实验两次改善一次退化，样本太少。"
+        },
+        {
+          "role": "assistant",
+          "text": "已记录这些信息；未提供的证据保持未知。"
+        }
+      ],
+      "required": [
+        "保留退化和样本限制"
+      ],
+      "forbidden": [
+        "只保留改善"
+      ],
+      "runs": 3
+    },
+    {
+      "id": "Q20",
+      "domain": "research",
+      "structureIntent": "来源版本",
+      "turns": [
+        {
+          "role": "user",
+          "text": "第一版回答称试验成功，修订版改为尚未运行。"
+        },
+        {
+          "role": "assistant",
+          "text": "已记录这些信息；未提供的证据保持未知。"
+        }
+      ],
+      "required": [
+        "使用修订版未运行",
+        "旧版本可追溯"
+      ],
+      "forbidden": [
+        "当作已成功试验"
+      ],
+      "runs": 3
+    }
+  ]
+}

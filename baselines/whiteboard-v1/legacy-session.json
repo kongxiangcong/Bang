@@ -1,0 +1,51 @@
+{
+  "schema": 1,
+  "id": "synthetic-legacy",
+  "generation": "frozen-generation",
+  "mode": "empty",
+  "messages": [],
+  "replayMessageCount": 0,
+  "visibleCount": 0,
+  "roundsPerUpdate": 2,
+  "events": [],
+  "scene": {
+    "elements": [
+      {
+        "id": "manual",
+        "type": "text",
+        "text": "人工保留：尚未测量",
+        "x": 120,
+        "y": 80,
+        "isDeleted": false
+      },
+      {
+        "id": "deleted",
+        "type": "text",
+        "text": "已删除旧猜测",
+        "x": 0,
+        "y": 0,
+        "isDeleted": true
+      },
+      {
+        "id": "route",
+        "type": "arrow",
+        "x": 100,
+        "y": 200,
+        "points": [
+          [
+            0,
+            0
+          ],
+          [
+            80,
+            40
+          ]
+        ],
+        "customData": {
+          "manualRoute": true
+        }
+      }
+    ],
+    "appliedEventIds": []
+  }
+}

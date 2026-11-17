@@ -1,0 +1,50 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import {runCompanion} from '../runtime/companion/bang.mjs';
+
+test('public commands isolate projects and reopen the initialized state', async t => {
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'bang-baseline-'));
+ t.after(()=>fs.rm(root,{recursive:true,force:true}));
+ const transcript=path.join(root,'source.jsonl');
+ await fs.writeFile(transcript,JSON.stringify({payload:{id:'synthetic-chat'}})+'\n');
+ const output=[];
+ const command=(args)=>runCompanion(args,{workspace:root,output:value=>output.push(value)});
+ await command(['init','--chat','synthetic-chat','--transcript',transcript,'--codex','unused-model','--topic','baseline']);
+ await command(['status']);
+ assert.equal(output.at(-1).config.topic,'baseline');
+ assert.equal(output.at(-1).state.revision,0);
+ await command(['pause']);
+ await command(['status']);
+ assert.equal(output.at(-1).config.enabled,false);
+ const other=[];
+ await runCompanion(['status'],{workspace:path.join(root,'other'),output:value=>other.push(value)});
+ assert.equal(other[0].config,null);
+});
+
+test('completed synthetic host round persists and is not replayed after reopen', async t => {
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'bang-organizer-'));
+ t.after(()=>fs.rm(root,{recursive:true,force:true}));
+ const transcript=path.join(root,'source.jsonl');
+ const rows=[{payload:{id:'synthetic-chat'}}];
+ await fs.writeFile(transcript,rows.map(JSON.stringify).join('\n')+'\n');
+ const common={workspace:root,output:()=>{}};
+ await runCompanion(['init','--chat','synthetic-chat','--transcript',transcript,'--codex','synthetic-model','--topic','baseline'],common);
+ rows.push({type:'event_msg',payload:{type:'task_started',turn_id:'turn-1'}},{type:'response_item',payload:{type:'message',role:'user',id:'u1',content:[{type:'input_text',text:'Keep the measurement uncertainty.'}]}},{type:'event_msg',payload:{type:'task_complete',turn_id:'turn-1',last_agent_message:'Latency is not measured.'}});
+ await fs.writeFile(transcript,rows.map(JSON.stringify).join('\n')+'\n');
+ const {spawn}=await import('node:child_process');
+ const event={goal:'measurement',upsertGroups:[{id:'g1',title:'Evidence',goal:'measurement',relation:'loose'}],upsertNodes:[{id:'n1',groupId:'g1',text:'Latency is not measured.',explanation:'No timing evidence.',sourceIds:['u1'],status:'open'}],upsertRelations:[],removeNodeIds:[],removeRelationIds:[]};
+ const spawnModel=(_executable,args,options)=>spawn(process.execPath,['-e',`require('fs').writeFileSync(process.argv[1],${JSON.stringify(JSON.stringify({event,discussion:'No timing evidence.'}))})`,args[args.indexOf('-o')+1]],options);
+ await runCompanion(['once'],{...common,spawnModel});
+ const status=[];
+ await runCompanion(['status'],{...common,output:value=>status.push(value)});
+ assert.equal(status[0].state.revision,1);
+ assert.deepEqual(status[0].state.processedTurnIds,['turn-1']);
+ await runCompanion(['once'],{...common,spawnModel:()=>{throw Error('must not repeat model')}});
+ const {createCompanionView}=await import('../runtime/companion/whiteboard.mjs');
+ const session=await createCompanionView({projectRoot:root,topic:'baseline'}).read();
+ assert.equal(session.events[0].changes.upsertNodes[0].text,'Latency is not measured.');
+ assert.equal(session.messages[0].text,'Keep the measurement uncertainty.');
+});

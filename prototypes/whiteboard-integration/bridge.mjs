@@ -78,7 +78,7 @@ function validateEvent(input, previousEvents, messages) {
   return event;
 }
 
-export function createBangStore({ projectRoot = defaultRoot } = {}) {
+export function createBangStore({ projectRoot = defaultRoot, beforeReplace = async () => {} } = {}) {
   const directory = path.join(projectRoot, '.bang');
   const sessionPath = path.join(directory, 'sessions', 'pim.json');
   const plansPath = path.join(directory, 'fixtures', 'pim-plans.json');
@@ -86,6 +86,7 @@ export function createBangStore({ projectRoot = defaultRoot } = {}) {
   async function write(session) {
     await fs.mkdir(path.dirname(sessionPath), { recursive: true });
     await fs.writeFile(`${sessionPath}.tmp`, JSON.stringify(session, null, 2));
+    await beforeReplace({temporaryPath: `${sessionPath}.tmp`, destinationPath: sessionPath});
     await fs.rename(`${sessionPath}.tmp`, sessionPath);
     return session;
   }

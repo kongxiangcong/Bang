@@ -1,0 +1,44 @@
+{
+  "capturedAt": "2026-11-17T16:28:33.391Z",
+  "sourceCommit": "c3993b760a9f03553694ca32e52281a9087a5ac8",
+  "platform": "win32",
+  "arch": "x64",
+  "osVersion": "Windows 11 Home China",
+  "osRelease": "10.0.26200",
+  "node": "v25.8.1",
+  "cpu": "AMD Ryzen 7 7840H with Radeon 780M Graphics    ",
+  "logicalCpus": 16,
+  "totalMemoryBytes": 29734326272,
+  "dependencyLockSha256": "c75d7500c6532ebb18bbda1004a92dab1437947402cc40fad6eac55f535da37d",
+  "fixtureHashes": {
+    "quality-cases.json": "e81659654bd13fb8487db0291262f366c7fc1eaeb70b3ef4e18e2cb76ef9023e",
+    "legacy-session.json": "f9020b298dfb2cbb7b7456b4120d19bb78e7531f7f6bbd91f3e6b030e0d2e43f",
+    "performance.json": "4bd85fe00da7618e11cb08cdb9f5c0355004a0e3db3d372282256fa20a95807a",
+    "performance-dataset.mjs": "31af05ebd91400286fb0c6a341cb97e4bba9d5deffe430188c4deea8150fad90",
+    "scoring.md": "7bd03bfa89e6cf196b1d7cdebafb2960fe2ecf7f73c021899a0d623dba6bc0d0"
+  },
+  "hostVersions": {
+    "codex": "not invoked; real-host validation not run",
+    "dsh": "not invoked; real-host validation not run"
+  },
+  "installedDirectDependencies": {
+    "@excalidraw/excalidraw": "0.18.1",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "zustand": "5.0.3",
+    "elkjs": "0.10.0",
+    "d3-hierarchy": "3.1.2",
+    "@radix-ui/react-tabs": "1.1.3",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "tailwind-merge": "3.0.2",
+    "typescript": "5.7.3",
+    "vite": "6.2.6",
+    "@vitejs/plugin-react": "4.3.4",
+    "@types/react": "19.0.10",
+    "@types/react-dom": "19.0.4",
+    "@types/d3-hierarchy": "3.1.7",
+    "tailwindcss": "4.1.3",
+    "@tailwindcss/vite": "4.1.3"
+  }
+}
