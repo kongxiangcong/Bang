@@ -1,3 +1,4 @@
+import {invalidateBasis,parseBasisReview,applyBasisReview,knowledgeContext} from './evidence.mjs';
 import {isDeepStrictEqual} from 'node:util';
 import {standardCanvas,parseImport,importChanges,exchangeDegradation} from './exchange.mjs';
 import {applyOperation as applyParsedOperation,orderOperations,operationIdentity} from './operations.ts';
@@ -8,7 +9,7 @@ import {validateResources,resourceStatus} from './resources.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
-import {compileCanvas,validateCanvas,parsePatch,parseCard,editableFields,layoutFields} from './contract.ts';
+import {compileCanvas,validateCanvasCandidate as validateCanvas,parsePatch,parseCard,editableFields,layoutFields} from './contract.ts';
 export function topicPath(project,topic){
  if(!project||!topic||! /^[a-zA-Z0-9_-]+$/.test(topic))throw Error('Explicit project and safe topic are required');
  return path.join(path.resolve(project),'.bang','topics',topic,'current.canvas');
@@ -70,6 +71,16 @@ function inspectPatch(db,topic,patch,row,project){
  // endpoint deletion in a supposedly safe subset. Independent field edits survive.
  const groups=patch.operations.map((op,i)=>new Set([i]));
  const join=(a,b)=>{const combined=new Set([...groups[a],...groups[b]]);for(const i of combined)groups[i]=combined;};
+ // A dimension migration is one structural dependency, even with fixed cards
+ // and no coordinate changes. Validate its final group, not intermediate edits.
+ const comparisonOperations=new Map();
+ for(const [i,op] of patch.operations.entries()){
+  if(!['create-card','delete-card','edit-card'].includes(op.type)||op.type==='edit-card'&&op.structure===undefined)continue;
+  const id=operationIdentity(op),intents=[original.canvas.nodes.find(n=>n.id===id)?.structure,current.canvas.nodes.find(n=>n.id===id)?.structure,op.card?.structure,op.structure];
+  for(const intent of intents)if(intent?.kind==='comparison'){
+   const prior=comparisonOperations.get(intent.rootId);if(prior!==undefined)join(i,prior);comparisonOperations.set(intent.rootId,i);
+  }
+ }
  for(const [i,card] of patch.operations.entries())if(card.type==='create-card'||card.type==='delete-card'){
   const id=operationIdentity(card);
   for(const [j,relation] of patch.operations.entries())if(relation.type.endsWith('relation')){
@@ -117,9 +128,10 @@ export async function readHead(project,topic){const state=await readCommitted(pr
 export async function commitBoard(project,topic,value){return publishPatch(project,topic,value,false);}
 export async function undoBoard(project,topic,value){return publishPatch(project,topic,value,true);}
 export async function commitOrganizerBoard(project,topic,value,organizer){return publishPatch(project,topic,value,false,organizer);}
-async function publishPatch(project,topic,value,undo,organizer){
+export async function reviewBasis(project,topic,value){return publishPatch(project,topic,value,false,undefined,true);}
+async function publishPatch(project,topic,value,undo,organizer,review){
  if(organizer&&(value.author?.kind!=='organizer'||value.author.id!=='organizer:'+organizer.taskId||value.intent!=='incremental-organize'))throw Error('Invalid Organizer authority');
- const patch=undo?parseUndo(value):organizer?{...parsePatch({...value,author:{kind:'manual',id:value.author.id},intent:'explicit-save'}),author:value.author,intent:value.intent,taskId:organizer.taskId,attemptId:organizer.attemptId}:parsePatch(value),file=topicPath(project,topic);if(patch.topic!==topic)throw Error('Patch topic mismatch');
+ const patch=review?parseBasisReview(value,topic):undo?parseUndo(value):organizer?{...parsePatch({...value,author:{kind:'manual',id:value.author.id},intent:'explicit-save'}),author:value.author,intent:value.intent,taskId:organizer.taskId,attemptId:organizer.attemptId}:parsePatch(value),file=topicPath(project,topic);if(patch.topic!==topic)throw Error('Patch topic mismatch');
  const db=open(project);const request=JSON.stringify(patch);
  try{
   reconcile(db,project,topic,file);
@@ -129,7 +141,8 @@ async function publishPatch(project,topic,value,undo,organizer){
   const row=db.prepare('SELECT * FROM topics WHERE topic=?').get(topic);if(!row)throw Error('Unknown topic');
   if(observed(file)!==row.hash)throw recoveryError('Canvas externally changed; recovery required');
   let next;
-  if(undo)next=compensate(db,topic,patch,JSON.parse(row.state));
+  if(review)next=applyBasisReview(JSON.parse(row.state),patch);
+  else if(undo)next=compensate(db,topic,patch,JSON.parse(row.state));
   else {
   const preview=inspectPatch(db,topic,patch,row,project);
   if(preview.conflicts.length)throw Object.assign(Error('Baseline conflict; full draft retained'),{preview});
@@ -152,6 +165,7 @@ async function publishPatch(project,topic,value,undo,organizer){
    }
   }
   }
+  invalidateBasis(JSON.parse(row.state),next);
   next.relations=semanticRelations(next.canvas.edges,next.canvas.nodes);
   validateCanvas(next.canvas);validateResources(project,next.canvas);
   const receipt={operationId:patch.operationId,topic,revision:next.revision,status:'committed'};
@@ -207,7 +221,8 @@ export async function importCanvas(project,topic,input){
   if(old&&((old.type??'text')!==(object.type??'text')||('fromNode' in old)!==('fromNode' in object)))throw Error('Import cannot change identity kind');
   if(changed.has(object.id))Object.defineProperty(next.metadata,object.id,{value:{...next.metadata[object.id],role:object.type==='group'?'visual-region':'knowledge',source:{kind:'manual',authorId:input.author.id,operationId:input.operationId},modifiedRevision:next.revision},enumerable:true,writable:true,configurable:true});
  }
- next.relations=semanticRelations(next.canvas.edges,next.canvas.nodes);
+ invalidateBasis(JSON.parse(row.state),next);
+  next.relations=semanticRelations(next.canvas.edges,next.canvas.nodes);
  // Preserve exact external bytes before publication; the publisher rechecks the
  // fingerprint immediately before replacement. Concurrent applications aren't locked.
  let preservedFile=null;
@@ -223,3 +238,7 @@ export async function importCanvas(project,topic,input){
 }
 
 export async function readOperationReceipt(project,topic,operation){await readCommitted(project,topic);const db=open(project,true);try{const row=db.prepare("SELECT receipt FROM intents WHERE topic=? AND operation=? AND status='confirmed'").get(topic,operation);return row?JSON.parse(row.receipt):null;}finally{db.close();}}
+
+
+
+export async function readKnowledgeContext(project,topic){return knowledgeContext(await readCommitted(project,topic));}
