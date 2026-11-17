@@ -320,3 +320,58 @@ Validation on Windows 11, Node v25.8.1 and actual headless Google Chrome:
   real visible borders/rotation handles and awaited editor/refresh readiness.
 - No physical IME, clipboard cross-project transfer, accessibility audit, Windows 10,
   Linux, real model/host roundtrip, full export or performance acceptance is claimed.
+
+## Ticket 13 — Topics and trusted current-session binding
+
+Public native operations: `topics`, `topic-create` (`{name}`),
+`connector-register` (`{id,host,versions,publicKey}`), `session-connect`,
+`binding-enable`, `binding-status`, `binding-sources`. JSON goes on CLI stdin.
+All operations use the existing native owner/capability and one owner queue.
+Topic creation invokes the existing board publisher; metadata uses the same
+`board.sqlite`. No second writable board or host transcript reader is installed.
+
+`SessionConnector.verifyProof` is the host trust boundary. The supplied signed
+adapter verifies Ed25519 proof with an explicitly installed host/version/public
+key registration (native administrative capability only, never browser routes).
+The private signing key stays in the adapter. A proof is `{connectorId,payload,
+signature}`; payload is base64url JSON, signature covers that exact payload string.
+Claims: host, version, instanceId, exact sessionId, stable workspaceId, role=primary,
+scope (topic IDs or explicit `*`), calling turnId/cursor, nonce, issuedAt/expiresAt
+(integer milliseconds, maximum five-minute window). Replay, expired/forged proofs,
+unknown host/version, wrong workspace, child agents and organizers fail closed.
+No recent-chat lookup exists; bare `verified:true` or session ID is not authority.
+Only whitelisted identity/boundary metadata is persisted, never message bodies.
+
+A valid handshake returns an opaque sessionToken; only its hash is persisted.
+Use it for binding-enable/status. A connector may launch
+`canvas.html#session=<token>`; the UI immediately removes the fragment and keeps
+the token in workspace-keyed sessionStorage. Browser capability remains separate;
+HTTP session routes expose topics/create-topic/connect/enable/binding, not trust
+registration. Session tokens remain valid across daemon restart until a fresh
+handshake for that exact host/instance/session rotates them.
+
+Zero topics creates a named default; one auto-selects; several require explicit
+selection. Existing binding repeats preserve source identity and initial boundary.
+Switching freezes previous source metadata. Takeover first returns old identity,
+backlog and a confirmation token; cancellation has no effects. Confirmation is
+bound to requester, target, old source metadata/backlog, board revision and owner
+epoch, expires in five minutes and is consumed on success. Stale previews fail.
+Received cursor/turn counts/backlog are initially empty/zero; ingestion is ticket
+14 and real Codex/DSH adapters are tickets 24/27. These are not host acceptance.
+
+Validation on Windows / Node v25.8.1 / Chrome headless (2026-11-18):
+- `node --test tests/topic-binding.test.mjs`: six public Runtime/HTTP scenarios;
+  creation and restart, single/multiple selection, concurrent default enable,
+  signed proof adversaries/scope, same-session idempotency, stale takeover.
+- `npm --prefix prototypes/whiteboard-integration run build`: passed; existing
+  large chunk warning remains.
+- `node tests/topic-binding-browser.mjs`: real UI creation/default selection,
+  controlled precise host identity, takeover preview/cancel/confirm, topic switch
+  and reload through real HTTP/native Runtime/SQLite, no fetch interception.
+- Native regression selection `browser proxy|split UTF|simultaneous public starts`:
+  three passed, preserving capability/origin checks and UTF-8 body handling.
+- TDD red evidence: unknown topics/registration operation, unique-topic takeover
+  failure and accepted replay; each corrected before proceeding. Browser harness
+  initially clicked before operation completion; now waits for enabled controls.
+- No real user transcript, paid model, host installation, Linux binding UI,
+  screen-reader or full lifecycle/ingestion acceptance is claimed.
