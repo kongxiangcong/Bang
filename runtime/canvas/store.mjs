@@ -1,3 +1,4 @@
+import {validateResources,resourceStatus} from './resources.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
@@ -20,7 +21,7 @@ export async function readCommitted(project,topic){
  try{const row=db.prepare('SELECT * FROM topics WHERE topic=?').get(topic);if(!row)throw Error('Unknown topic');if(hash(fs.readFileSync(file))!==row.hash)throw Error('Canvas publication pending or externally changed; recovery required');return JSON.parse(row.state);}finally{db.close();}
 }
 export async function generateBoard(project,topic,input){
- const board=compileCanvas(input),file=topicPath(project,topic);fs.mkdirSync(path.dirname(file),{recursive:true});
+ const board=compileCanvas(input),file=topicPath(project,topic);validateResources(project,board);fs.mkdirSync(path.dirname(file),{recursive:true});
  fs.writeFileSync(file,bytes(board),{flag:'wx'});
  const state={revision:0,canvas:board,metadata:Object.fromEntries(board.nodes.map(n=>[n.id,{source:{kind:'bootstrap'},modifiedRevision:0}]))},db=open(project);
  try{db.exec('BEGIN IMMEDIATE');db.prepare('INSERT INTO topics VALUES(?,?,?,?)').run(topic,0,JSON.stringify(state),hash(bytes(board)));db.prepare('INSERT INTO revisions VALUES(?,?,?)').run(topic,0,JSON.stringify(state));db.exec('COMMIT');}finally{db.close();}return board;
@@ -44,12 +45,12 @@ export async function commitBoard(project,topic,value){
    const identity=op.type==='create-card'?op.card.id:op.id;
    if(touched.has(identity))throw Error('Repeated object operation');touched.add(identity);
    const index=next.canvas.nodes.findIndex(n=>n.id===identity);
-   if(op.type==='create-card'){if(index!==-1)throw Error('Card already exists');next.canvas.nodes.push({...parseCard(op.card),type:'text'});}
+   if(op.type==='create-card'){if(index!==-1)throw Error('Card already exists');next.canvas.nodes.push(parseCard(op.card));}
    else {if(index===-1)throw Error('Card not found');if(op.type==='edit-card')next.canvas.nodes[index].text=op.text;else next.canvas.nodes.splice(index,1);}
    if(op.type==='delete-card')delete next.metadata[identity];
    else Object.defineProperty(next.metadata,identity,{value:{source:{kind:'manual',authorId:patch.author.id,operationId:patch.operationId},modifiedRevision:next.revision},enumerable:true,configurable:true,writable:true});
   }
-  validateCanvas(next.canvas);
+  validateCanvas(next.canvas);validateResources(project,next.canvas);
   const content=bytes(next.canvas),digest=hash(content),state=JSON.stringify(next);
   const receipt={operationId:patch.operationId,topic,revision:next.revision,status:'committed'};
   db.prepare('INSERT INTO intents VALUES(?,?,?,?,?,?,?)').run(topic,patch.operationId,request,state,digest,JSON.stringify(receipt),'prepared');
@@ -61,4 +62,10 @@ export async function commitBoard(project,topic,value){
   try{db.prepare('UPDATE topics SET revision=?,state=?,hash=? WHERE topic=?').run(next.revision,state,digest,topic);db.prepare('INSERT INTO revisions VALUES(?,?,?)').run(topic,next.revision,state);db.prepare("UPDATE intents SET status='confirmed' WHERE topic=? AND operation=?").run(topic,patch.operationId);db.exec('COMMIT');}catch(e){db.exec('ROLLBACK');throw e;}
   return receipt;
  }finally{db.close();}
+}
+
+export async function readResourceStatus(project,topic,id){
+ const state=await readCommitted(project,topic),card=state.canvas.nodes.find(n=>n.id===id);
+ if(!card||card.type!=='file')throw Error('Unknown file resource');
+ try{return resourceStatus(project,card.file);}catch{return {status:'blocked'};}
 }

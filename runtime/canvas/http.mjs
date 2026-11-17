@@ -1,4 +1,4 @@
-import {readBoard,readCommitted,commitBoard} from './store.mjs';
+import {readBoard,readCommitted,commitBoard,readResourceStatus} from './store.mjs';
 export function createCanvasMiddleware({project}){
  return async(req,res,next=()=>{res.statusCode=404;res.end();})=>{
   const url=new URL(req.url,'http://localhost');if(!url.pathname.startsWith('/api/canvas/'))return next();
@@ -13,6 +13,7 @@ export function createCanvasMiddleware({project}){
     res.end(JSON.stringify(await commitBoard(project,topic,JSON.parse(body))));return;
    }
    if(req.method!=='GET'){res.statusCode=405;res.end(JSON.stringify({error:'Use explicit commit endpoint'}));return;}
+   if(action==='resources'){res.end(JSON.stringify(await readResourceStatus(project,topic,url.searchParams.get('id'))));return;}
    if(action&&action!=='state')throw Error('Unknown route');
    res.end(JSON.stringify(action==='state'?await readCommitted(project,topic):await readBoard(project,topic)));
   }catch(error){res.statusCode=error.code==='ENOENT'?404:/conflict|reused|recovery|externally/.test(error.message)?409:400;res.end(JSON.stringify({error:error.message}));}

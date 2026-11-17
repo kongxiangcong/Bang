@@ -91,3 +91,8 @@
 # Reviewed ticket 03 explicit-save public regression tests.
 !/tests/canvas-save.test.mjs
 !/tests/canvas-save-browser.mjs
+# Reviewed ticket 11 resource safety and raw detail panel.
+!/runtime/canvas/resources.mjs
+!/prototypes/whiteboard-integration/src/ResourceDetails.tsx
+!/tests/canvas-resources.test.mjs
+!/tests/canvas-resources-browser.mjs
