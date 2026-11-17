@@ -20,6 +20,7 @@ export function createCanvasMiddleware({project}){
     res.end(JSON.stringify(await runtimeOperation(project,'commit',topic,JSON.parse(body))));return;
    }
    if(req.method!=='GET'){res.statusCode=405;res.end(JSON.stringify({error:'Use explicit commit endpoint'}));return;}
+   if(action==='resources'){res.end(JSON.stringify(await runtimeOperation(project,'resource-status',topic,{id:url.searchParams.get('id')})));return;}
    if(action&&action!=='state')throw Error('Unknown route');
    res.end(JSON.stringify(await runtimeOperation(project,action==='state'?'state':'read',topic)));
   }catch(error){res.statusCode=error.code==='ENOENT'?404:/conflict|reused|recovery|externally/.test(error.message)?409:400;res.end(JSON.stringify({error:error.message}));}

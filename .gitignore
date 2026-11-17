@@ -91,10 +91,16 @@
 # Reviewed ticket 03 explicit-save public regression tests.
 !/tests/canvas-save.test.mjs
 !/tests/canvas-save-browser.mjs
+# Reviewed ticket 11 resource safety and raw detail panel.
+!/runtime/canvas/resources.mjs
+!/prototypes/whiteboard-integration/src/ResourceDetails.tsx
+!/tests/canvas-resources.test.mjs
+!/tests/canvas-resources-browser.mjs
 
 # Reviewed ticket 06 browser-local recovery and end-of-interaction regression.
 !/prototypes/whiteboard-integration/src/drafts.ts
 !/tests/canvas-draft-browser.mjs
+
 # Reviewed ticket 04 native OS-lock runtime, prebuilt Windows helper and public tests.
 !/runtime/native/
 /runtime/native/*
@@ -106,4 +112,3 @@
 !/prototypes/whiteboard-integration/src/canvas-client.ts
 !/tests/native-runtime.test.mjs
 !/tests/canvas-request.mjs
-
