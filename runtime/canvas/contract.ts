@@ -26,7 +26,7 @@ export function compileCanvas(input:unknown):Canvas {
  return validateCanvas({nodes,edges:[]});
 }
 
-export type BoardOperation = {type:'create-card';card:Card}|{type:'edit-card';id:string;text:string}|{type:'delete-card';id:string};
+export type BoardOperation = {type:'create-card';card:Card}|{type:'edit-card';id:string;text:string;x?:number;y?:number}|{type:'delete-card';id:string};
 export type BoardPatch = {operationId:string;topic:string;baseRevision:number;author:{kind:'manual';id:string};readDependencies:string[];intent:'explicit-save';operations:BoardOperation[]};
 export type CardMetadata = {source:{kind:'manual';authorId:string;operationId:string}|{kind:'bootstrap'};modifiedRevision:number};
 export type CommittedBoard = {revision:number;canvas:Canvas;metadata:Record<string,CardMetadata>};
@@ -35,6 +35,7 @@ export function parsePatch(value:unknown):BoardPatch {
  if(!p||typeof p!=='object'||!p.author||p.author.kind!=='manual'||!p.author.id||p.intent!=='explicit-save')throw Error('Expected explicit manual save');
  id(p.operationId);id(p.topic);id(p.author.id);
  if(!Number.isSafeInteger(p.baseRevision)||p.baseRevision<0||!Array.isArray(p.readDependencies)||p.readDependencies.some(d=>typeof d!=='string')||!Array.isArray(p.operations)||!p.operations.length)throw Error('Invalid patch baseline or operations');
- for(const op of p.operations){if(op?.type==='create-card')parseCard(op.card);else if(op?.type==='edit-card'){id(op.id);string(op.text);}else if(op?.type==='delete-card')id(op.id);else throw Error('Unknown board operation');}
+ for(const op of p.operations){if(op?.type==='create-card')parseCard(op.card);else if(op?.type==='edit-card'){id(op.id);string(op.text);if(op.x!==undefined)number(op.x);if(op.y!==undefined)number(op.y);}else if(op?.type==='delete-card')id(op.id);else throw Error('Unknown board operation');}
  return p;
 }
+

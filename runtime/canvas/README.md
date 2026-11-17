@@ -76,3 +76,12 @@ Loopback/Chrome execution required leaving the restricted sandbox. All projects
 were temporary; no real `.bang` was touched. This proves the narrow local save
 path with no configured model. No Linux, Windows 10, physical IME, crash recovery,
 concurrent process ownership, performance or real Codex/DSH host acceptance claim.
+
+## Ticket 06 draft evidence (2026-11-18)
+
+- `npm run build` (companion): passed, existing large-chunk advisory remains.
+- `node tests/canvas-draft-browser.mjs`: real headless Chrome / real HTTP middleware / temporary project filesystem. Red: recovery prompt timed out before implementation. Green: explicit recover/discard after reload; text and pointer-up drafts; two pages and two topics isolated; stale save retained original baseline and draft; committed read excludes drafts. Chromium `Input.imeSetComposition` tested unfinished and finalized Chinese composition; this is simulated browser IME, not physical Windows IME.
+- Browser test performs DOM inspection and CDP input; no React state injection or API interception. Programmatic reload does not create drafts. Only pointer-end coordinate movement is mapped in this ticket; complete layout operations belong to ticket 09.
+- Browser-local recovery uses localStorage by topic and editor identity (`window.name`). An existing editor offers its own draft; a newly opened editor can explicitly copy another editor's retained draft from the recovery list. Clearing browser storage removes these local drafts. Cross-version merge is not implemented: recovery retains the original revision, so stale save fails atomically.
+- API/CLI regression: `node --test tests/canvas-save.test.mjs tests/canvas-runtime.test.mjs`.
+- Untested: physical OS IME, native Windows 10/Ubuntu and real host loop, quota/device-loss durability, cross-origin/port browser storage migration. No user `.bang` data was used.
