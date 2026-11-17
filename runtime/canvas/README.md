@@ -1,49 +1,78 @@
-# Headless Canvas (ticket 02)
+# Canvas runtime: explicit text-card saves (tickets 02–03)
 
-This new entry is separate from the legacy companion. Use a disposable/new project;
-do not point it at an existing user project. It is the text-card bootstrap slice,
-not the collaborative editor or native daemon. Node 22.18+ (native TypeScript
-stripping) is required; verified with Node 25.8.1 on Windows.
-
-From the repository root:
+Use a disposable/new project. Do not point this development runtime at an existing
+user project. Verified on Windows 11 with Node 25.8.1 and native `node:sqlite`.
+The legacy companion and original `/` page remain separate.
 
 ```powershell
-'{"cards":[{"id":"idea-1","text":"原文 **Markdown**","x":0,"y":0,"width":320,"height":180}]}' | node runtime/canvas/bang.mjs generate --project D:/tmp/bang-demo --topic demo
+'{"cards":[]}' | node runtime/canvas/bang.mjs generate --project D:/tmp/bang-demo --topic demo
 node runtime/canvas/bang.mjs read --project D:/tmp/bang-demo --topic demo
+node runtime/canvas/bang.mjs state --project D:/tmp/bang-demo --topic demo
 $env:BANG_CANVAS_PROJECT='D:/tmp/bang-demo'
 cd prototypes/whiteboard-integration
 npm run dev
 ```
 
-Open `http://127.0.0.1:5180/canvas.html?topic=demo`. The original `/` route is
-unchanged. `/api/canvas/demo` reads the same `.bang/topics/demo/current.canvas`;
-the HTTP boundary is read-only. No scene or other writable current projection is
-saved. Opening/reloading does not write the Canvas. Generation creates a topic
-once and refuses to overwrite it; explicit editing and revisioned commits follow
-in ticket 03, crash recovery in ticket 05. This bootstrap does not claim atomic
-publication under concurrent reads, daemon ownership, or external-file import.
+Open `http://127.0.0.1:5180/canvas.html?topic=demo`. The knowledge-card panel creates,
+edits and deletes text cards. Its in-memory edits do not change committed state.
+Only **保存** sends operations; the page displays the confirmed revision and operation
+identity. Excalidraw shows the committed Canvas. Reload opens that same revision.
+There are no model calls or remote resources required for saving.
 
-`contract.ts` is dependency-free and DOM-free. The shared field schema supplies
-both inferred TypeScript card types and runtime validation. Compilation copies
-caller-provided identity, original text and integer geometry without layout,
-randomness or model calls. Input array order is standard z-order. The current
-supported subset is text nodes and empty edges; other node types/edges are rejected
-on read rather than silently dropped. See the [JSON Canvas 1.0 specification](https://jsoncanvas.org/spec/1.0/).
+## Public boundaries
 
-## Evidence
+- CLI `generate` bootstraps a topic once; `read` returns standard Canvas; `state`
+  returns `{revision,canvas,metadata}`. Reads use SQLite read-only connections and
+  check the published Canvas hash; they do not initialize or repair files.
+- CLI `commit` consumes a `BoardPatch` JSON from stdin. HTTP GET
+  `/api/canvas/:topic` and `/state` expose the same reads; POST
+  `/api/canvas/:topic/commit` accepts JSON and returns the same receipt.
+- `contract.ts` defines dependency-free DOM-free Canvas and typed patches. Supported
+  operations are `create-card`, `edit-card` (text only) and `delete-card`. A patch
+  carries topic, operationId, baseRevision, manual author, readDependencies, intent
+  `explicit-save` and operations. Manual provenance records the actor/operation,
+  never a fabricated chat turn. Bootstrap provenance is separately labeled.
+- The entire patch is validated against the exact current revision before writing.
+  Stale baseline or any invalid operation rejects the entire save. This conservative
+  baseline gate intentionally precedes field-aware merge in ticket 07. No incoming
+  whole-scene replacement is accepted. Retrying identical operation IDs returns the
+  original receipt; reusing an ID with different content is rejected.
 
-On Windows / Node 25.8.1 with the frozen frontend dependencies:
+Example patch, passed to CLI `commit` or HTTP:
 
-- `node --test tests/canvas-runtime.test.mjs tests/legacy-runtime.test.mjs tests/legacy-http.test.mjs`: eight passing public CLI/HTTP/compiler and legacy tests.
-- `npm run build` in `prototypes/whiteboard-integration`: TypeScript and production build pass (existing large-bundle warning).
-- `node tests/canvas-browser.mjs`: actual headless Chrome, CLI-generated temporary project, real HTTP, production Excalidraw, reload, identity/body/geometry/order and unchanged Canvas content/mtime. No request interception or injected scene. Screenshot saved locally as ignored `canvas-browser.png`.
-- `node tests/legacy-browser.mjs`: original rectangle gesture/save/reload passes.
+```json
+{"operationId":"save-1","topic":"demo","baseRevision":0,"author":{"kind":"manual","id":"local-user"},"readDependencies":[],"intent":"explicit-save","operations":[{"type":"create-card","card":{"id":"idea-1","text":"人工知识","x":0,"y":0,"width":320,"height":180}}]}
+```
 
-The CLI/HTTP and browser tests first failed on missing entry/page; the standard
-integer-geometry tests failed before the validator fix. Local networking and
-Chrome required execution outside the restricted sandbox. Screenshot inspected:
-front card covers the back card, matching Canvas order.
+## Publication and extension seams
 
-This proves the narrow ticket 02 path. No real host/model ingestion, Linux,
-Windows 10, editable round trip, edges/complex layout or performance claim is made.
-The frozen baseline remains in `baselines/whiteboard-v1`.
+One `.bang/board.sqlite` holds topic heads, complete revision snapshots and durable
+intent/receipt records. A validated candidate is stored as a prepared intent with
+SQLite synchronous FULL. The Canvas is written to a same-directory temporary file,
+flushed with fsync, its prior hash checked again, and renamed over the old file.
+Only then does a SQLite transaction confirm the head, revision and receipt.
+Public reads return a confirmed coherent state or recovery-required error, never
+an unconfirmed replacement. Unknown external content is not silently overwritten.
+
+Synchronous publication prevents interleaving within one process. **Do not run
+competing writers** until ticket 04 adds native project ownership. Prepared failure
+blocks subsequent writes and preserves recovery material; automated crash recovery,
+stronger bootstrap publication and platform durability/fault testing belong to
+05. The bootstrap writes its initial file before its metadata, so interruption can
+require recovery. Draft persistence/IME belongs to 06; field merge to 07; history
+navigation to 12. Text-only standard Canvas is intentionally enforced; other types
+and edges are rejected rather than silently discarded. See the
+[JSON Canvas specification](https://jsoncanvas.org/spec/1.0/).
+
+## Evidence, 2026-11-18
+
+- `node --test tests/canvas-save.test.mjs tests/canvas-runtime.test.mjs tests/legacy-runtime.test.mjs tests/legacy-http.test.mjs`: 11 passing public CLI/HTTP/compiler and legacy tests. Fresh-process reopen, true manual source, stable idempotent receipt, edit/delete, stale baseline and all-or-nothing patch rejection covered.
+- TDD: CLI save failed `Unknown command`, then passed; HTTP save failed 405, then passed. Additional edit/delete/conflict regression passed on its first run (not a separate red cycle). Browser first failed for missing build, then with built old page failed on missing create control before UI implementation.
+- `npm run build`: TypeScript and production build pass; existing large-bundle warning.
+- `node tests/canvas-save-browser.mjs`: real Chrome mouse/keyboard creates a card, checks revision remains zero before Save, saves, reopens exact text, edits, deletes, and reopens revision 3. Real application HTTP and temporary project disk, no intercepted API or injected scene. Initial driver select-all failed to replace placeholder text; native selectAll command fixed the driver, then passed.
+- `node tests/canvas-browser.mjs` and `node tests/legacy-browser.mjs`: prior no-write-on-read and original rectangle gesture/save/reload pass. Ignored local screenshot `canvas-save-browser.png` inspected: two original cards and revision 3 remain after deleting the new card.
+
+Loopback/Chrome execution required leaving the restricted sandbox. All projects
+were temporary; no real `.bang` was touched. This proves the narrow local save
+path with no configured model. No Linux, Windows 10, physical IME, crash recovery,
+concurrent process ownership, performance or real Codex/DSH host acceptance claim.

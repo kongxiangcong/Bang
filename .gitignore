@@ -87,3 +87,7 @@
 !/prototypes/whiteboard-integration/src/canvas.tsx
 !/tests/canvas-runtime.test.mjs
 !/tests/canvas-browser.mjs
+
+# Reviewed ticket 03 explicit-save public regression tests.
+!/tests/canvas-save.test.mjs
+!/tests/canvas-save-browser.mjs
