@@ -67,8 +67,8 @@ export async function previewBoard(project,topic,value){
  try{const row=db.prepare('SELECT * FROM topics WHERE topic=?').get(topic);return inspectPatch(db,topic,patch,row,project);}finally{db.close();}
 }
 export async function readHead(project,topic){const state=await readCommitted(project,topic);return {revision:state.revision};}
-// Synchronous publication prevents interleaving within this process. Cross-process
-// ownership is the native single-writer ticket; do not run competing writers yet.
+// Native Runtime ownership supplies the single writer; synchronous publication
+// keeps comparison and publication together without another request interleaving.
 export async function commitBoard(project,topic,value){
  const patch=parsePatch(value),file=topicPath(project,topic);if(patch.topic!==topic)throw Error('Patch topic mismatch');
  const db=open(project);const request=JSON.stringify(patch);

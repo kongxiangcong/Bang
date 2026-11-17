@@ -42,6 +42,7 @@ try{
  remote('remote-add',0,[{type:'create-card',card:{id:'remote',text:'后台新增',x:900,y:900,width:320,height:180}}]);
  await until(()=>evaluate('document.body.innerText.includes("后台头版本 1")'));
  assert.equal(await evaluate('document.querySelectorAll("textarea").length'),3);
+ assert.equal(await evaluate('window.canvasBoard.snapshot().some(e=>e.id==="remote")'),false);
  await button('保存');await until(()=>evaluate('document.body.innerText.includes("已保存 · 修订 2")'));
  assert.equal(await evaluate('document.body.innerText.includes("显示版本 0")'),true);
  assert.equal(await evaluate('document.body.innerText.includes("局部确认 2")'),true);
@@ -55,8 +56,10 @@ try{
  await cmd('Page.reload');await delay(250);await until(()=>evaluate('document.body.innerText.includes("发现可恢复草稿")'));await button('恢复草稿');
  assert.equal(await evaluate('document.querySelectorAll("textarea")[0].value'),'本地竞争正文');
  const center=await evaluate('(()=>{const r=document.querySelector("main").getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+250}})()');
+ const beforePan=await evaluate('(()=>{const a=window.canvasBoard.viewport();return {x:a.scrollX,y:a.scrollY,z:a.zoom.value}})()');
  await cmd('Input.dispatchMouseEvent',{type:'mousePressed',...center,button:'middle',clickCount:1});await cmd('Input.dispatchMouseEvent',{type:'mouseMoved',x:center.x+90,y:center.y+60,button:'middle',buttons:4});await cmd('Input.dispatchMouseEvent',{type:'mouseReleased',x:center.x+90,y:center.y+60,button:'middle',clickCount:1});
  const viewport=await evaluate('(()=>{const a=window.canvasBoard.viewport();return {x:a.scrollX,y:a.scrollY,z:a.zoom.value}})()');
+ assert.notDeepEqual(viewport,beforePan);
  await button('刷新');await button('保留并合并');await until(()=>evaluate('document.body.innerText.includes("显示版本 4")'));
  assert.equal(await evaluate('document.querySelectorAll("textarea")[0].value'),'本地竞争正文');assert.equal(await evaluate('document.querySelectorAll("textarea").length'),4);
  assert.deepEqual(await evaluate('(()=>{const a=window.canvasBoard.viewport();return {x:a.scrollX,y:a.scrollY,z:a.zoom.value}})()'),viewport);

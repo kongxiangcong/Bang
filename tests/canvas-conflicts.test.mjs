@@ -19,6 +19,7 @@ test('two clients merge independent fields and additions without replacing the s
   ok(run(p,'commit',patch('remote',0,[{type:'edit-card',id:'a',text:'remote text'},{type:'create-card',card:{...card,id:'remote'}}])));
   assert.equal(ok(run(p,'commit',patch('local-move',0,[{type:'edit-card',id:'a',x:100}]))).revision,2);
   const state=ok(run(p,'state'));assert.equal(state.canvas.nodes.length,2);assert.equal(state.canvas.nodes[0].text,'remote text');assert.equal(state.canvas.nodes[0].x,100);
+  ok(run(p,'stop')); // Historical field baselines survive a fresh native Runtime.
   // Acknowledging x at revision 2 must not pretend the client has read text at 2.
   const stale=run(p,'commit',patch('unseen-text',0,[{type:'edit-card',id:'a',text:'stale text',fieldRevisions:{x:2}}]));assert.notEqual(stale.status,0);
   assert.equal(ok(run(p,'commit',patch('move-again',0,[{type:'edit-card',id:'a',x:120,fieldRevisions:{x:2}}]))).revision,3);
