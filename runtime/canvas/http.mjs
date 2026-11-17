@@ -19,7 +19,7 @@ export function createCanvasMiddleware({project:rootProject}){
    if(topic==='session'&&action==='topics'&&req.method==='GET'){res.end(JSON.stringify(await runtimeOperation(project,'topics')));return;}
    if(topic==='session'&&req.method==='POST'&&['context-start','context-query','context-ack','create-topic','connect','enable','binding','ingest','backfill'].includes(action)){
     if(!req.headers['content-type']?.startsWith('application/json'))throw Error('JSON content type required');
-    req.setEncoding('utf8');let body='';for await(const chunk of req){body+=chunk;if(Buffer.byteLength(body)>(action==='ingest'?1024*1024:20000))throw Error('Binding request too large');}
+    req.setEncoding('utf8');let body='';for await(const chunk of req){body+=chunk;if(Buffer.byteLength(body)>(['ingest','context-query'].includes(action)?1024*1024:20000))throw Error('Binding request too large');}
     const command={'context-start':'context-start','context-query':'context-query','context-ack':'context-ack','create-topic':'topic-create',connect:'session-connect',enable:'binding-enable',binding:'binding-status',ingest:'turn-ingest',backfill:'turn-backfill'}[action];
     res.end(JSON.stringify(await runtimeOperation(project,command,undefined,JSON.parse(body))));return;
    }
