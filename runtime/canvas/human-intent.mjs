@@ -9,8 +9,10 @@ export function captureHumanIntent(content,state){
  return {classification:'explicit',baseRevision:state.revision,operation,fieldVersions:Object.fromEntries(fields.map(k=>[k,state.metadata[object.id]?.fields?.[k]?.modifiedRevision??0]))};
 }
 export function authorizeChange(task,change,current){
- const intent=task.input.completedTurns.find(s=>s.id===change.sources?.[0])?.humanIntent;
+ const source=task.input.completedTurns.find(s=>s.id===change.sources?.[0]),intent=source?.humanIntent;
  if(intent?.classification!=='explicit'||intent.frozen||Object.entries(intent.operation).some(([k,v])=>change[k]!==v))return false;
+ const received=task.input.receivedIntents??task.input.completedTurns,at=received.findIndex(s=>s.id===source.id);
+ if(received.slice(at+1).some(s=>s.humanIntent?.classification==='explicit'&&!s.humanIntent.frozen&&s.humanIntent.operation.id===change.id))throw Object.assign(Error('Newer conversational instruction supersedes authorization'),{code:'AUTHORIZATION_STALE'});
  if(Object.entries(intent.fieldVersions).some(([k,v])=>(current.metadata[change.id]?.fields?.[k]?.modifiedRevision??0)!==v))throw Object.assign(Error('Newer human intent supersedes conversational authorization'),{code:'AUTHORIZATION_STALE'});
- return true;
+ return {sourceId:source.id,baseRevision:intent.baseRevision};
 }
