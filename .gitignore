@@ -243,3 +243,10 @@
 # Ticket 32 argument and cyclic flow acceptance.
 !/tests/canvas-argument-flow.test.mjs
 !/tests/canvas-argument-flow-browser.mjs
+
+# Ticket 34 mixed regions and explicit selected reorganization.
+!/runtime/canvas/reorganize.mjs
+!/runtime/canvas/mixed-structures.ts
+!/prototypes/whiteboard-integration/src/ReorganizeSelection.tsx
+!/tests/canvas-reorganize.test.mjs
+!/tests/canvas-reorganize-browser.mjs
