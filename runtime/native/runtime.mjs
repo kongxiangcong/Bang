@@ -5,6 +5,7 @@ import {randomUUID,randomBytes,timingSafeEqual} from 'node:crypto';
 import {spawn,spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import * as store from '../canvas/store.mjs';
+import {configureCodexWatch,startCodexWatch,codexWatchStatus} from '../codex/watch.mjs';
 import {ingestTurns,turnStatus,turnSource,authorizeBackfill} from '../canvas/ingestion.mjs';
 import {listTopics,createTopic,registerConnector,connectSession,enableBinding,bindingStatus,bindingSources} from '../canvas/binding.mjs';
 const here=fileURLToPath(import.meta.url);
@@ -77,7 +78,7 @@ async function daemon(project){
  const connection={workspaceId:identity.workspaceId,instanceId:randomUUID(),epoch:String(identity.epoch),pid:process.pid,token:randomBytes(32).toString('hex')};
  const status=()=>({status:'running',ownership:'os-handle',workspaceId:connection.workspaceId,instanceId:connection.instanceId,epoch:connection.epoch,pid:process.pid,supervisorPid:process.ppid,url:connection.url});
  const methods={'export-canvas':store.exportCanvas,'import-preview':store.previewImport,'import-canvas':store.importCanvas,'recovery-status':store.readRecoveryStatus,recover:store.recoverBoard,undo:store.undoBoard,history:store.readHistory,'history-preview':store.previewHistory,'history-diff':store.diffHistory,generate:store.generateBoard,read:store.readBoard,state:store.readCommitted,commit:store.commitBoard,preview:store.previewBoard,head:store.readHead,'resource-status':(project,topic,input)=>store.readResourceStatus(project,topic,input.id)};
- let stopping=false,operationQueue=Promise.resolve();
+ let stopping=false,operationQueue=Promise.resolve(),stopCodexWatch=()=>{};
  const server=http.createServer(async(req,res)=>{
   res.setHeader('Content-Type','application/json; charset=utf-8');res.setHeader('Cache-Control','no-store');
   try{
@@ -91,7 +92,9 @@ async function daemon(project){
    const execute=async()=>{let result;
    if(stopping)throw Error('Runtime stopping');
    if(command==='status')result=status();
-   else if(command==='stop'){stopping=true;result={status:'stopped'};}
+   else if(command==='stop'){stopping=true;stopCodexWatch();result={status:'stopped'};}
+   else if(command==='codex-watch-status')result=codexWatchStatus(project);
+   else if(command==='codex-watch')result=configureCodexWatch(project,input);
    else if(command==='topics')result=listTopics(project);
    else if(command==='topic-create')result=await createTopic(project,input);
    else if(command==='connector-register')result=registerConnector(project,input);
@@ -114,6 +117,7 @@ async function daemon(project){
  await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});connection.url=`http://127.0.0.1:${server.address().port}`;
  startupStage='discovery-publish';
  const temporary=path.join(dir,'connection.tmp');fs.writeFileSync(temporary,JSON.stringify(connection),{mode:0o600});startupStage='discovery-replace';await publishMetadata(temporary,path.join(dir,'connection.json'));
+ stopCodexWatch=startCodexWatch(project,(command,input)=>request(connection,command==='start'?'status':command,undefined,input));
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===here&&process.argv[2]==='--daemon'){
  try{await daemon(process.argv[3]);}catch(error){

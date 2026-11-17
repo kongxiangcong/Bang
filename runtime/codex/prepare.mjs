@@ -1,0 +1,25 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import {generateKeyPairSync,randomUUID} from 'node:crypto';
+import {fileURLToPath} from 'node:url';
+import {runtimeOperation} from '../native/runtime.mjs';
+import {CodexSessionConnector} from './connector.mjs';
+
+const project=fs.realpathSync(process.argv[2]),review=path.resolve(process.argv[3]??path.join(project,'.scratch','codex-hook-review'));
+const executable=process.env.CODEX_APP_RUNTIME_CLI_PATH;
+if(!executable||!path.isAbsolute(executable))throw Error('Pinned Codex executable required');
+await runtimeOperation(project,'start');
+const manifest=path.join(project,'.bang','runtime','codex-install.json');
+if(fs.existsSync(manifest))throw Error('Codex preparation already exists; review existing installation');
+const {privateKey}=generateKeyPairSync('ed25519'),instanceId=randomUUID(),connectorId='codex-'+randomUUID();
+await new CodexSessionConnector({project,transport:null,connectorId,instanceId,privateKey}).register();
+fs.writeFileSync(manifest,JSON.stringify({executable,connectorId,instanceId,privateKey:privateKey.export({format:'pem',type:'pkcs8'})}),{mode:0o600,flag:'wx'});
+fs.mkdirSync(review,{recursive:true});
+const script=fileURLToPath(new URL('./hook.mjs',import.meta.url));
+const ps=value=>"'"+value.replaceAll("'","''")+"'";
+const sh=value=>"'"+value.replaceAll("'", "'\"'\"'")+"'";
+const invocation=`& ${[process.execPath,script,project].map(ps).join(' ')}`;
+const command=process.platform==='win32'?`powershell.exe -NoProfile -NonInteractive -EncodedCommand ${Buffer.from(invocation,'utf16le').toString('base64')}`:[process.execPath,script,project].map(sh).join(' ');
+fs.writeFileSync(path.join(review,'command.txt'),process.platform==='win32'?invocation:command);
+fs.writeFileSync(path.join(review,'hooks.json'),JSON.stringify({hooks:{UserPromptSubmit:[{hooks:[{type:'command',command,timeout:30}]}]}},null,2));
+console.log(JSON.stringify({status:'prepared-not-installed',review,hostTrust:'required',activationPrompt:'Bang: enable current session'}));
