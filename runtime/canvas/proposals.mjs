@@ -1,3 +1,4 @@
+import {turnSource} from './ingestion.mjs';
 import {createHash,randomUUID} from 'node:crypto';
 import {openBindingDatabase} from './binding.mjs';
 import {readCommitted,commitOrganizerBoard,readOperationReceipt} from './store.mjs';
@@ -9,10 +10,10 @@ export function proposals(project,topic){return tasks(project,topic).flatMap(t=>
 export function makeProposal(project,task,change,current,knowledge,read){
  const before=[...current.canvas.nodes,...current.canvas.edges].find(n=>n.id===change.id),operation=change.type==='delete-relation'?{type:'delete-relation',id:change.id}:{type:'edit-card',id:change.id,text:change.text};
  const source=task.input.completedTurns.find(s=>s.id===change.sources[0]);
- const evidence={assistant:source.assistant.content,conditions:change.conditions,uncertainty:change.uncertainty};
+ const evidence={user:source.user.content,assistant:source.assistant.content,conditions:change.conditions,uncertainty:change.uncertainty};
  const intentKey=digest([{type:operation.type,id:operation.id},semanticObject(before),current.metadata[before.id]?.fields?.text?.modifiedRevision??0]);
  const evidenceHash=digest(evidence.assistant.trim().replace(/\s+/g,' ')),prior=proposals(project,task.topic).filter(p=>p.intentKey===intentKey);
- if(prior.some(p=>!p.frozen&&p.evidenceHash===evidenceHash&&['pending','rejected','accepted'].includes(p.status)))return null;
+ if(prior.some(p=>!p.frozen&&p.evidenceHash===evidenceHash&&['pending','accepted'].includes(p.status)))return null;
  const proposal={id:randomUUID(),taskId:task.id,status:'pending',intentKey,evidenceHash,evidence,sourceId:source.id,classification:source.humanIntent?.classification??'unspecified',baseRevision:current.revision,before,operation,knowledge,dependencies:read.map(n=>({object:semanticObject(n),knowledge:current.metadata[n.id]?.knowledge,fields:current.metadata[n.id]?.fields})),evidenceDifference:prior.length?{previousSourceId:prior.at(-1).sourceId,currentSourceId:source.id,previous:prior.at(-1).evidence,current:evidence}:null};
  const rejected=proposals(project,task.topic).filter(p=>p.status==='rejected'&&p.operation.id===operation.id&&p.operation.type===operation.type);
  if(rejected.length){proposal.status='suppressed';proposal.rejectedId=rejected.at(-1).id;(task.suppressedProposals??=[]).push(proposal);return null;}
@@ -44,7 +45,8 @@ export async function reconsiderPreview(project,topic,input){
  const candidates=all.flatMap(t=>t.suppressedProposals??[]).filter(p=>p.operation.id===rejected.operation.id&&p.operation.type===rejected.operation.type),candidate=candidates.at(-1)??rejected;
  const current=await readCommitted(project,topic),objects=[...current.canvas.nodes,...current.canvas.edges],before=objects.find(n=>n.id===candidate.operation.id);
  if(!before||candidate.dependencies.some(d=>!objects.some(n=>n.id===d.object.id)))throw Error('Proposal target or dependency deleted; fresh analysis required');
- const evidenceDifference={previousSourceId:rejected.sourceId,currentSourceId:candidate.sourceId,previous:rejected.evidence,current:candidate.evidence};
+ const actualEvidence=p=>{const source=turnSource(project,{topicId:topic,id:p.sourceId});return {...p.evidence,user:source.user.content,assistant:source.assistant.content};};
+ const evidenceDifference={previousSourceId:rejected.sourceId,currentSourceId:candidate.sourceId,previous:actualEvidence(rejected),current:actualEvidence(candidate)};
  // The review capability binds the exact project, original rejection, actual source,
  // full current baseline and selected candidate. It never travels across restore.
  const reviewKey=digest([project,topic,rejected.id,rejected.receipt,candidate,current]);
