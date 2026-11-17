@@ -52,6 +52,8 @@ export function createDshConnector(ctx,config){
     else if(kind!=='completed')events.push({kind:'turn',role:'primary',status:kind==='aborted'?'interrupted':'error',turnId:turn.id,cursor:cursor(seq+1)});
     else events.push({kind:'gap',turnId:turn.id,cursor:cursor(seq+1),reason:'missing-record'});
     turn=undefined;
+    // Yield at the public batch bound; the durable cursor resumes remaining work.
+    if(events.length===100)break;
    }
   }
   if(events.length){const batch={sourceId:a.sourceId,previousCursor,events};await call('turn-ingest',{batch,proof:proof(a.identity,{purpose:'completed-turn-ingestion',sourceId:a.sourceId,batchHash:hash(JSON.stringify(batch))})});}
@@ -59,6 +61,3 @@ export function createDshConnector(ctx,config){
  function poll(){if(!flight)flight=receive().finally(()=>flight=undefined);return flight;}
  return {observe,enable,poll,close(){closed=true;},async drain(){await flight;}};
 }
-
-
-

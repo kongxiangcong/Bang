@@ -1,6 +1,6 @@
 import {proposals,reviewProposal,reconsiderPreview,reconsiderProposal} from '../canvas/proposals.mjs';
 import {exportProject,verifyProject,restoreProject} from '../canvas/backup.mjs';
-import {organizerStatus,enableOrganizer,controlOrganizer,configureOrganizer,organizerTopics,prepareOrganizer,executeOrganizer,finishOrganizer,recoverOrganizer} from '../canvas/organizer.mjs';
+import {organizerStatus,enableOrganizer,controlOrganizer,configureOrganizer,organizerTopics,prepareOrganizer,executeOrganizer,finishOrganizer,recoverOrganizer,stopOrganizerExecutions} from '../canvas/organizer.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
@@ -84,7 +84,7 @@ async function daemon(project){
  let stopping=false,operationQueue=Promise.resolve(),stopCodexWatch=()=>{};
  const enqueue=fn=>{const pending=operationQueue.then(fn);operationQueue=pending.catch(()=>{});return pending;};
  const running=new Set();
- const pump=async()=>{if(stopping)return;for(const topic of organizerTopics(project)){if(running.has(topic))continue;running.add(topic);try{const task=await enqueue(()=>prepareOrganizer(project,topic,connection.epoch));if(!task){running.delete(topic);continue;}executeOrganizer(task).then(result=>enqueue(()=>finishOrganizer(project,task,result,null,connection.epoch)),error=>enqueue(()=>finishOrganizer(project,task,null,error,connection.epoch))).finally(()=>running.delete(topic));}catch{running.delete(topic);}}};
+ const pump=async()=>{if(stopping)return;for(const topic of organizerTopics(project)){if(running.has(topic))continue;running.add(topic);try{const task=await enqueue(()=>prepareOrganizer(project,topic,connection.epoch));if(!task){running.delete(topic);continue;}executeOrganizer(task,project).then(result=>enqueue(()=>finishOrganizer(project,task,result,stopping?{code:"ATTEMPT_INTERRUPTED"}:null,connection.epoch)),error=>enqueue(()=>finishOrganizer(project,task,null,stopping?{code:"ATTEMPT_INTERRUPTED"}:error,connection.epoch))).finally(()=>running.delete(topic));}catch{running.delete(topic);}}};
  await recoverOrganizer(project,connection.epoch);
  setInterval(()=>pump().catch(()=>{}),100).unref();
  const server=http.createServer(async(req,res)=>{
@@ -127,7 +127,7 @@ async function daemon(project){
    return result;};
    const pending=operationQueue.then(execute);operationQueue=pending.catch(()=>{});
    const result=await pending;
-   res.end(JSON.stringify(result));if(stopping){server.close(()=>process.exit(0));server.closeIdleConnections();}
+   if(stopping)await stopOrganizerExecutions();res.end(JSON.stringify(result));if(stopping){server.close(()=>process.exit(0));server.closeIdleConnections();}
   }catch(error){res.statusCode=400;res.end(JSON.stringify({error:error.message,preview:error.preview,code:error.code}));}
  });
  startupStage='listen';
@@ -142,3 +142,5 @@ if(process.argv[1]&&path.resolve(process.argv[1])===here&&process.argv[2]==='--d
   process.stderr.write(`BANG_START stage=${startupStage} code=${code}\n`,()=>process.exit(1));
  }
 }
+
+
