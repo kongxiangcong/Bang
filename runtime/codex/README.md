@@ -56,3 +56,5 @@ Primary references: [official hooks](https://learn.chatgpt.com/docs/hooks) for r
 Source implementation commit: `db6156b` (subsequent integration/review corrections remain on `codex/whiteboard-24`). Merged ticket36 integration `a083c67`; overlapping CLI command lists and native owner declarations preserve both backup and watcher behavior. Final Windows connector/ingestion/binding suite: **18 passed**.
 
 Final post-merge Linux controlled adapter rerun: **5 passed**. Ticket36 backup regression: **4 passed**. No frontend UI changed in this ticket, so no new browser acceptance is claimed.
+
+Latest integration `1306d45` (ticket15) is also merged: source watcher and Organizer remain independent asynchronous loops, with ingestion/publication returning to the same owner queue. Final Windows connector + Organizer combined regression: **23 passed**. Existing real-host gates remain unchanged.

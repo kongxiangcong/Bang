@@ -548,3 +548,7 @@ Final ticket 36 UI verification on the merged tree:
 - Source implementation `62cb5b0`; latest integration `f7a317c` merged at `9a0605c`.
   Subsequent ticket 15 owns adding its future organizer tables/frozen attempt
   states and the corresponding public restore regression before its integration.
+## Ticket 15 incremental Organizer
+
+See [Organizer contract and evidence](ORGANIZER.md) for restricted execution, public task receipts, dependency fencing, common publication and controlled-model/browser limits.
+

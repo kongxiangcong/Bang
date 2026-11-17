@@ -1,4 +1,5 @@
 import {exportProject,verifyProject,restoreProject} from '../canvas/backup.mjs';
+import {organizerStatus,enableOrganizer,organizerTopics,prepareOrganizer,executeOrganizer,finishOrganizer,recoverOrganizer} from '../canvas/organizer.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
@@ -80,6 +81,11 @@ async function daemon(project){
  const status=()=>({status:'running',ownership:'os-handle',workspaceId:connection.workspaceId,instanceId:connection.instanceId,epoch:connection.epoch,pid:process.pid,supervisorPid:process.ppid,url:connection.url});
  const methods={'backup-export':exportProject,'backup-verify':verifyProject,'backup-restore':restoreProject,'export-canvas':store.exportCanvas,'import-preview':store.previewImport,'import-canvas':store.importCanvas,'recovery-status':store.readRecoveryStatus,recover:store.recoverBoard,undo:store.undoBoard,history:store.readHistory,'history-preview':store.previewHistory,'history-diff':store.diffHistory,generate:store.generateBoard,read:store.readBoard,state:store.readCommitted,commit:store.commitBoard,preview:store.previewBoard,head:store.readHead,'resource-status':(project,topic,input)=>store.readResourceStatus(project,topic,input.id)};
  let stopping=false,operationQueue=Promise.resolve(),stopCodexWatch=()=>{};
+ const enqueue=fn=>{const pending=operationQueue.then(fn);operationQueue=pending.catch(()=>{});return pending;};
+ const running=new Set();
+ const pump=async()=>{if(stopping)return;for(const topic of organizerTopics(project)){if(running.has(topic))continue;running.add(topic);try{const task=await enqueue(()=>prepareOrganizer(project,topic,connection.epoch));if(!task){running.delete(topic);continue;}executeOrganizer(task).then(result=>enqueue(()=>finishOrganizer(project,task,result,null,connection.epoch)),error=>enqueue(()=>finishOrganizer(project,task,null,error,connection.epoch))).finally(()=>running.delete(topic));}catch{running.delete(topic);}}};
+ await recoverOrganizer(project,connection.epoch);
+ setInterval(()=>pump().catch(()=>{}),100).unref();
  const server=http.createServer(async(req,res)=>{
   res.setHeader('Content-Type','application/json; charset=utf-8');res.setHeader('Cache-Control','no-store');
   try{
@@ -104,6 +110,8 @@ async function daemon(project){
    else if(command==='binding-enable')result=await enableBinding(project,input,connection.epoch);
    else if(command==='binding-status')result=bindingStatus(project,input);
    else if(command==='binding-sources')result=bindingSources(project,input);
+   else if(command==='organizer-status')result=organizerStatus(project,input);
+   else if(command==='organizer-enable')result=await enableOrganizer(project,input);
    else if(command==='turn-ingest')result=ingestTurns(project,connection.workspaceId,input);
    else if(command==='turn-status')result=turnStatus(project,input);
    else if(command==='turn-source')result=turnSource(project,input);
