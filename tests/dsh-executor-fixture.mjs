@@ -3,6 +3,7 @@ if(args.includes('--version')){console.log('0.2.1-rc.2');process.exit(0);}
 let input='';for await(const chunk of process.stdin)input+=chunk;
 if(mode==='hang'){setInterval(()=>{},1000);await new Promise(()=>{});}
 if(['auth','budget'].includes(mode)){console.log(JSON.stringify({type:'error',message:(mode==='auth'?'401 AUTH_REQUIRED':'429 quota')+' PRIVATE_PROVIDER'}));process.exit(1);}
+if(mode==='error-completed')console.log(JSON.stringify({type:'error',message:'PRIVATE_ERROR'}));
 if(mode==='mixed')console.log(JSON.stringify({type:'status',phase:'turn_end',turn:'t1',reason:{kind:'error'}}));
 if(mode==='tool')console.log(JSON.stringify({type:'tool_call',tool:'PRIVATE_TOOL'}));console.log(JSON.stringify({type:'thinking',text:'PRIVATE_REASONING'}));
 const task=JSON.parse(input.slice(input.indexOf('\n')+1));
