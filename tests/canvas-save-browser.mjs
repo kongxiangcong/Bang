@@ -1,3 +1,4 @@
+import {canvasRequest} from './canvas-request.mjs';
 // Real Chrome gestures -> real HTTP middleware -> real filesystem -> fresh page.
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -36,16 +37,18 @@ try{
  async function button(text){const pos=await evaluate(`(()=>{const e=[...document.querySelectorAll('button')].find(e=>e.textContent===${JSON.stringify(text)});if(!e)throw Error('Missing button');const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);await click(pos.x,pos.y);}
  async function type(label,text){const pos=await evaluate(`(()=>{const e=document.querySelector('[aria-label="${label}"]');const r=e.getBoundingClientRect();return {x:r.x+10,y:r.y+10}})()`);await click(pos.x,pos.y);await cmd('Input.dispatchKeyEvent',{type:'keyDown',key:'a',code:'KeyA',modifiers:2,windowsVirtualKeyCode:65,commands:['selectAll']});await cmd('Input.dispatchKeyEvent',{type:'keyUp',key:'a',code:'KeyA',modifiers:2});await cmd('Input.insertText',{text});}
  await button('新增知识卡片');await type('卡片正文 3','无聊天来源的人工知识');
- assert.equal((await (await fetch(url+'/api/canvas/demo/state')).json()).revision,0);
+ assert.equal((await (await canvasRequest(url+'/api/canvas/demo/state')).json()).revision,0);
  await button('保存');await until(()=>evaluate('document.body.innerText.includes("已保存 · 修订 1")'));
- let state=await (await fetch(url+'/api/canvas/demo/state')).json();const manualId=state.canvas.nodes[2].id;assert.equal(state.metadata[manualId].source.kind,'manual');assert.equal(state.canvas.nodes[2].text,'无聊天来源的人工知识');
+ let state=await (await canvasRequest(url+'/api/canvas/demo/state')).json();const manualId=state.canvas.nodes[2].id;assert.equal(state.metadata[manualId].source.kind,'manual');assert.equal(state.canvas.nodes[2].text,'无聊天来源的人工知识');
  await cmd('Page.reload');await until(()=>evaluate('document.querySelectorAll("textarea").length===3'));
  assert.equal(await evaluate('document.querySelectorAll("textarea")[2].value'),'无聊天来源的人工知识');
  await type('卡片正文 3','人工改写');await button('保存');await until(()=>evaluate('document.body.innerText.includes("已保存 · 修订 2")'));
  await button('删除卡片 3');await button('保存');await until(()=>evaluate('document.body.innerText.includes("已保存 · 修订 3")'));
  await cmd('Page.reload');await until(()=>evaluate('document.querySelectorAll("textarea").length===2'));
- state=await (await fetch(url+'/api/canvas/demo/state')).json();assert.equal(state.revision,3);assert.equal(state.canvas.nodes.length,2); const shot=await cmd('Page.captureScreenshot',{format:'png'});await fs.writeFile(path.join(root,'canvas-save-browser.png'),Buffer.from(shot.data,'base64'));
+ state=await (await canvasRequest(url+'/api/canvas/demo/state')).json();assert.equal(state.revision,3);assert.equal(state.canvas.nodes.length,2); const shot=await cmd('Page.captureScreenshot',{format:'png'});await fs.writeFile(path.join(root,'canvas-save-browser.png'),Buffer.from(shot.data,'base64'));
  console.log(JSON.stringify({pass:true,evidence:'real Chrome, real mouse/text create, explicit save, reopen, edit, delete -> HTTP -> disk'}));
- }finally{ws?.close();chrome.kill();await new Promise(r=>server.close(r));await delay(500);await fs.rm(temp,{recursive:true,force:true,maxRetries:5,retryDelay:200});}
+ }finally{ws?.close();chrome.kill();await new Promise(r=>server.close(r));await delay(500);spawnSync(process.execPath,[path.join(root,'runtime/canvas/bang.mjs'),'stop','--project',temp],{encoding:'utf8'});await fs.rm(temp,{recursive:true,force:true,maxRetries:5,retryDelay:200});}
+
+
 
 
