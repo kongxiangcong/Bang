@@ -39,4 +39,3 @@ try{
  console.log(JSON.stringify({pass:true,evidence:'real Chrome rectangle gesture, save HTTP, page reload',semanticSave:false}));
  }catch(error){console.error(await evaluate('JSON.stringify({body:document.body.innerText.slice(0,500),at:document.elementFromPoint(500,350)?.outerHTML.slice(0,250),snapshot:window.bang.snapshot()})'));const shot=await cmd('Page.captureScreenshot',{format:'png'});await fs.writeFile(path.join(root,'browser-failure.png'),Buffer.from(shot.data,'base64'));throw error;
 }finally{ws?.close();chrome.kill();await new Promise(r=>server.close(r));await delay(500);await fs.rm(temp,{recursive:true,force:true,maxRetries:5,retryDelay:200});}
-

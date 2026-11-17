@@ -11,11 +11,11 @@
   "totalMemoryBytes": 29734326272,
   "dependencyLockSha256": "c75d7500c6532ebb18bbda1004a92dab1437947402cc40fad6eac55f535da37d",
   "fixtureHashes": {
-    "quality-cases.json": "2a049a3b2be90c74f5232a14aa6b9b929a2c24a03629deff0edc94335dea8d17",
-    "legacy-session.json": "551052b263afa0f89ff6d49f1dc39766cbdf73a910405a15f30873d0ecb29cff",
-    "performance.json": "8301d0bf39e9f11dd9c15f365b204464fe739079fdfad3c76abc4bc215d518f9",
-    "performance-dataset.mjs": "5fbb7825330f710d6c3eb0cb1dbbe66bb8cc03a11b4ddfce9aa4a792964dd6ee",
-    "scoring.md": "5decaf340c22f4b8d23dc7f1b98a47806d34338dc8098d7a53439801f6be5147"
+    "quality-cases.json": "e81659654bd13fb8487db0291262f366c7fc1eaeb70b3ef4e18e2cb76ef9023e",
+    "legacy-session.json": "f9020b298dfb2cbb7b7456b4120d19bb78e7531f7f6bbd91f3e6b030e0d2e43f",
+    "performance.json": "4bd85fe00da7618e11cb08cdb9f5c0355004a0e3db3d372282256fa20a95807a",
+    "performance-dataset.mjs": "31af05ebd91400286fb0c6a341cb97e4bba9d5deffe430188c4deea8150fad90",
+    "scoring.md": "7bd03bfa89e6cf196b1d7cdebafb2960fe2ecf7f73c021899a0d623dba6bc0d0"
   },
   "hostVersions": {
     "codex": "not invoked; real-host validation not run",
