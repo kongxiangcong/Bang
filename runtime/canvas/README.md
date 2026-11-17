@@ -575,3 +575,58 @@ Not claimed: real model structure accuracy, paid model/real host calls, Windows 
 Final validation: final structure/deletion-center and save-conflict public suite **17 passed**; earlier joint structure/layout/Organizer suite **35 passed**. Final production build passed. Actual Chrome structure and legacy layout scripts both passed. The legacy resize driver initially failed because its drag endpoint (approximately y=975) lay below its 960-pixel viewport; increasing the test window height to 1200 retained the real resize gesture and passed. The fixed-card regression now first confirms that relayout keeps the locked coordinate, explicitly unlocks, and only then relocates/saves. No app-state injection or API interception was used. `git diff --check` passed (line-ending notices only).
 
 Merged integration `115da12` (ticket 16 lifecycle/batch controls), retaining both batch-source validation and create-only structure intent/rules. Post-merge structure/control public suite: **31 passed**, no failures/skips; production build and actual Chrome structure script passed. The integrated header moved the legacy test's canvas below the visible area again; the final driver scrolls the actual main surface and each target button into view before real input events. Final legacy drag/resize/fixed/unlock/group/save/reload script passed. Earlier resize and offscreen-save failures remain recorded here as driver viewport errors, not silently discarded or attributed to application behavior.
+
+## Ticket 33: comparison and event timeline (2026-11-18)
+
+The shared version-1 structure contract adds comparison and timeline, with rules
+revision 2. Comparison members carry common `dimensions` plus `option` and
+`dimension` (nullable); missing cells remain UI placeholders, never generated
+knowledge cards or inferred winners. Empty dimensions mean no known evaluation
+axis. Existing duplicate-cell statements remain separate cards; cramped/colliding
+placement retains old geometry or places additions outside bounds with a warning.
+Timeline members carry `eventTime`: an explicit ISO calendar date or UTC timestamp,
+or null. Partial/relative/ambiguous dates stay in the original text with null time.
+Dates are ordered ordinally, not as an elapsed-duration scale; unknown events use a
+separate row. No utterance/ingestion date is consulted or used as a fallback.
+
+Both extend `structures.ts`, existing Organizer create-card intent, common
+Compiler/publication, and existing LayoutControls; no second layout/commit engine
+or metadata store is introduced. The UI takes explicit per-card option/dimension
+or event-time inputs, previews on the real canvas, and retains original text,
+relations, provenance, conditions and uncertainty. The side panel shows readable
+comparison cells and event labels; missing data is explicitly unknown. Save,
+manual refresh and reopen use the existing transactional path. Fixed cards,
+existing geometry and z-order remain stable; an explicit relayout permits movement
+only of non-fixed selected cards. Existing user structure remains protected from
+Organizer output. Classification/radial behavior and source dependencies remain.
+
+Evidence: Windows 11, Node v25.8.1, packaged native helper, real headless Google
+Chrome. Synthetic signed source and controlled loopback model only; no real model,
+user conversations, credentials, global configuration or native binary changes.
+RED/GREEN: unsupported comparison/timeline intents; absent model rule examples;
+missing browser controls. One metadata assertion initially used `.conditions`
+instead of the documented `.knowledge.conditions`; corrected at the public state
+boundary. Real browser typing of dimensions/options/event dates, unknown cells,
+preview-only state, save, reload and manual refresh passed. An initial refresh
+click raced the background revision notice changing header geometry; waiting for
+the actual revision indicator before clicking passed, without app-state injection
+or API interception. Earlier all-unknown preview/save/reopen also passed.
+
+Before merging integration: Compiler/Runtime structure and Organizer combined
+suite 40 passed; additional fixed/local-comparison and explicit model overwrite
+rejection cases passed. Production build passed with existing size warnings.
+Merged integration b06f254 includes native process supervision; additive gitignore
+conflict retains both ticket allowlists. A PowerShell same-file streaming cleanup
+was rejected as file-in-use; materializing the content first corrected the local
+merge before final validation. Final merged validation counts are recorded below.
+
+Not claimed: real model semantic accuracy (ticket 43), real Codex/DSH host closure,
+Windows 10/Linux matrix, performance targets, automatic relative-time inference,
+or elapsed-duration scaling. Controlled rules plumbing does not establish that a
+model will always choose the correct dimension/time; original text remains visible.
+
+Final merged verification (integration b06f254, merge 148f4f3):
+- `node --test --test-force-exit tests/canvas-comparison-timeline.test.mjs tests/canvas-structures.test.mjs`: 24 passed, no failures/skips.
+- `npm run build --prefix prototypes/whiteboard-integration`: passed, existing bundle-size warning.
+- `node tests/canvas-comparison-timeline-browser.mjs`: passed with actual text input, comparison geometry, event ordering, unknown dates/cells, preview-only revision, save/reload and explicit refresh after another writer's commit.
+- `git diff --check`: passed. Original RED and harness failures retained above.
