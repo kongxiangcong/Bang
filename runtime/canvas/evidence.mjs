@@ -2,7 +2,7 @@ import {isDeepStrictEqual} from 'node:util';
 // Layout and visual membership do not establish or revoke evidence.
 const semantic=object=>object&&Object.fromEntries(Object.entries(object).filter(([k])=>!['x','y','width','height','regionId','fixed','zIndex','color','fromSide','toSide'].includes(k)));
 const objects=state=>[...state.canvas.nodes,...state.canvas.edges];
-export function invalidateBasis(before,after){
+export function invalidateBasis(before,after,retainedSources=new Set()){
  const changed=new Set(objects(before).filter(old=>!isDeepStrictEqual(semantic(old),semantic(objects(after).find(n=>n.id===old.id)))).map(n=>n.id));
  for(const id of changed)if(after.metadata[id])after.metadata[id].semanticRevision=after.revision;
  for(const [id,m] of Object.entries(after.metadata))if(m.basis?.status==='needs-review'&&basisUsable(before.metadata[id]))changed.add(id);
@@ -11,7 +11,7 @@ export function invalidateBasis(before,after){
  for(const id of changed)if(before.metadata[id]?.knowledge)mark(id,[id]);
  let progress=true;while(progress){progress=false;for(const [id,meta] of Object.entries(after.metadata)){
   const causes=(meta.knowledge?.dependencies??[]).filter(dep=>dep!==id&&changed.has(dep));
-  if(causes.length){mark(id,causes);if(!changed.has(id)){changed.add(id);progress=true;}}
+  if(causes.length&&!retainedSources.has(id)){mark(id,causes);if(!changed.has(id)){changed.add(id);progress=true;}}
  }}
  return after;
 }
@@ -36,7 +36,19 @@ export function applyBasisReview(current,request){
 export function knowledgeContext(state,limit=Infinity){
  const knowledgeCards=state.canvas.nodes.filter(n=>n.type!=='group'&&basisUsable(state.metadata[n.id])).slice(0,limit),ids=new Set(knowledgeCards.map(n=>n.id));
  const semanticRelations=(state.relations??[]).filter(e=>ids.has(e.fromNode)&&ids.has(e.toNode)&&basisUsable(state.metadata[e.id]));
- const metadata=Object.fromEntries([...knowledgeCards,...semanticRelations].map(n=>{const m=structuredClone(state.metadata[n.id]??{});if(m.basis){delete m.basis.history;delete m.source;}return [n.id,m];}));
+ const metadata=Object.fromEntries([...knowledgeCards,...semanticRelations].map(n=>{const m=structuredClone(state.metadata[n.id]??{});if(m.basis){const withdrawn=new Set(m.basis.withdrawnSources??[]);if(m.knowledge)m.knowledge.sources=(m.knowledge.sources??[]).filter(s=>!withdrawn.has(s));delete m.basis.withdrawnSources;delete m.basis.history;delete m.source;}return [n.id,m];}));
  const withdrawn=Object.entries(state.metadata).filter(([,m])=>!basisUsable(m)).map(([id,m])=>({id,basis:{status:m.basis.status,revision:m.basis.revision,changedIds:m.basis.changedIds}}));
  return {revision:state.revision,knowledgeCards,visualRegions:state.canvas.nodes.filter(n=>n.type==='group'),semanticRelations,metadata,withdrawn};
+}
+
+// Source replacement retains an independently supported assertion. It never rewrites its body.
+export function invalidateSourceBasis(before,currentSources){
+ const next=structuredClone(before),retained=new Set();let affected=false;
+ for(const [id,m] of Object.entries(next.metadata)){
+  const sources=m.knowledge?.sources??[];
+  if(sources.some(s=>currentSources.has(s))){const withdrawn=sources.filter(s=>!currentSources.has(s));if(withdrawn.length)retained.add(id);if(withdrawn.length&&!isDeepStrictEqual(withdrawn,m.basis?.withdrawnSources)){m.basis={revision:before.revision+1,changedIds:[],...m.basis,status:m.basis?.status??'retained',withdrawnSources:withdrawn};affected=true;}continue;}
+  if(sources.length&&basisUsable(m)){m.basis={status:'needs-review',revision:before.revision+1,changedIds:sources,...(m.basis?.history?{history:m.basis.history}:{})};affected=true;}
+ }
+ if(!affected)return null;
+ next.revision++;return invalidateBasis(before,next,retained);
 }

@@ -32,6 +32,7 @@ export async function reviewProposal(project,topic,input){
  if(!receipt){const current=await readCommitted(project,topic);
   if(input.decision==='reject')receipt={status:'rejected',proposalId:proposal.id,revision:current.revision,baseRevision:proposal.baseRevision};
   else {
+   if(proposal.knowledge.sources.some(id=>!turnSource(project,{topicId:topic,id}).current))throw Object.assign(Error('Proposal source superseded; compare fresh evidence'),{code:'PROPOSAL_STALE'});
    for(const dep of proposal.dependencies){const now=[...current.canvas.nodes,...current.canvas.edges].find(n=>n.id===dep.object.id),metadata=current.metadata[dep.object.id];const semanticFields=Object.keys(dep.object).filter(k=>k==='structure'||!layoutFields.includes(k));if(!now||(metadata?.semanticRevision??0)!==(dep.semanticRevision??0)||JSON.stringify(semanticObject(now))!==JSON.stringify(dep.object)||JSON.stringify(metadata?.knowledge)!==JSON.stringify(dep.knowledge)||JSON.stringify(metadata?.basis)!==JSON.stringify(dep.basis)||semanticFields.some(k=>(metadata?.fields?.[k]?.modifiedRevision??0)!==(dep.fields?.[k]?.modifiedRevision??0)))throw Object.assign(Error('Proposal baseline conflict; compare fresh evidence'),{code:'PROPOSAL_STALE'});}
    receipt=await commitOrganizerBoard(project,topic,{operationId,topic,baseRevision:current.revision,author:{kind:'organizer',id:'organizer:'+task.id},readDependencies:[],intent:'incremental-organize',operations:[proposal.operation]},{taskId:task.id,attemptId:task.attemptId,sourceId:proposal.sourceId,knowledge:{[proposal.operation.id]:{...proposal.knowledge,humanIntent:{proposalId:proposal.id,baseRevision:proposal.baseRevision}}}});
   }
@@ -45,6 +46,7 @@ export async function reconsiderPreview(project,topic,input){
  const candidates=all.flatMap(t=>t.suppressedProposals??[]).filter(p=>p.operation.id===rejected.operation.id&&p.operation.type===rejected.operation.type),candidate=candidates.at(-1)??rejected;
  const current=await readCommitted(project,topic),objects=[...current.canvas.nodes,...current.canvas.edges],before=objects.find(n=>n.id===candidate.operation.id);
  if(!before||candidate.dependencies.some(d=>!objects.some(n=>n.id===d.object.id)))throw Error('Proposal target or dependency deleted; fresh analysis required');
+ if(candidate.knowledge.sources.some(id=>!turnSource(project,{topicId:topic,id}).current))throw Object.assign(Error('Proposal source superseded; request fresh analysis'),{code:'PROPOSAL_STALE'});
  const actualEvidence=p=>{const source=turnSource(project,{topicId:topic,id:p.sourceId});return {...p.evidence,user:source.user.content,assistant:source.assistant.content};};
  const evidenceDifference={previousSourceId:rejected.sourceId,currentSourceId:candidate.sourceId,previous:actualEvidence(rejected),current:actualEvidence(candidate)};
  // The review capability binds the exact project, original rejection, actual source,
