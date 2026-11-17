@@ -1,3 +1,4 @@
+import {preflightLegacy,migrateLegacy,legacyHistory,stopLegacy,archiveLegacy} from '../canvas/legacy-migration.mjs';
 import {previewRestore,restoreVersion} from '../canvas/restore.mjs';
 import {registerContextBridge,contextOperation,contextStatus} from '../canvas/context.mjs';
 import {proposals,reviewProposal,reconsiderPreview,reconsiderProposal} from '../canvas/proposals.mjs';
@@ -82,7 +83,7 @@ async function daemon(project){
  identity.epoch++;const identityTemp=path.join(dir,'workspace.tmp');const identityFd=fs.openSync(identityTemp,'w',0o600);try{fs.writeFileSync(identityFd,JSON.stringify(identity));fs.fsyncSync(identityFd);}finally{fs.closeSync(identityFd);}await publishMetadata(identityTemp,identityFile);
  const connection={workspaceId:identity.workspaceId,instanceId:randomUUID(),epoch:String(identity.epoch),pid:process.pid,token:randomBytes(32).toString('hex')};
  const status=()=>({status:'running',ownership:'os-handle',workspaceId:connection.workspaceId,instanceId:connection.instanceId,epoch:connection.epoch,pid:process.pid,supervisorPid:process.ppid,url:connection.url});
- const methods={'restore-preview':previewRestore,'restore-version':restoreVersion,'context-status':contextStatus,'knowledge-context':store.readKnowledgeContext,'basis-review':store.reviewBasis,'backup-export':exportProject,'backup-verify':verifyProject,'backup-restore':restoreProject,'export-canvas':store.exportCanvas,'import-preview':store.previewImport,'import-canvas':store.importCanvas,'recovery-status':store.readRecoveryStatus,recover:store.recoverBoard,undo:store.undoBoard,history:store.readHistory,'history-preview':store.previewHistory,'history-diff':store.diffHistory,generate:store.generateBoard,read:store.readBoard,state:store.readCommitted,commit:store.commitBoard,preview:store.previewBoard,head:store.readHead,'resource-status':(project,topic,input)=>store.readResourceStatus(project,topic,input.id)};
+ const methods={'legacy-archive':archiveLegacy,'legacy-stop':stopLegacy,'legacy-preflight':preflightLegacy,'legacy-migrate':migrateLegacy,'legacy-history':legacyHistory,'restore-preview':previewRestore,'restore-version':restoreVersion,'context-status':contextStatus,'knowledge-context':store.readKnowledgeContext,'basis-review':store.reviewBasis,'backup-export':exportProject,'backup-verify':verifyProject,'backup-restore':restoreProject,'export-canvas':store.exportCanvas,'import-preview':store.previewImport,'import-canvas':store.importCanvas,'recovery-status':store.readRecoveryStatus,recover:store.recoverBoard,undo:store.undoBoard,history:store.readHistory,'history-preview':store.previewHistory,'history-diff':store.diffHistory,generate:store.generateBoard,read:store.readBoard,state:store.readCommitted,commit:store.commitBoard,preview:store.previewBoard,head:store.readHead,'resource-status':(project,topic,input)=>store.readResourceStatus(project,topic,input.id)};
  let stopping=false,operationQueue=Promise.resolve(),stopCodexWatch=()=>{};
  const enqueue=fn=>{const pending=operationQueue.then(fn);operationQueue=pending.catch(()=>{});return pending;};
  const running=new Set();
@@ -146,5 +147,3 @@ if(process.argv[1]&&path.resolve(process.argv[1])===here&&process.argv[2]==='--d
   process.stderr.write(`BANG_START stage=${startupStage} code=${code}\n`,()=>process.exit(1));
  }
 }
-
-

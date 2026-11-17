@@ -29,7 +29,7 @@ export function createCanvasMiddleware({project:rootProject}){
    }
    if(action==='organizer-enable'&&req.method==='POST'){res.end(JSON.stringify(await runtimeOperation(project,'organizer-enable',undefined,{topicId:topic})));return;}
    if(action==='organizer'&&req.method==='GET'){res.end(JSON.stringify(await runtimeOperation(project,'organizer-status',undefined,{topicId:topic})));return;}
-   if(req.method==='POST'&&['restore-preview','restore-version','basis-review','proposal-reconsider-preview','proposal-reconsider','proposal-review','backup-verify','backup-restore','import-preview','import-canvas','commit','preview','undo','recover'].includes(action)){
+   if(req.method==='POST'&&['legacy-archive','legacy-stop','legacy-preflight','legacy-migrate','restore-preview','restore-version','basis-review','proposal-reconsider-preview','proposal-reconsider','proposal-review','backup-verify','backup-restore','import-preview','import-canvas','commit','preview','undo','recover'].includes(action)){
     if(!req.headers['content-type']?.startsWith('application/json'))throw Error('JSON content type required');
     req.setEncoding('utf8');let body='';for await(const chunk of req){body+=chunk;if(Buffer.byteLength(body)>(action.startsWith('backup-')?64*1024*1024:1024*1024))throw Error('Patch too large');}
     res.end(JSON.stringify(await runtimeOperation(project,action,topic,JSON.parse(body))));return;
@@ -40,6 +40,7 @@ export function createCanvasMiddleware({project:rootProject}){
    if(action==='proposals'){res.end(JSON.stringify(await runtimeOperation(project,'proposals',topic)));return;}
    if(action==='export-canvas'||action==='backup-export'){res.end(JSON.stringify(await runtimeOperation(project,action,topic)));return;}
    if(action==='recovery-status'){res.end(JSON.stringify(await runtimeOperation(project,'recovery-status',topic)));return;}
+   if(action==='legacy-history'){res.end(JSON.stringify(await runtimeOperation(project,'legacy-history',topic)));return;}
    if(action==='history'){res.end(JSON.stringify(await runtimeOperation(project,'history',topic)));return;}
    if(action==='history-preview'||action==='history-diff'){const input=action==='history-preview'?{revision:Number(url.searchParams.get('revision'))}:{fromRevision:Number(url.searchParams.get('from')),toRevision:Number(url.searchParams.get('to'))};res.end(JSON.stringify(await runtimeOperation(project,action,topic,input)));return;}
    if(action==='resources'){res.end(JSON.stringify(await runtimeOperation(project,'resource-status',topic,{id:url.searchParams.get('id')})));return;}

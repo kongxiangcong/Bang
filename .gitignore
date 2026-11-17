@@ -239,3 +239,10 @@
 !/prototypes/whiteboard-integration/src/ContextDelivery.tsx
 !/tests/context-delivery.test.mjs
 !/tests/context-delivery-browser.mjs
+
+# Ticket 37 bounded legacy migration, review UI and public acceptance.
+!/runtime/canvas/legacy-migration.mjs
+!/runtime/canvas/MIGRATION.md
+!/prototypes/whiteboard-integration/src/LegacyMigration.tsx
+!/tests/legacy-migration.test.mjs
+!/tests/legacy-migration-browser.mjs
