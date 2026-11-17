@@ -128,3 +128,13 @@
 !/prototypes/whiteboard-integration/src/canvas-relations.ts
 !/tests/canvas-relations.test.mjs
 !/tests/canvas-relations-browser.mjs
+
+# Ticket 12 immutable history previews and committed compensation undo.
+!/runtime/canvas/history.mjs
+!/prototypes/whiteboard-integration/src/HistoryPanel.tsx
+!/tests/canvas-history.test.mjs
+!/tests/canvas-history-browser.mjs
+# Ticket 10 annotations and native copy acceptance.
+!/tests/canvas-annotations.test.mjs
+!/tests/canvas-annotations-browser.mjs
+!/prototypes/whiteboard-integration/src/canvas-annotations.ts

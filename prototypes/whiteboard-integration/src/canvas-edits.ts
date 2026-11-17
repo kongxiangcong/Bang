@@ -2,7 +2,7 @@ import {editableFields,type BoardOperation,type Card,type Edge,type CommittedBoa
 import {relationFields} from '../../../runtime/canvas/relations';
 export type Overlay=Record<string,FieldRevisions>;
 const allFields=['id','type',...editableFields];
-const identity=(op:BoardOperation)=>op.type==='create-card'?op.card.id:op.type==='create-relation'?op.edge.id:op.id;
+const identity=(op:BoardOperation)=>op.type==='create-card'?op.card.id:op.type==='create-relation'?op.edge.id:op.type==='create-extra'?op.extra.id:op.id;
 const keysFor=(op:BoardOperation)=>op.type.endsWith('relation')?relationFields:editableFields;
 const collection=(op:BoardOperation)=>op.type.endsWith('relation')?'edges':'nodes';
 export function edits(base:CommittedBoard,cards:Card[],overlay:Overlay,edges:Edge[]=base.canvas.edges):BoardOperation[]{
