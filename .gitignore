@@ -218,6 +218,10 @@
 !/tests/codex-capability-audit.mjs
 !/tests/codex-executor-real.mjs
 !/tests/codex-executor-real-browser.mjs
+# Ticket 21 source answer history and public/browser acceptance.
+!/tests/source-versions.test.mjs
+!/tests/source-versions-browser.mjs
+!/runtime/canvas/SOURCE-VERSIONS.md
 # Ticket 33 comparison and event timeline UI and public acceptance.
 !/prototypes/whiteboard-integration/src/ComparisonTimeline.tsx
 !/tests/canvas-comparison-timeline.test.mjs

@@ -46,8 +46,8 @@ test('ingestion requires its own signed scope, filters internal output, preserve
   await f.call('turn-ingest',f.signed([f.turn('calling-turn','c9','v2')],'c8'));
   await f.call('turn-ingest',f.signed([f.turn('calling-turn','c10','v2')],'c9'));
   const status=await f.call('turn-status',{topicId:f.bound.topic.id});
-  assert.equal(status.received,2);assert.equal(status.backlog,2);assert.equal(status.organized,0);assert.equal(status.ignored.length,6);assert.equal(status.gaps.length,3);
-  assert.deepEqual(status.pending.map(s=>s.versionId),['v1','v2']);assert.equal(status.pending[0].sourceHash,status.pending[1].sourceHash);
+  assert.equal(status.received,2);assert.equal(status.backlog,1);assert.equal(status.organized,0);assert.equal(status.ignored.length,6);assert.equal(status.gaps.length,3);
+  assert.deepEqual(status.versions.map(s=>s.versionId),['v1','v2']);assert.equal(status.versions[0].sourceHash,status.versions[1].sourceHash);
   assert.doesNotMatch(JSON.stringify(status),/PRIVATE_INTERNAL/);
   await assert.rejects(f.call('turn-ingest',f.signed([f.turn('calling-turn','c11','v2','different')],'c10')),/reused/);
   assert.equal((await f.call('binding-status',f.session)).source.receivedCursor,'c10');
