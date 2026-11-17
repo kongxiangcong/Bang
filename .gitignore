@@ -117,3 +117,9 @@
 !/prototypes/whiteboard-integration/src/canvas-edits.ts
 !/tests/canvas-conflicts.test.mjs
 !/tests/canvas-conflicts-browser.mjs
+
+# Ticket 09 deterministic local layout and acceptance.
+!/runtime/canvas/layout.ts
+!/tests/canvas-layout.test.mjs
+!/tests/canvas-layout-browser.mjs
+!/prototypes/whiteboard-integration/src/LayoutControls.tsx

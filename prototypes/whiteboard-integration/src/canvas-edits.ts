@@ -1,6 +1,6 @@
 import {editableFields,type BoardOperation,type Card,type CommittedBoard,type FieldRevisions} from '../../../runtime/canvas/contract';
 export type Overlay=Record<string,FieldRevisions>;
-const allFields=['id','type','text','x','y','width','height','file','url'];
+const allFields=['id','type',...editableFields];
 export function edits(base:CommittedBoard,cards:Card[],overlay:Overlay):BoardOperation[]{
  const operations:BoardOperation[]=[];
  for(const card of cards){

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {DatabaseSync} from 'node:sqlite';
-import {compileCanvas,validateCanvas,parsePatch,parseCard,editableFields} from './contract.ts';
+import {compileCanvas,validateCanvas,parsePatch,parseCard,editableFields,layoutFields} from './contract.ts';
 export function topicPath(project,topic){
  if(!project||!topic||! /^[a-zA-Z0-9_-]+$/.test(topic))throw Error('Explicit project and safe topic are required');
  return path.join(path.resolve(project),'.bang','topics',topic,'current.canvas');
@@ -31,6 +31,7 @@ function applyOperation(canvas,op){
  if(op.type==='create-card')canvas.nodes.push(parseCard(op.card));
  else if(op.type==='delete-card')canvas.nodes.splice(index,1);
  else for(const field of editableFields)if(op[field]!==undefined)canvas.nodes[index][field]=op[field];
+ if(op.zIndex!==undefined){const ranks=new Map(canvas.nodes.map((node,i)=>[node.id,node.zIndex??i]));canvas.nodes.sort((a,b)=>ranks.get(a.id)-ranks.get(b.id));}
 }
 // All comparisons use persisted historical fields, including local acknowledged overlays.
 function inspectPatch(db,topic,patch,row,project){
@@ -49,7 +50,7 @@ function inspectPatch(db,topic,patch,row,project){
   }
   else if(!now)conflict('id',id,null,op.type==='delete-card'?null:op,'Card deleted');
   else {
-   const fields=op.type==='delete-card'?['id','type','text','x','y','width','height','file','url']:['id',...editableFields.filter(k=>op[k]!==undefined)];
+   const fields=op.type==='delete-card'?['id','type',...editableFields]:['id',...editableFields.filter(k=>op[k]!==undefined)];
    for(const field of fields){const old=baseline(op.fieldRevisions?.[field]??patch.baseRevision).canvas.nodes.find(n=>n.id===id);if(!old||old[field]!==now[field])conflict(field,old?.[field],now[field],op.type==='delete-card'?null:op[field],'Field changed');}
    if(op.type==='edit-card'&&((op.file!==undefined&&now.type!=='file')||(op.url!==undefined&&now.type!=='link')))conflict('type',null,now.type,null,'Resource type mismatch');
   }
@@ -88,7 +89,12 @@ export async function commitBoard(project,topic,value){
    if(touched.has(identity))throw Error('Repeated object operation');touched.add(identity);
    applyOperation(next.canvas,op);
    if(op.type==='delete-card')delete next.metadata[identity];
-   else Object.defineProperty(next.metadata,identity,{value:{source:{kind:'manual',authorId:patch.author.id,operationId:patch.operationId},modifiedRevision:next.revision},enumerable:true,configurable:true,writable:true});
+   else {
+    const previous=next.metadata[identity]??{},changed=op.type==='create-card'?Object.keys(op.card):editableFields.filter(k=>op[k]!==undefined);
+    const layoutOnly=op.type==='edit-card'&&changed.every(k=>layoutFields.includes(k));
+    const source=layoutOnly?previous.source:{kind:'manual',authorId:patch.author.id,operationId:patch.operationId};
+    Object.defineProperty(next.metadata,identity,{value:{...previous,source,modifiedRevision:next.revision,fields:{...previous.fields,...Object.fromEntries(changed.map(k=>[k,{modifiedRevision:next.revision,authorId:patch.author.id,operationId:patch.operationId}]))}},enumerable:true,configurable:true,writable:true});
+   }
   }
   validateCanvas(next.canvas);validateResources(project,next.canvas);
   const content=bytes(next.canvas),digest=hash(content),state=JSON.stringify(next);
