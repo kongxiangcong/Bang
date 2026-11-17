@@ -171,3 +171,9 @@
 !/runtime/dsh/package.json
 !/runtime/dsh/README.md
 !/tests/dsh-session-connector.test.mjs
+
+# Ticket 31 reviewed versioned structure rules, deterministic compiler and public acceptance.
+!/runtime/canvas/structures.ts
+!/runtime/canvas/structure-rules.mjs
+!/tests/canvas-structures.test.mjs
+!/tests/canvas-structures-browser.mjs

@@ -22,7 +22,7 @@ const server=http.createServer((req,res)=>middleware(req,res,async()=>{
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
 const url=`http://127.0.0.1:${server.address().port}`;
 async function canvasRequest(endpoint){const {token}=await (await fetch(url+'/api/canvas/session/bootstrap')).json();return fetch(endpoint,{headers:{'x-bang-browser-token':token}});}
-const chrome=spawn(process.env.BANG_CHROME??'C:/Program Files/Google/Chrome/Application/chrome.exe',['--headless=new','--disable-gpu','--no-sandbox','--remote-debugging-port=0',`--user-data-dir=${path.join(temp,'chrome')}`,'--window-size=1440,960','about:blank'],{stdio:'ignore',windowsHide:true});
+const chrome=spawn(process.env.BANG_CHROME??'C:/Program Files/Google/Chrome/Application/chrome.exe',['--headless=new','--disable-gpu','--no-sandbox','--remote-debugging-port=0',`--user-data-dir=${path.join(temp,'chrome')}`,'--window-size=1440,1200','about:blank'],{stdio:'ignore',windowsHide:true});
 const delay=ms=>new Promise(r=>setTimeout(r,ms));let ws;let n=0;const pending=new Map();
 async function until(fn){for(let i=0;i<100;i++){try{const result=await fn();if(result)return result}catch{}await delay(100)}throw Error('timed out')}
 function cmd(method,params={}){return new Promise((resolve,reject)=>{const id=++n;pending.set(id,{resolve,reject});ws.send(JSON.stringify({id,method,params}))})}
@@ -50,7 +50,7 @@ try{
  await cmd('Input.dispatchMouseEvent',{type:'mousePressed',x:moved.x+moved.w+4,y:moved.y+moved.h+4,button:'left',clickCount:1});
  await cmd('Input.dispatchMouseEvent',{type:'mouseMoved',x:moved.x+moved.w+84,y:moved.y+moved.h+64,button:'left',buttons:1});await delay(150);
  await cmd('Input.dispatchMouseEvent',{type:'mouseReleased',x:moved.x+moved.w+84,y:moved.y+moved.h+64,button:'left',clickCount:1});await delay(150);
- const resized=await geometry();assert.ok(resized.width>moved.width,'resize width');assert.ok(resized.height>moved.height,'resize height');
+ const resized=await geometry();if(resized.width<=moved.width)console.error({moved,resized});assert.ok(resized.width>moved.width,'resize width');assert.ok(resized.height>moved.height,'resize height');
  await control('布局选择 1');await button('选区置顶');await control('布局选择 1');await button('选区视觉分组');await button('固定选区位置');
  assert.equal((await (await canvasRequest(url+'/api/canvas/demo/state')).json()).revision,0);
  await button('保存');await until(()=>evaluate('document.body.innerText.includes("已保存 · 修订 1")'));
@@ -62,7 +62,8 @@ try{
  await button('新增知识卡片');await button('保存');await until(()=>evaluate('document.body.innerText.includes("已保存 · 修订 2")'));
  const added=await (await canvasRequest(url+'/api/canvas/demo/state')).json();assert.deepEqual(added.canvas.nodes.find(n=>n.id==='back'),original);
  await button('刷新');await until(()=>evaluate('document.body.innerText.includes("显示版本 2")'));
- await control('布局选择 2');await button('显式重新布局选区');await button('保存');await until(()=>evaluate('document.body.innerText.includes("已保存 · 修订 3")'));
+ await control('布局选择 2');await button('显式重新布局选区');assert.equal((await geometry()).bx,original.x);await button('解除位置固定');await button('显式重新布局选区');await button('保存');await until(()=>evaluate('document.body.innerText.includes("已保存 · 修订 3")'));
  const relayout=await (await canvasRequest(url+'/api/canvas/demo/state')).json();assert.deepEqual(relayout.canvas.nodes.find(n=>n.id==='front'),added.canvas.nodes.find(n=>n.id==='front'));
  console.log(JSON.stringify({pass:true,evidence:'real Chrome drag/resize, visual grouping, fixed position, layering, explicit save/reload, local insertion and selected relayout; real native HTTP; no interception'}));
 }finally{ws?.close();chrome.kill();server.closeAllConnections();await new Promise(r=>server.close(r));await delay(500);spawnSync(process.execPath,[path.join(root,'runtime/canvas/bang.mjs'),'stop','--project',temp],{encoding:'utf8'});await fs.rm(temp,{recursive:true,force:true,maxRetries:5,retryDelay:200});}
+

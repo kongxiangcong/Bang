@@ -31,7 +31,7 @@ test('compiler places additions deterministically, preserves old layout and warn
  assert.deepEqual(a.nodes[0],previous.nodes[0]);assert.equal(a.nodes[1].width,320);assert.equal(a.nodes[1].height,120);
  assert.equal(a.layoutWarnings[0].code,'NO_LOCAL_SPACE');assert.equal(a.layoutWarnings[0].id,'new');
  const selected=compileCanvas({...input,relayoutIds:['a'],bounds:{x:0,y:0,width:1500,height:1000}});
- assert.equal(selected.nodes[0].x,0);assert.equal(selected.nodes[0].fixed,true);
+ assert.equal(selected.nodes[0].x,10);assert.equal(selected.nodes[0].fixed,true);
  assert.equal(selected.nodes[0].zIndex,5);
 });
 

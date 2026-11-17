@@ -1,3 +1,4 @@
+import {parseStructure,layoutStructures,type StructureIntent} from './structures.ts';
 import {layoutCards,type Bounds,type LayoutWarning} from './layout.ts';
 import {parseEdge,relationFields,validateRelationFields,semanticRelations,type Edge,type RelationOperation} from './relations.ts';
 export type {Edge} from './relations.ts';
@@ -8,7 +9,7 @@ const id: Parser<string> = v => { const s=string(v); if(!s.length) throw Error('
 const number: Parser<number> = v => { if(typeof v!=='number'||!Number.isSafeInteger(v)) throw Error('Expected safe integer coordinate'); return v; };
 const size: Parser<number> = v => { const n=number(v); if(n<=0) throw Error('Expected positive size'); return n; };
 export const cardSchema={id,text:string,x:number,y:number,width:size,height:size};
-export type Card = {id:string;derivedFrom?:string;x:number;y:number;width:number;height:number;text:string;type?:'text'|'file'|'link'|'group';color?:string;subpath?:string;label?:string;background?:string;backgroundStyle?:'cover'|'ratio'|'contain';file?:string;url?:string;regionId?:string|null;fixed?:boolean;zIndex?:number};
+export type Card = {structure?:StructureIntent|null;id:string;derivedFrom?:string;x:number;y:number;width:number;height:number;text:string;type?:'text'|'file'|'link'|'group';color?:string;subpath?:string;label?:string;background?:string;backgroundStyle?:'cover'|'ratio'|'contain';file?:string;url?:string;regionId?:string|null;fixed?:boolean;zIndex?:number};
 export type KnowledgeCard = Card & {type?:'text'|'file'|'link'};
 export function knowledgeCards(canvas:Canvas):KnowledgeCard[]{return canvas.nodes.filter((node):node is KnowledgeCard=>node.type!=='group');}
 export function visualRegions(canvas:Canvas){return canvas.nodes.filter(node=>node.type==='group');}
@@ -34,7 +35,7 @@ export function parseCard(value:unknown):Card {
  if(!value||typeof value!=='object'||Array.isArray(value))throw Error('Expected card');
  const v=value as Record<string,unknown>,type=v.type??'text';
  if(!['text','file','link','group'].includes(type as string))throw Error('Unknown card type');
- const geometry={id:id(v.id),x:number(v.x),y:number(v.y),width:size(v.width),height:size(v.height),...parseLayout(v),...parseStandard(v),...(v.derivedFrom!==undefined?{derivedFrom:id(v.derivedFrom)}:{})};
+ const geometry={id:id(v.id),x:number(v.x),y:number(v.y),width:size(v.width),height:size(v.height),...parseLayout(v),...(v.structure!==undefined?{structure:parseStructure(v.structure)}:{}),...parseStandard(v),...(v.derivedFrom!==undefined?{derivedFrom:id(v.derivedFrom)}:{})};
  if(type==='group')return {...geometry,type,text:'',...(v.label!==undefined?{label:string(v.label)}:{}),...(v.background!==undefined?{background:safeResourcePath(v.background)}:{}),...(v.backgroundStyle!==undefined?{backgroundStyle:v.backgroundStyle as 'cover'|'ratio'|'contain'}:{})};
  if(type==='file')return {...geometry,type,text:typeof v.text==='string'?v.text:'',file:safeResourcePath(v.file),...(v.subpath!==undefined?{subpath:string(v.subpath)}:{})};
  if(type==='link')return {...geometry,type,text:typeof v.text==='string'?v.text:'',url:safeResourceURL(v.url)};
@@ -54,17 +55,18 @@ export function compileCanvas(input:unknown):Canvas {
  const v=input as {cards:Partial<Card>[];edges?:Edge[];previous?:Canvas;relayoutIds?:string[];bounds?:Bounds};
  if(v.previous)validateCanvas(v.previous);
  const result=layoutCards(v.cards,v.previous?.nodes,v.relayoutIds,v.bounds);
+ layoutStructures(result,v.cards,v.edges??v.previous?.edges??[],v.previous?.nodes??[],v.relayoutIds??[],v.bounds);
  return validateCanvas({nodes:result.nodes.map(parseCard),edges:(v.edges??v.previous?.edges??[]).map(parseEdge),...(result.warnings.length?{layoutWarnings:result.warnings}:{})});
 }
 
-export const layoutFields=['x','y','width','height','regionId','fixed','zIndex'] as const;
+export const layoutFields=['structure','x','y','width','height','regionId','fixed','zIndex'] as const;
 function parseLayout(v:Record<string,unknown>){
  const out:{regionId?:string|null;fixed?:boolean;zIndex?:number}={};
  if(v.regionId!==undefined)out.regionId=v.regionId===null?null:id(v.regionId);
  if(v.fixed!==undefined){if(typeof v.fixed!=='boolean')throw Error('Expected fixed boolean');out.fixed=v.fixed;}
  if(v.zIndex!==undefined)out.zIndex=number(v.zIndex);return out;
 }
-export const editableFields=['text','x','y','width','height','regionId','fixed','zIndex','file','url','label'] as const;
+export const editableFields=['structure','text','x','y','width','height','regionId','fixed','zIndex','file','url','label'] as const;
 export type FieldRevisions=Record<string,number>;
 export type EditorExtra = {id:string;element:Record<string,any>};
 export function parseExtra(value:unknown):EditorExtra {
@@ -85,7 +87,7 @@ export function parseExtra(value:unknown):EditorExtra {
 export type ExtraOperation = {type:'create-extra';extra:EditorExtra}|{type:'edit-extra';id:string;element:Record<string,any>}|{type:'delete-extra';id:string};
 export type CanvasImportPatch={operationId:string;topic:string;baseRevision:number;author:{kind:'manual';id:string};intent:'explicit-import';expectedHash:string|null;candidateHash:string;external:boolean;canvas:Canvas};
 export type CanvasImportOperation={type:'replace-canvas';canvas:Canvas};
-export type BoardOperation = (ExtraOperation|{type:'create-card';card:Card}|{type:'edit-card';id:string;text?:string;label?:string;file?:string;url?:string;x?:number;y?:number;width?:number;height?:number;regionId?:string|null;fixed?:boolean;zIndex?:number}|{type:'delete-card';id:string}|RelationOperation) & {fieldRevisions?:FieldRevisions};
+export type BoardOperation = (ExtraOperation|{type:'create-card';card:Card}|{type:'edit-card';id:string;structure?:StructureIntent|null;text?:string;label?:string;file?:string;url?:string;x?:number;y?:number;width?:number;height?:number;regionId?:string|null;fixed?:boolean;zIndex?:number}|{type:'delete-card';id:string}|RelationOperation) & {fieldRevisions?:FieldRevisions};
 export type BoardPatch = {operationId:string;topic:string;baseRevision:number;author:{kind:'manual';id:string};readDependencies:string[];intent:'explicit-save';operations:BoardOperation[]};
 export type CardMetadata = {derivedFrom?:string;role?:'visual-region'|'knowledge';knowledge?:{conditions:string[];uncertainty:string;sources:string[];dependencies:string[]};organizer?:{taskId:string;attemptId:string};source:{kind:'discussion';sourceIds:string[]}|{kind:'manual';authorId:string;operationId:string}|{kind:'bootstrap'};modifiedRevision:number;fields?:Record<string,{modifiedRevision:number;authorId:string;operationId:string}>};
 export type CommittedBoard = {revision:number;canvas:Canvas;editorExtras?:EditorExtra[];metadata:Record<string,CardMetadata>;relations?:ReturnType<typeof semanticRelations>;deletionIntents?:{id:string;object:Card|Edge;revision:number;authorId:string;operationId:string}[]};
@@ -94,7 +96,7 @@ export function parsePatch(value:unknown):BoardPatch {
  if(!p||typeof p!=='object'||!p.author||p.author.kind!=='manual'||!p.author.id||p.intent!=='explicit-save')throw Error('Expected explicit manual save');
  id(p.operationId);id(p.topic);id(p.author.id);
  if(!Number.isSafeInteger(p.baseRevision)||p.baseRevision<0||!Array.isArray(p.readDependencies)||p.readDependencies.some(d=>typeof d!=='string')||!Array.isArray(p.operations)||!p.operations.length)throw Error('Invalid patch baseline or operations');
- for(const op of p.operations){if(op?.type==='create-extra')parseExtra(op.extra);else if(op?.type==='edit-extra')parseExtra({id:op.id,element:op.element});else if(op?.type==='delete-extra')id(op.id);else if(op?.type==='create-card')parseCard(op.card);else if(op?.type==='edit-card'){id(op.id);if(!editableFields.some(k=>op[k]!==undefined))throw Error('Empty edit');parseLayout(op as unknown as Record<string,unknown>);if(op.width!==undefined)size(op.width);if(op.height!==undefined)size(op.height);if(op.text!==undefined)string(op.text);if(op.label!==undefined)string(op.label);if(op.x!==undefined)number(op.x);if(op.y!==undefined)number(op.y);if(op.file!==undefined)safeResourcePath(op.file);if(op.url!==undefined)safeResourceURL(op.url);}else if(op?.type==='delete-card')id(op.id);else if(op?.type==='create-relation')parseEdge(op.edge);else if(op?.type==='edit-relation'){id(op.id);validateRelationFields(op);if(!relationFields.some(k=>op[k]!==undefined))throw Error('Empty relation edit');}else if(op?.type==='delete-relation')id(op.id);else throw Error('Unknown board operation');
+ for(const op of p.operations){if(op?.type==='create-extra')parseExtra(op.extra);else if(op?.type==='edit-extra')parseExtra({id:op.id,element:op.element});else if(op?.type==='delete-extra')id(op.id);else if(op?.type==='create-card')parseCard(op.card);else if(op?.type==='edit-card'){id(op.id);if(!editableFields.some(k=>op[k]!==undefined))throw Error('Empty edit');parseLayout(op as unknown as Record<string,unknown>);if(op.structure!==undefined)parseStructure(op.structure);if(op.width!==undefined)size(op.width);if(op.height!==undefined)size(op.height);if(op.text!==undefined)string(op.text);if(op.label!==undefined)string(op.label);if(op.x!==undefined)number(op.x);if(op.y!==undefined)number(op.y);if(op.file!==undefined)safeResourcePath(op.file);if(op.url!==undefined)safeResourceURL(op.url);}else if(op?.type==='delete-card')id(op.id);else if(op?.type==='create-relation')parseEdge(op.edge);else if(op?.type==='edit-relation'){id(op.id);validateRelationFields(op);if(!relationFields.some(k=>op[k]!==undefined))throw Error('Empty relation edit');}else if(op?.type==='delete-relation')id(op.id);else throw Error('Unknown board operation');
   if(op.fieldRevisions!==undefined&&(!op.fieldRevisions||typeof op.fieldRevisions!=='object'||Array.isArray(op.fieldRevisions)||Object.entries(op.fieldRevisions).some(([k,v])=>!['id','type','element',...editableFields,...relationFields].includes(k)||!Number.isSafeInteger(v)||v<0)))throw Error('Invalid field baseline');
  }
  return p;

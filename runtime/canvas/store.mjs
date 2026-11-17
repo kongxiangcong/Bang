@@ -1,3 +1,4 @@
+import {isDeepStrictEqual} from 'node:util';
 import {standardCanvas,parseImport,importChanges,exchangeDegradation} from './exchange.mjs';
 import {applyOperation as applyParsedOperation,orderOperations,operationIdentity} from './operations.ts';
 import {recoveryStatus,recoverUnknown,reconcile,publish,observed,recoveryError,hash} from './publication.mjs';
@@ -61,7 +62,7 @@ function inspectPatch(db,topic,patch,row,project){
   else if(!now)conflict('id',id,null,op.type==='delete-card'?null:op,'Card deleted');
   else {
    const fields=deleting?(relation?['id',...relationFields]:['id','type',...editableFields]):['id',...(relation?relationFields:editableFields).filter(k=>op[k]!==undefined)];
-   for(const field of fields){const old=baseline(op.fieldRevisions?.[field]??patch.baseRevision).canvas[collection].find(n=>n.id===id);if(!old||old[field]!==now[field])conflict(field,old?.[field],now[field],op.type==='delete-card'?null:op[field],'Field changed');}
+   for(const field of fields){const old=baseline(op.fieldRevisions?.[field]??patch.baseRevision).canvas[collection].find(n=>n.id===id);if(!old||!isDeepStrictEqual(old[field],now[field]))conflict(field,old?.[field],now[field],op.type==='delete-card'?null:op[field],'Field changed');}
    if(op.type==='edit-card'&&((op.file!==undefined&&now.type!=='file')||(op.url!==undefined&&now.type!=='link')))conflict('type',null,now.type,null,'Resource type mismatch');
   }
  }
