@@ -91,3 +91,5 @@ concurrent process ownership, performance or real Codex/DSH host acceptance clai
 
 - Final 06 rerun after native commit 19dcfbb: build and complete draft browser script passed with /api/canvas/session/bootstrap. Build reports a temporary missing readResourceStatus export from ticket04's forward resource route until ticket11 is integrated; this does not affect the tested text draft endpoints. Seven committed-state CLI/HTTP regressions also passed after native integration.
 
+- Integration verification after merging 06: production build and `node tests/canvas-draft-browser.mjs` passed. Combined native/Canvas CLI/HTTP run was 14/15: `project daemon reuses ownership across CLI launches and survives independent clients` failed with `Native runtime startup failed` while the build ran concurrently. Its isolated rerun passed; the intermittent startup failure remains recorded and its cause is not established. Native security and simultaneous-start tests passed in that combined run. Ticket 04's corrected validation commands were preserved.
+
