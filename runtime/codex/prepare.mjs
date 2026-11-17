@@ -10,10 +10,11 @@ const executable=process.env.CODEX_APP_RUNTIME_CLI_PATH;
 if(!executable||!path.isAbsolute(executable))throw Error('Pinned Codex executable required');
 await runtimeOperation(project,'start');
 const manifest=path.join(project,'.bang','runtime','codex-install.json');
-if(fs.existsSync(manifest))throw Error('Codex preparation already exists; review existing installation');
+if(!fs.existsSync(manifest)){
 const {privateKey}=generateKeyPairSync('ed25519'),instanceId=randomUUID(),connectorId='codex-'+randomUUID();
 await new CodexSessionConnector({project,transport:null,connectorId,instanceId,privateKey}).register();
 fs.writeFileSync(manifest,JSON.stringify({executable,connectorId,instanceId,privateKey:privateKey.export({format:'pem',type:'pkcs8'})}),{mode:0o600,flag:'wx'});
+}
 fs.mkdirSync(review,{recursive:true});
 const script=fileURLToPath(new URL('./hook.mjs',import.meta.url));
 const ps=value=>"'"+value.replaceAll("'","''")+"'";

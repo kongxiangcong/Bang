@@ -149,3 +149,9 @@
 # Core review shared transaction application and browser regression.
 !/runtime/canvas/operations.ts
 !/tests/canvas-transaction-browser.mjs
+
+# Ticket 36 complete project snapshot and isolated restore.
+!/runtime/canvas/backup.mjs
+!/prototypes/whiteboard-integration/src/ProjectBackup.tsx
+!/tests/canvas-backup.test.mjs
+!/tests/canvas-backup-browser.mjs
