@@ -14,12 +14,14 @@ export function createCanvasMiddleware({project}){
    if(supplied.length!==expected.length||!timingSafeEqual(supplied,expected)){res.statusCode=403;res.end(JSON.stringify({error:'Browser capability required'}));return;}
    const [topic,action,...extra]=url.pathname.slice('/api/canvas/'.length).split('/').map(decodeURIComponent);
    if(extra.length)throw Error('Unknown route');
-   if(req.method==='POST'&&(action==='commit'||action==='preview')){
+   if(req.method==='POST'&&['commit','preview','undo'].includes(action)){
     if(!req.headers['content-type']?.startsWith('application/json'))throw Error('JSON content type required');
     req.setEncoding('utf8');let body='';for await(const chunk of req){body+=chunk;if(Buffer.byteLength(body)>1024*1024)throw Error('Patch too large');}
     res.end(JSON.stringify(await runtimeOperation(project,action,topic,JSON.parse(body))));return;
    }
    if(req.method!=='GET'){res.statusCode=405;res.end(JSON.stringify({error:'Use explicit commit endpoint'}));return;}
+   if(action==='history'){res.end(JSON.stringify(await runtimeOperation(project,'history',topic)));return;}
+   if(action==='history-preview'||action==='history-diff'){const input=action==='history-preview'?{revision:Number(url.searchParams.get('revision'))}:{fromRevision:Number(url.searchParams.get('from')),toRevision:Number(url.searchParams.get('to'))};res.end(JSON.stringify(await runtimeOperation(project,action,topic,input)));return;}
    if(action==='resources'){res.end(JSON.stringify(await runtimeOperation(project,'resource-status',topic,{id:url.searchParams.get('id')})));return;}
    if(action==='head'){res.end(JSON.stringify(await runtimeOperation(project,'head',topic)));return;}
    if(action&&action!=='state')throw Error('Unknown route');
@@ -27,6 +29,7 @@ export function createCanvasMiddleware({project}){
   }catch(error){res.statusCode=error.code==='ENOENT'?404:/conflict|reused|recovery|externally/.test(error.message)?409:400;res.end(JSON.stringify({error:error.message,preview:error.preview}));}
  };
 }
+
 
 
 
