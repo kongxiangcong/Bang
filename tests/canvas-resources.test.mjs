@@ -15,6 +15,8 @@ test('file and link cards save as standard Canvas and reopen with complete raw t
  const cards=[{...base,id:'file',type:'file',file:'docs/missing.pdf'},{...base,id:'link',type:'link',url:'https://example.com/paper'},{...base,id:'raw',text:raw}];
  const saved=run(p,'commit',patch(cards));assert.equal(saved.status,0,saved.stderr);
  const state=JSON.parse(run(p,'state').stdout);assert.equal(state.canvas.nodes[0].type,'file');assert.equal(state.canvas.nodes[0].file,'docs/missing.pdf');assert.equal(state.canvas.nodes[1].url,'https://example.com/paper');assert.equal(state.canvas.nodes[2].text,raw);
+ const edit={...patch([]),operationId:'edit-resource',baseRevision:1,operations:[{type:'edit-card',id:'file',text:'document',file:'docs/renamed.pdf'},{type:'edit-card',id:'link',text:'paper',url:'https://example.com/revised'}]};
+ assert.equal(run(p,'commit',edit).status,0);const reopened=JSON.parse(run(p,'state').stdout);assert.equal(reopened.canvas.nodes[0].file,'docs/renamed.pdf');assert.equal(reopened.canvas.nodes[1].url,'https://example.com/revised');
  } finally {await fs.rm(p,{recursive:true,force:true});}
 });
 test('unsafe resources fail atomically without echoing credentials; symlink escapes cannot save',async()=>{

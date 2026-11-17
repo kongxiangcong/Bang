@@ -46,7 +46,7 @@ export async function commitBoard(project,topic,value){
    if(touched.has(identity))throw Error('Repeated object operation');touched.add(identity);
    const index=next.canvas.nodes.findIndex(n=>n.id===identity);
    if(op.type==='create-card'){if(index!==-1)throw Error('Card already exists');next.canvas.nodes.push(parseCard(op.card));}
-   else {if(index===-1)throw Error('Card not found');if(op.type==='edit-card')next.canvas.nodes[index].text=op.text;else next.canvas.nodes.splice(index,1);}
+   else {if(index===-1)throw Error('Card not found');if(op.type==='edit-card'){const card=next.canvas.nodes[index];card.text=op.text;if(op.file!==undefined){if(card.type!=='file')throw Error('Not a file card');card.file=op.file;}if(op.url!==undefined){if(card.type!=='link')throw Error('Not a link card');card.url=op.url;}}else next.canvas.nodes.splice(index,1);}
    if(op.type==='delete-card')delete next.metadata[identity];
    else Object.defineProperty(next.metadata,identity,{value:{source:{kind:'manual',authorId:patch.author.id,operationId:patch.operationId},modifiedRevision:next.revision},enumerable:true,configurable:true,writable:true});
   }

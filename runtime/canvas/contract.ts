@@ -10,7 +10,7 @@ export type Canvas = {nodes:Card[];edges:never[]};
 export function safeResourceURL(value:unknown):string {
  const raw=string(value);let u:URL;try{u=new URL(raw);}catch{throw Error('Invalid resource URL');}
  if(!['https:','http:'].includes(u.protocol)||u.username||u.password||/[\u0000-\u0020]/.test(raw))throw Error('Unsafe resource URL');
- if([...u.searchParams.keys()].some(k=>/^(token|key|api[_-]?key|password|secret|access_token|authorization)$/i.test(k)))throw Error('Credential-bearing resource URL');
+ u.searchParams.forEach((_,key)=>{if(/^(token|key|api[_-]?key|password|secret|access_token|authorization)$/i.test(key))throw Error('Credential-bearing resource URL');});
  return raw;
 }
 export function safeResourcePath(value:unknown):string {
@@ -40,7 +40,7 @@ export function compileCanvas(input:unknown):Canvas {
  return validateCanvas({nodes:(input as {cards:unknown[]}).cards.map(parseCard),edges:[]});
 }
 
-export type BoardOperation = {type:'create-card';card:Card}|{type:'edit-card';id:string;text:string}|{type:'delete-card';id:string};
+export type BoardOperation = {type:'create-card';card:Card}|{type:'edit-card';id:string;text:string;file?:string;url?:string}|{type:'delete-card';id:string};
 export type BoardPatch = {operationId:string;topic:string;baseRevision:number;author:{kind:'manual';id:string};readDependencies:string[];intent:'explicit-save';operations:BoardOperation[]};
 export type CardMetadata = {source:{kind:'manual';authorId:string;operationId:string}|{kind:'bootstrap'};modifiedRevision:number};
 export type CommittedBoard = {revision:number;canvas:Canvas;metadata:Record<string,CardMetadata>};
@@ -49,6 +49,6 @@ export function parsePatch(value:unknown):BoardPatch {
  if(!p||typeof p!=='object'||!p.author||p.author.kind!=='manual'||!p.author.id||p.intent!=='explicit-save')throw Error('Expected explicit manual save');
  id(p.operationId);id(p.topic);id(p.author.id);
  if(!Number.isSafeInteger(p.baseRevision)||p.baseRevision<0||!Array.isArray(p.readDependencies)||p.readDependencies.some(d=>typeof d!=='string')||!Array.isArray(p.operations)||!p.operations.length)throw Error('Invalid patch baseline or operations');
- for(const op of p.operations){if(op?.type==='create-card')parseCard(op.card);else if(op?.type==='edit-card'){id(op.id);string(op.text);}else if(op?.type==='delete-card')id(op.id);else throw Error('Unknown board operation');}
+ for(const op of p.operations){if(op?.type==='create-card')parseCard(op.card);else if(op?.type==='edit-card'){id(op.id);string(op.text);if(op.file!==undefined)safeResourcePath(op.file);if(op.url!==undefined)safeResourceURL(op.url);}else if(op?.type==='delete-card')id(op.id);else throw Error('Unknown board operation');}
  return p;
 }
