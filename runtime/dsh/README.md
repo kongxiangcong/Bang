@@ -80,3 +80,9 @@ The ticket stays **claimed**, not resolved. A reviewable overlay exists; genuine
 acceptance next needs an authorized DSH session with supported authentication,
 then an independent Linux DSH installation. No credential/trust bypass or
 substitute Codex session can close those gates.
+
+Final integrated verification: merged integration `f181fe1` (Codex connector) into
+`9fae3af`; `node --test tests/dsh-session-connector.test.mjs tests/codex-connector.test.mjs tests/completed-turns.test.mjs`
+passed **15/15**, zero skipped. `git diff --check` passed. Ticket 16's pending
+reception-stop/resume contract must add the metadata-only branch before body reads;
+this preview does not claim its not-yet-integrated controls.
