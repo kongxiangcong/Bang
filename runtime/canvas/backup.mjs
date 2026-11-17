@@ -9,6 +9,7 @@ import {resourceStatus} from './resources.mjs';
 // Logical SQLite snapshot: fixed schemas, parameterized values, no SQL from a package.
 // One native owner queue + one read transaction establishes the database cut.
 const schemas={
+ context_turns:'id TEXT PRIMARY KEY,topic TEXT NOT NULL,body TEXT NOT NULL',
  organizer_project:'id INTEGER PRIMARY KEY,body TEXT NOT NULL',
  organizer_topics:'topic TEXT PRIMARY KEY,enabled INTEGER NOT NULL',
  organizer_tasks:'id TEXT PRIMARY KEY,topic TEXT NOT NULL,source_id TEXT NOT NULL UNIQUE,body TEXT NOT NULL',
@@ -22,7 +23,7 @@ const schemas={
  ingestion_gaps:'id TEXT PRIMARY KEY, binding TEXT NOT NULL, topic TEXT NOT NULL, cursor TEXT NOT NULL, reason TEXT NOT NULL',
  ingestion_ignored:'id TEXT PRIMARY KEY, binding TEXT NOT NULL, topic TEXT NOT NULL, cursor TEXT NOT NULL, reason TEXT NOT NULL',
 };
-const excluded=new Set(['session_connectors','verified_sessions','session_proofs','takeover_previews','ingestion_backfills','ingestion_batches']);
+const excluded=new Set(['context_bridges','context_proofs','session_connectors','verified_sessions','session_proofs','takeover_previews','ingestion_backfills','ingestion_batches']);
 const digest=value=>createHash('sha256').update(value).digest('hex');
 const hashJSON=value=>digest(JSON.stringify(value));
 const limit=48*1024*1024;
@@ -72,6 +73,7 @@ function inspect(backup){
    if(state.revision!==row.revision||revision?.state!==row.state||digest(JSON.stringify(state.canvas,null,2)+'\n')!==row.hash)throw Error('Backup current revision or Canvas hash mismatch');
   }
   for(const row of [...tables.revisions,...tables.intents])if(!tables.topics.some(t=>t.topic===row.topic)||!/^[a-zA-Z0-9_-]+$/.test(row.topic))throw Error('Backup references unknown topic');
+  if(tables.context_turns.some(r=>{const c=JSON.parse(r.body);return c.frozen!==true||c.token!==undefined||c.projection!==undefined||c.objects!==undefined||c.sources!==undefined||c.expiresAt!==0||!tables.topics.some(t=>t.topic===r.topic);}))throw Error('Backup ContextBridge authority must be frozen');
   if(tables.binding_sources.some(r=>r.active!==0)||tables.ingestion_queue.some(r=>!['frozen','organized'].includes(r.state)))throw Error('Backup authority must be frozen');
   for(const row of tables.organizer_project){const config=JSON.parse(row.body),bounds={concurrency:[1,8],timeoutMs:[10,3600000],callsPerHour:[1,10000],batchSize:[1,100]};if(row.id!==1||config.pauseReason!=='RESTORED_FROZEN'||!Array.isArray(config.calls)||config.calls.length>10000||config.calls.some(t=>!Number.isSafeInteger(t)||t<0)||!config.limits||Object.keys(config.limits).sort().join()!==Object.keys(bounds).sort().join()||Object.entries(bounds).some(([k,[min,max]])=>!Number.isSafeInteger(config.limits[k])||config.limits[k]<min||config.limits[k]>max))throw Error('Backup Organizer policy invalid or unfrozen');}
   if(tables.organizer_topics.some(r=>r.enabled!==0)||tables.organizer_tasks.some(r=>{const t=JSON.parse(r.body);return !['committed','no-change','failed','cancelled','skipped'].includes(t.status)||t.input!==undefined||t.baseline!==undefined||(t.proposals??[]).some(p=>p.status==='pending'&&!p.frozen);}))throw Error('Backup Organizer authority must be frozen');
@@ -102,6 +104,7 @@ export async function exportProject(project){
   for(const name of Object.keys(schemas))tables[name]=names.includes(name)?db.prepare(`SELECT * FROM ${name} ORDER BY rowid`).all():[];
   db.exec('COMMIT');
  }finally{db.close();}
+ for(const row of tables.context_turns){const c=JSON.parse(row.body);c.frozen=true;c.expiresAt=0;delete c.token;delete c.projection;delete c.objects;delete c.sources;row.body=JSON.stringify(c);}
  // A migration never carries authority to resume a host or replay old work.
  for(const row of tables.binding_sources){row.active=0;const m=JSON.parse(row.metadata);m.endCursor=m.receivedCursor??m.startCursor;m.restoredFrozen=true;m.frozenBacklog=m.backlog??0;m.backlog=0;row.metadata=JSON.stringify(m);}
  for(const row of tables.organizer_project){const config=JSON.parse(row.body);config.pauseReason='RESTORED_FROZEN';row.body=JSON.stringify(config);}
