@@ -1,3 +1,4 @@
+import {dshConfiguration} from '../dsh/executor-config.mjs';
 import {codexConfiguration} from '../codex/executor-config.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -6,8 +7,8 @@ import {fileURLToPath} from 'node:url';
 const active=new Set();
 export const nativeActiveCount=()=>active.size;
 export function nativeConfiguration(){
- if(process.env.BANG_ORGANIZER_NATIVE&&process.env.BANG_ORGANIZER_CODEX)throw Object.assign(Error('Conflicting native executor configuration'),{code:'EXECUTOR_CONFIGURATION'});
- if(!process.env.BANG_ORGANIZER_NATIVE)return codexConfiguration();
+ if([process.env.BANG_ORGANIZER_NATIVE,process.env.BANG_ORGANIZER_CODEX,process.env.BANG_ORGANIZER_DSH].filter(Boolean).length>1)throw Object.assign(Error('Conflicting native executor configuration'),{code:'EXECUTOR_CONFIGURATION'});
+ if(!process.env.BANG_ORGANIZER_NATIVE)return dshConfiguration()??codexConfiguration();
  try{const c=JSON.parse(process.env.BANG_ORGANIZER_NATIVE);
   if(c.version!==1||!path.isAbsolute(c.executable)||!fs.statSync(c.executable).isFile()||!Array.isArray(c.args)||c.args.some(a=>typeof a!=='string'||a.includes('\0'))||c.policy!=='no-tools'||!Number.isInteger(c.graceMs)||c.graceMs<10||c.graceMs>2000||Object.keys(c).some(k=>!['version','executable','args','policy','graceMs'].includes(k)))throw Error();
   if(/\.(cmd|bat|ps1)$/i.test(c.executable))throw Error();
