@@ -1,0 +1,29 @@
+✖ Linux read-only installation runs without a compiler and keeps discovery private (407.277491ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 507.143374
+
+✖ failing tests:
+
+test at tests/native-runtime.test.mjs:71:1
+✖ Linux read-only installation runs without a compiler and keeps discovery private (407.277491ms)
+  AssertionError [ERR_ASSERTION]: Native lock helper missing; install the prebuilt platform runtime
+  
+  
+  1 !== 0
+  
+      at TestContext.<anonymous> (file:///var/tmp/bang-ticket04-linux/tests/native-runtime.test.mjs:80:10)
+      at async Test.run (node:internal/test_runner/test:1208:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:385:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
