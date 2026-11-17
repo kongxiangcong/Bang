@@ -40,7 +40,7 @@ export function compensate(db,topic,request,current){
  const conflicts=[];
  for(const c of changes){
   const original=lookup(after,c);
-  for(const state of later){const object=lookup(state,c);if(c.field==='$object'?!equal(original,object):!object||!equal(original?.[c.field],object[c.field])||((state.metadata?.[c.id]?.fields?.[c.field]?.modifiedRevision??0)>request.revision)){
+  for(const state of later){const object=lookup(state,c);if(c.field==='$object'?!equal(original,object):!object||!equal(original?.[c.field],object[c.field])||(c.collection!=='editorExtras'&&(state.metadata?.[c.id]?.fields?.[c.field]?.modifiedRevision??0)>request.revision)){
    conflicts.push({id:c.id,field:c.field,base:c.after,current:c.field==='$object'?object??null:object?.[c.field]??null,proposed:c.before,reason:'Later modification conflicts with undo'});break;
   }}
  }
@@ -49,10 +49,11 @@ export function compensate(db,topic,request,current){
  for(const c of changes){
   const list=values(next,c.collection),index=list.findIndex(n=>n.id===c.id),old=lookup(before,c);
   if(c.field==='$object'){
-   if(old){const sourceList=values(before,c.collection),oldIndex=sourceList.findIndex(n=>n.id===c.id);list.splice(Math.min(oldIndex,list.length),0,structuredClone(old));if(Object.hasOwn(before.metadata,c.id))Object.defineProperty(next.metadata,c.id,{value:structuredClone(before.metadata[c.id]),enumerable:true,configurable:true,writable:true});}
-   else {const removed=list.splice(index,1)[0];(next.deletionIntents??=[]).push({id:c.id,object:removed,revision:next.revision,authorId:request.author.id,operationId:request.operationId});delete next.metadata[c.id];}
+   if(old){const sourceList=values(before,c.collection),oldIndex=sourceList.findIndex(n=>n.id===c.id);list.splice(Math.min(oldIndex,list.length),0,structuredClone(old));if(c.collection!=='editorExtras'&&Object.hasOwn(before.metadata,c.id))Object.defineProperty(next.metadata,c.id,{value:structuredClone(before.metadata[c.id]),enumerable:true,configurable:true,writable:true});}
+   else {const removed=list.splice(index,1)[0];if(c.collection!=='editorExtras'){(next.deletionIntents??=[]).push({id:c.id,object:removed,revision:next.revision,authorId:request.author.id,operationId:request.operationId});delete next.metadata[c.id];}}
   }else{
    if(Object.hasOwn(old,c.field))list[index][c.field]=structuredClone(old[c.field]);else delete list[index][c.field];
+   if(c.collection==='editorExtras')continue;
    if(!Object.hasOwn(next.metadata,c.id))Object.defineProperty(next.metadata,c.id,{value:{},enumerable:true,configurable:true,writable:true});
    const metadata=next.metadata[c.id];
    if(equal(metadata.source,after.metadata[c.id]?.source)){if(before.metadata[c.id]?.source)metadata.source=structuredClone(before.metadata[c.id].source);else delete metadata.source;}

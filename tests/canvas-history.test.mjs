@@ -89,3 +89,22 @@ test('undo deletion preserves a later unrelated layer edit',async()=>{
   assert.deepEqual(ok(run(p,'state')).canvas.nodes.map(n=>n.id),['c','a','b']);
  }finally{run(p,'stop');await fs.rm(p,{recursive:true,force:true});}
 });
+test('history and compensation preserve precise annotations and copy provenance across conversion, reopen and later conflicts',async()=>{
+ const p=await fs.mkdtemp(path.join(os.tmpdir(),'bang-extra-history-'));
+ const element={id:'drawing',type:'line',x:12.25,y:33.75,angle:0.314159,points:[[0,0],[73.125,-19.75],[121.5,44.25]]};
+ try{
+  ok(run(p,'generate',{cards}));
+  ok(run(p,'commit',patch('draw',0,[{type:'create-extra',extra:{id:'drawing',element}}])));
+  ok(run(p,'commit',patch('convert-copy',1,[{type:'delete-extra',id:'drawing'},{type:'create-card',card:{...cards[0],id:'copy',derivedFrom:'a',text:'converted'}}])));
+  assert.ok(ok(run(p,'history-diff',{fromRevision:1,toRevision:2})).changes.some(c=>c.collection==='editorExtras'&&c.before.element.angle===0.314159));
+  ok(run(p,'undo',undo('undo-convert',2)));ok(run(p,'stop'));
+  let state=ok(run(p,'state'));assert.deepEqual(state.editorExtras,[{id:'drawing',element}]);assert.equal(state.canvas.nodes.some(n=>n.id==='copy'),false);
+  assert.equal(ok(run(p,'history-preview',{revision:2})).metadata.copy.derivedFrom,'a');
+  ok(run(p,'commit',patch('rotate',3,[{type:'edit-extra',id:'drawing',element:{...element,angle:0.7}}])));
+  ok(run(p,'undo',undo('undo-rotate',4)));state=ok(run(p,'state'));assert.deepEqual(state.editorExtras[0].element,element);
+  assert.notEqual(run(p,'undo',undo('conflicting-annotation',1)).status,0);assert.equal(ok(run(p,'state')).revision,5);
+  const metadata=state.metadata.a;
+  ok(run(p,'commit',patch('card-visual',5,[{type:'create-extra',extra:{id:'a',element:{id:'a',type:'rectangle',angle:0.4}}}])));
+  ok(run(p,'undo',undo('undo-card-visual',6)));assert.deepEqual(ok(run(p,'state')).metadata.a,metadata);
+ }finally{run(p,'stop');await fs.rm(p,{recursive:true,force:true});}
+});
