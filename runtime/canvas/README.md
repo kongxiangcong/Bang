@@ -630,3 +630,55 @@ Final merged verification (integration b06f254, merge 148f4f3):
 - `npm run build --prefix prototypes/whiteboard-integration`: passed, existing bundle-size warning.
 - `node tests/canvas-comparison-timeline-browser.mjs`: passed with actual text input, comparison geometry, event ordering, unknown dates/cells, preview-only revision, save/reload and explicit refresh after another writer's commit.
 - `git diff --check`: passed. Original RED and harness failures retained above.
+
+### Ticket 33 independent-review correction
+
+The initial completion was premature: independent Compiler and Runtime reproduction
+accepted differing dimension lists within one comparison group when geometry was
+unchanged. The comparison summary then omitted a non-null dimension absent from
+the first member's list. The original 40/24 passing counts did not cover this case;
+independent acceptance was withheld and the ticket remains claimed pending re-review.
+
+RED/GREEN now covers coordinate-preserving and all-fixed groups, missing-root
+shortcuts, atomic public rejection (including an unrelated text operation which
+must not leak), valid whole-group dimension migrations and restart. The shared
+`validateStructureGroups` runs before layout short circuits and at new-candidate
+validation in the public save/preview boundary. Related comparison structure
+operations are grouped for final-state validation, so a valid whole-group update
+is not rejected because an intermediate single edit temporarily disagrees. This
+adds no new metadata and preserves ticket 20 evidence invalidation.
+
+Legacy reads still validate card/edge format without imposing the new group rule;
+new candidates must agree. A first strict-read attempt prevented a legacy page
+from opening and was caught by actual Chrome, then corrected. Compiler accepts an
+otherwise valid legacy baseline only as input to a consistent final candidate.
+The UI explicitly lists unmatched non-null dimensions with original text below
+the table and shows an inconsistency notice. This is a repairable display fallback,
+not silent normalization or a new fact. Actual Chrome legacy data is produced by
+archived cf9a538 public Runtime `generate`/`stop`, then opened with the current
+Runtime; no database mutation, page-state injection or HTTP interception is used.
+
+Timeline event dates are per-member values and must not agree across members.
+Their syntax/calendar validation already runs independently of movability;
+fixed mixed-structure coverage confirms malformed event dates still reject.
+Kinds retain separate groups; legacy missing-root behavior remains the ticket 31
+warning/preservation behavior, while comparison dimension agreement now runs even
+before that shortcut. No broader root or layout policy was changed.
+
+Verification after merging integration f610319 (ticket 20): targeted comparison
+and public-save suite 7/7 passed; production build passed (existing size warning).
+Earlier complete narrow comparison/save suite passed 17/17 before the final
+legacy-read adjustment. Final actual Chrome result is recorded below. The legacy
+browser option is `BANG_LEGACY_RUNTIME=<read-only archived cf9a538 root>` with
+`node tests/canvas-comparison-timeline-browser.mjs`; archive only the tracked
+`runtime/` subtree. Prior source/model/platform limitations remain unchanged.
+
+Final corrected actual Chrome run passed on merged cd31c71/f610319: original
+comparison/timeline input/save/manual-refresh/reopen plus legacy mismatched
+statement visibility, explicit whole-group dimension repair, save and reopen.
+The first repair-input attempt appended to a prefilled textarea because the CDP
+Ctrl+A lacked its native editing command. The driver now dispatches native
+`selectAll` and checks each actual input value; no app state is assigned. Both
+this driver failure and the strict-read product failure are retained above.
+`git diff --check` passed. Ticket 33 remains claimed until a fresh independent
+review; this correction does not itself claim reviewer approval.
