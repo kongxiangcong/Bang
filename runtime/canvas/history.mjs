@@ -33,6 +33,15 @@ export function compensate(db,topic,request,current){
  const entry=revisionList(db,topic).find(e=>e.revision===request.revision);
  if(!entry||entry.author?.kind!=='manual'||entry.author.id!==request.author.id)throw Error('Only the author can undo a committed operation');
  const before=revisionState(db,topic,request.revision-1),after=revisionState(db,topic,request.revision);
+ if(entry.intent==='basis-review'){
+  const next=structuredClone(current);next.revision++;
+  for(const id of Object.keys(after.metadata).filter(id=>!equal(before.metadata[id]?.basis,after.metadata[id]?.basis))){
+   const old=before.metadata[id],reviewed=after.metadata[id],now=current.metadata[id];
+   if(!now||!equal(now.basis,reviewed.basis)||!equal(now.knowledge,reviewed.knowledge)||(now.semanticRevision??0)!==(reviewed.semanticRevision??0))throw Error('Undo conflict; basis changed after review');
+   next.metadata[id].basis=structuredClone(old.basis);next.metadata[id].knowledge=structuredClone(old.knowledge);next.metadata[id].modifiedRevision=next.revision;
+  }
+  next.compensation={operationId:request.operationId,undoOf:request.revision,authorId:request.author.id};return next;
+ }
  const changes=boardDiff(before,after).changes.filter(c=>['nodes','edges','editorExtras'].includes(c.collection));
  const later=db.prepare('SELECT state FROM revisions WHERE topic=? AND revision>? ORDER BY revision').all(topic,request.revision).map(r=>JSON.parse(r.state));
  const values=(state,collection)=>collection==='editorExtras'?(state.editorExtras??=[]):state.canvas[collection];
