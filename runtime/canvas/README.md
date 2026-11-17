@@ -682,3 +682,54 @@ Ctrl+A lacked its native editing command. The driver now dispatches native
 this driver failure and the strict-read product failure are retained above.
 `git diff --check` passed. Ticket 33 remains claimed until a fresh independent
 review; this correction does not itself claim reviewer approval.
+
+## Ticket 32 — argument graphs and cyclic flows
+
+Version 1 structure intents now include `argument` and `flow`. Typed relations
+separate `support`, `refute`, `qualify` (reason/condition → claim) from `precedence`
+(before → after), `branch` (decision → alternative), and `dependency`
+(prerequisite → dependent). Original labels remain verbatim; arbitrary labels
+never imply a type. Missing/general kinds retain existing related/unclassified
+projection. Multiple parents, cross-region edges and feedback cycles are kept.
+
+The shared deterministic Compiler uses incoming reasoning BFS layers toward the
+argument root, and outgoing process BFS layers downward from the flow root.
+These are graph layout projections, not graph rewrites, execution-time estimates,
+or causal proofs. Extra parents and back edges are drawn as the original edges;
+no SCC condensation, edge routing optimization or crossing minimization is claimed.
+Unreachable members remain visible in an adjacent layer without inferred edges.
+Existing card order, fixed coordinates, z-order, incremental local stability and
+bounded no-space warnings use the existing engine. Semantic parsing still occurs
+before fixed/no-movement/root shortcuts. Ticket 33 global dimension validation and
+legacy visible fallback are unchanged. No new stricter legacy-read rule is added.
+
+Organizer rule revision 3 and the actual Codex provider output grammar both accept
+these types. Controlled model integration checks that grammar, rule examples,
+publication, original conditions/uncertainty and source retention; existing manual
+structure protection and evidence withdrawal remain shared. Choosing a graph or a
+typed support edge never marks a claim verified or reviewed. UI previews and manual
+relation edits remain drafts until explicit save through the common Runtime.
+
+Validation: Windows 11, Node 25.8.1, existing packaged native helper and actual
+headless Chrome, disposable projects only. RED/GREEN captured unsupported argument,
+unsupported flow, closed provider grammar mismatch and absent Chrome preview
+controls. A Python edit hit the Windows GBK default before changing structures;
+explicit UTF-8 corrected it. Initial dependency-junction creation was sandbox denied
+and the build lacked dependencies; elevated junction creation used existing installed
+dependencies without modifying/deleting their target. Existing bundle-size warnings
+remain. No model request, user source data, credentials, global config or native
+binary changes were made.
+
+- `node --test --test-force-exit tests/canvas-argument-flow.test.mjs tests/canvas-structures.test.mjs tests/canvas-comparison-timeline.test.mjs tests/evidence-revalidation.test.mjs`: 55 passed, no failures/skips.
+- `npm run build --prefix prototypes/whiteboard-integration`: passed.
+- `node tests/canvas-argument-flow-browser.mjs`: passed actual Chrome argument/flow selection, preview-only revisions, manual typed relation changes, retained feedback/raw labels, matching Canvas geometry, save and reload via actual native HTTP. DOM select change events drive React controls; no app-state assignment or HTTP interception.
+- Compiler properties cover multi-parent reasoning, cyclic process, cross-region edges, fixed/unchanged geometry and order, no-space fallback, unknown kinds and unsupported truth fields. Existing evidence tests verify withdrawn-chain/ABA/context protections.
+
+No real model quality, real Codex/DSH end-to-end host, Windows 10/Linux browser
+matrix, performance or optimal graph-layout claim. These remain later acceptance.
+
+Final integration: merged `d4bed95` (ticket 23 restore) as `853c9db`.
+Six focused Compiler/model Runtime/comparison validation tests passed, including
+fixed/rootless agreement and atomic public rejection. Final production build and
+actual Chrome argument/flow browser script passed again on that merged tree.
+`git diff --check` passed. No broad model/host/platform claims were added.

@@ -239,3 +239,7 @@
 !/prototypes/whiteboard-integration/src/ContextDelivery.tsx
 !/tests/context-delivery.test.mjs
 !/tests/context-delivery-browser.mjs
+
+# Ticket 32 argument and cyclic flow acceptance.
+!/tests/canvas-argument-flow.test.mjs
+!/tests/canvas-argument-flow-browser.mjs
