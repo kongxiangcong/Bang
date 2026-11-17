@@ -161,3 +161,13 @@
 !/prototypes/whiteboard-integration/src/OrganizerPanel.tsx
 !/tests/organizer.test.mjs
 !/tests/organizer-browser.mjs
+
+# Ticket 27 pinned DSH adapter and public Runtime tests.
+!/runtime/dsh/
+/runtime/dsh/*
+!/runtime/dsh/session-connector.mjs
+!/runtime/dsh/plugin.mjs
+!/runtime/dsh/prepare.mjs
+!/runtime/dsh/package.json
+!/runtime/dsh/README.md
+!/tests/dsh-session-connector.test.mjs
