@@ -226,6 +226,12 @@
 !/prototypes/whiteboard-integration/src/ComparisonTimeline.tsx
 !/tests/canvas-comparison-timeline.test.mjs
 !/tests/canvas-comparison-timeline-browser.mjs
+
+# Ticket 23 previewed restore and durable old-work fences.
+!/runtime/canvas/restore.mjs
+!/tests/canvas-restore.test.mjs
+!/tests/canvas-restore-browser.mjs
+!/runtime/canvas/RESTORE.md
 # Ticket 22 authenticated bounded context delivery and public/browser acceptance.
 !/runtime/canvas/context.mjs
 !/runtime/canvas/CONTEXT.md
@@ -244,3 +250,6 @@
 !/tests/dsh-executor-auth.test.mjs
 !/tests/dsh-capability-audit.mjs
 !/tests/dsh-executor-real.mjs
+# Ticket 32 argument and cyclic flow acceptance.
+!/tests/canvas-argument-flow.test.mjs
+!/tests/canvas-argument-flow-browser.mjs
