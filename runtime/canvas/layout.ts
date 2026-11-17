@@ -1,6 +1,6 @@
 import type {Card} from './contract';
 export type Bounds={x:number;y:number;width:number;height:number};
-export type LayoutWarning={code:'NO_LOCAL_SPACE';id:string;message:string};
+export type LayoutWarning={code:'NO_LOCAL_SPACE'|'STRUCTURE_ROOT_MISSING';id:string;message:string};
 // Text is measured headlessly with a fixed conservative character budget. Raw text
 // remains intact; height is bounded for usable cards, with detail reading available.
 export function estimateSize(text:string){return {width:320,height:Math.min(600,Math.max(120,48+text.split('\n').reduce((n,line)=>n+Math.max(1,Math.ceil([...line].length/32)),0)*24))};}
@@ -14,7 +14,7 @@ export function layoutCards(cards:Partial<Card>[],previous:Card[]=[],relayoutIds
  const nodes=ordered.map(c=>{
   const old=previous.find(n=>n.id===c.id),node={...estimateSize(c.text??''),...c} as Card;
   if(old)for(const key of ['x','y','width','height','regionId','fixed','zIndex'] as const)Object.assign(node,{[key]:old[key]});
-  if(selected.has(node.id)||node.x===undefined||node.y===undefined)pending.add(node.id);
+  if((selected.has(node.id)&&!node.fixed)||node.x===undefined||node.y===undefined)pending.add(node.id);
   return node;
  });
  const occupied=nodes.filter(n=>!pending.has(n.id));
