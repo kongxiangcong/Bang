@@ -8,6 +8,7 @@ import {fixture} from './completed-turns.test.mjs';
 import {createServer} from 'node:http';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
+import {createHash} from 'node:crypto';
 const cli=fileURLToPath(new URL('../runtime/canvas/bang.mjs',import.meta.url));
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 async function until(fn){for(let i=0;i<150;i++){const value=await fn();if(value)return value;await delay(40);}throw Error('Timed out');}
@@ -33,6 +34,33 @@ test('previewed historical content becomes a new durable revision with retained 
  assert.deepEqual((await call('history')).map(v=>v.revision),[0,1,2,3]);assert.equal((await call('history-preview',{revision:2})).canvas.nodes[0].text,'Later');
  await assert.rejects(call('restore-version',{...request,operationId:'stale'}),/baseline|preview/i);
  }finally{await call('stop');await fs.rm(project,{recursive:true,force:true});}
+});
+test('restore and its undo never revive old proposal or conversational replacement authority',async()=>{
+ const f=await setup(input=>({version:1,changes:[{type:'edit-card',id:'a',text:'Proposed',conditions:[],uncertainty:'',sources:[input.completedTurns[0].id]}]})),topic=f.bound.topic.id;
+ try{
+ await f.board('commit',patch(topic,'seed',0,[{type:'create-card',card:{id:'a',text:'Human',x:0,y:0,width:200,height:100}}]));
+ await f.call('organizer-enable',{topicId:topic});await f.call('turn-ingest',f.signed([f.turn()]));await until(async()=>(await f.board('proposals')).length===1);
+ await f.call('organizer-control',{topicId:topic,action:'pause'});const old=(await f.board('proposals'))[0];
+ await restore(f.board,0);await f.board('undo',{operationId:'undo',topic,revision:2,author:{kind:'manual',id:'user'},intent:'undo-committed'});
+ await assert.rejects(f.board('proposal-review',{id:old.id,decision:'accept'}),/frozen/);assert.equal((await f.board('state')).canvas.nodes[0].text,'Human');
+ const turn=f.turn('command','c2');turn.user.content='请将白板卡片「a」正文改为「Proposed」';turn.sourceHash=createHash('sha256').update(JSON.stringify([turn.user.content,turn.assistant.content])).digest('hex');
+ await f.call('turn-ingest',f.signed([turn],'c1'));const id=(await f.call('turn-status',{topicId:topic})).pending[0].id;
+ await restore(f.board,3,'freeze-command');await f.call('organizer-control',{topicId:topic,action:'reanalyze',sourceIds:[id]});await f.call('organizer-enable',{topicId:topic});
+ await until(async()=>(await f.call('turn-status',{topicId:topic})).organized===2);
+ assert.equal((await f.call('turn-source',{topicId:topic,id})).humanIntent.frozen,true);assert.equal((await f.board('state')).canvas.nodes[0].text,'Human');assert.equal((await f.board('proposals')).filter(p=>!p.frozen&&p.status==='pending').length,1);
+ }finally{await f.close();}
+});
+test('board restore preserves pinned context and delivered receipts while the next utterance sees the restored revision',async()=>{
+ const f=await fixture(),topic=f.bound.topic.id,call=(c,i)=>runtimeOperation(f.project,c,topic,i),digest=v=>createHash('sha256').update(JSON.stringify(v)).digest('hex');
+ const context=(command,input={},turnId='pinned')=>{const data={topicId:topic,turnId,...input};return f.call(command,{...data,proof:f.proof({purpose:command,turnId,bridgeId:'bridge',requestHash:digest(data)})});};
+ try{
+ await f.call('context-register',{id:'bridge',connectorId:'controlled'});
+ await call('commit',patch(topic,'card',0,[{type:'create-card',card:{id:'a',text:'Pinned',x:0,y:0,width:200,height:100}}]));
+ const started=await context('context-start');await context('context-ack',{token:started.token,outcome:'delivered',envelopeHash:digest(started.envelope)});
+ await restore(call,0);assert.equal((await context('context-query',{token:started.token,kind:'item',id:'a'})).item.text,'Pinned');
+ assert.equal((await call('context-status')).turns[0].status,'delivered');assert.equal((await context('context-start')).envelope.revision,1);
+ const next=await context('context-start',{},'next');assert.equal(next.envelope.revision,2);assert.deepEqual(next.envelope.cards,[]);
+ }finally{await f.close();}
 });
 test('historical support never reselects a superseded answer; source cursor and withdrawn context survive restore and undo',async()=>{
  const f=await setup(input=>({version:1,changes:[{type:'create-card',id:'finding',text:'Old conclusion',conditions:['original condition'],uncertainty:'unverified',sources:[input.completedTurns[0].id]}]})),topic=f.bound.topic.id;

@@ -17,10 +17,10 @@ export function createCanvasMiddleware({project:rootProject}){
    const [topic,action,...extra]=url.pathname.slice('/api/canvas/'.length).split('/').map(decodeURIComponent);
    if(extra.length)throw Error('Unknown route');
    if(topic==='session'&&action==='topics'&&req.method==='GET'){res.end(JSON.stringify(await runtimeOperation(project,'topics')));return;}
-   if(topic==='session'&&req.method==='POST'&&['create-topic','connect','enable','binding','ingest','backfill'].includes(action)){
+   if(topic==='session'&&req.method==='POST'&&['context-start','context-query','context-ack','create-topic','connect','enable','binding','ingest','backfill'].includes(action)){
     if(!req.headers['content-type']?.startsWith('application/json'))throw Error('JSON content type required');
-    req.setEncoding('utf8');let body='';for await(const chunk of req){body+=chunk;if(Buffer.byteLength(body)>(action==='ingest'?1024*1024:20000))throw Error('Binding request too large');}
-    const command={'create-topic':'topic-create',connect:'session-connect',enable:'binding-enable',binding:'binding-status',ingest:'turn-ingest',backfill:'turn-backfill'}[action];
+    req.setEncoding('utf8');let body='';for await(const chunk of req){body+=chunk;if(Buffer.byteLength(body)>(['ingest','context-query'].includes(action)?1024*1024:20000))throw Error('Binding request too large');}
+    const command={'context-start':'context-start','context-query':'context-query','context-ack':'context-ack','create-topic':'topic-create',connect:'session-connect',enable:'binding-enable',binding:'binding-status',ingest:'turn-ingest',backfill:'turn-backfill'}[action];
     res.end(JSON.stringify(await runtimeOperation(project,command,undefined,JSON.parse(body))));return;
    }
    if(['organizer-control','organizer-configure'].includes(action)&&req.method==='POST'){
@@ -35,6 +35,7 @@ export function createCanvasMiddleware({project:rootProject}){
     res.end(JSON.stringify(await runtimeOperation(project,action,topic,JSON.parse(body))));return;
    }
    if(req.method!=='GET'){res.statusCode=405;res.end(JSON.stringify({error:'Use explicit commit endpoint'}));return;}
+   if(action==='context-status'){res.end(JSON.stringify(await runtimeOperation(project,'context-status',topic)));return;}
    if(action==='knowledge-context'){res.end(JSON.stringify(await runtimeOperation(project,'knowledge-context',topic)));return;}
    if(action==='proposals'){res.end(JSON.stringify(await runtimeOperation(project,'proposals',topic)));return;}
    if(action==='export-canvas'||action==='backup-export'){res.end(JSON.stringify(await runtimeOperation(project,action,topic)));return;}
