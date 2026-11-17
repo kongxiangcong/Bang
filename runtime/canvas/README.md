@@ -455,3 +455,4 @@ Post-merge frontend build passed; seven binding tests pass. Recovery regressions
 passed 14 with one Linux-only skip; the initial combined run retained the new
 red topic-discovery test, then the corrected binding suite passed in full.
 Both real Chrome binding and publication-recovery scenarios passed after the merge.
+- Final integration: merged ticket 13 / `f3ce31f` at `693f9a6`; resolved additive CLI/HTTP/native dispatch conflicts while preserving the single-owner operation queue and session/binding routes. Final combined `node --test tests/canvas-exchange.test.mjs tests/topic-binding.test.mjs`: 11 passed. Final build and `node tests/canvas-exchange-browser.mjs` passed again on the merged tree.
