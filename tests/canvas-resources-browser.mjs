@@ -37,7 +37,9 @@ try{
  async function type(label,text){const pos=await evaluate(`(()=>{const e=document.querySelector('[aria-label="${label}"]');e.scrollIntoView();const r=e.getBoundingClientRect();return {x:r.x+10,y:r.y+10}})()`);await click(pos.x,pos.y);await cmd('Input.dispatchKeyEvent',{type:'keyDown',key:'a',code:'KeyA',modifiers:2,windowsVirtualKeyCode:65,commands:['selectAll']});await cmd('Input.dispatchKeyEvent',{type:'keyUp',key:'a',code:'KeyA',modifiers:2});await cmd('Input.insertText',{text});}
  const raw='# 原文\n<script>window.unsafeExecuted=true</script>\n```js\nalert(1)\n```\n$$x^2$$\n'+'完整长文'.repeat(1500);
  await button('新增文件卡片');await type('文件路径 3','docs/missing.pdf');
- await button('新增链接卡片');await type('链接地址 4','https://example.com/paper');
+ await button('新增链接卡片');await type('链接地址 4','https://');
+ await cmd('Page.reload');await until(()=>evaluate('document.body.innerText.includes("发现可恢复草稿")'));await button('恢复草稿');
+ assert.equal(await evaluate(`document.querySelector('[aria-label="链接地址 4"]').value`),'https://');await type('链接地址 4','https://example.com/paper');
  await button('新增知识卡片');await type('卡片正文 5',raw);
  assert.equal((await (await fetch(url+'/api/canvas/demo/state')).json()).revision,0);
  await button('保存');await until(()=>evaluate('document.body.innerText.includes("已保存 · 修订 1")'));
