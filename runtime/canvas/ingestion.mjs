@@ -1,3 +1,4 @@
+import {captureHumanIntent} from './human-intent.mjs';
 import {createHash,randomUUID} from 'node:crypto';
 import path from 'node:path';
 import {openBindingDatabase} from './binding.mjs';
@@ -70,6 +71,7 @@ export function ingestTurns(project,workspaceId,input){
      if(old&&old.source_hash!==event.sourceHash)throw Error('Source version reused for different content');
      if(!old){
       const id=randomUUID(),body={id,bindingId:binding.id,topicId:binding.topic,turnId:event.turnId,versionId:event.versionId,sourceHash:event.sourceHash,cursor:event.cursor,user:{role:'user',content:event.user.content},assistant:{role:'assistant',channel:'final',content:event.assistant.content}};
+      body.humanIntent=captureHumanIntent(event.user.content,JSON.parse(db.prepare('SELECT state FROM topics WHERE topic=?').get(binding.topic).state));
       db.prepare('INSERT INTO completed_sources VALUES(?,?,?,?,?,?,?)').run(id,binding.id,binding.topic,event.turnId,event.versionId,event.sourceHash,JSON.stringify(body));
       db.prepare("INSERT INTO ingestion_queue VALUES(?,?,'pending')").run(id,binding.topic);received++;
      }

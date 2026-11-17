@@ -553,6 +553,9 @@ Final ticket 36 UI verification on the merged tree:
 See [Organizer contract and evidence](ORGANIZER.md) for restricted execution, public task receipts, dependency fencing, common publication and controlled-model/browser limits.
 
 
+## Ticket 19 human intent and proposals
+
+See [human intent contract and evidence](HUMAN-INTENT.md) for exact conversational scope, proposal decisions, durable rejection, baseline fencing and restore freezing.
 ## Ticket 31: explicit classification and radial structure (2026-11-18)
 
 Knowledge cards may carry `structure:{version:1,kind:"classification"|"radial",rootId}` (or `null` for free layout). All members, including the central knowledge card, share that intent. This is presentation intent, not a new Canvas node type or a claim of knowledge containment. Relations use optional `kind:"classification"|"general"`; absent/custom labels never infer classification. The relation editor exposes this distinction explicitly. A visual region or unconverted annotation never becomes a structure root or a classified fact.

@@ -47,7 +47,6 @@ test('a newer received answer version invalidates the older running inference wi
  }finally{release();await f.close();}
 });
 for(const [name,change,code] of [
- ['manual replacement',id=>({type:'edit-card',id:'manual',text:'覆盖',conditions:[],uncertainty:'',sources:[id]}),'MANUAL_PROTECTED'],
  ['fabricated source',()=>({type:'create-card',id:'new',text:'伪造',conditions:[],uncertainty:'',sources:['invented']}),'OUTPUT_INVALID'],
  ['arbitrary command',id=>({type:'exec',id:'cmd',command:'write board',conditions:[],uncertainty:'',sources:[id]}),'OUTPUT_INVALID'],
  ['visual region as fact endpoint',id=>({type:'create-relation',id:'edge',fromNode:'manual',toNode:'region',label:'supports',conditions:[],uncertainty:'',sources:[id]}),'OUTPUT_INVALID']

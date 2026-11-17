@@ -147,7 +147,7 @@ async function publishPatch(project,topic,value,undo,organizer){
    else {
     const previous=next.metadata[identity]??{},changed=op.type==='create-card'?Object.keys(op.card):op.type==='create-relation'?Object.keys(op.edge):(op.type==='edit-relation'?relationFields:editableFields).filter(k=>op[k]!==undefined);
     const layoutOnly=op.type==='edit-card'&&changed.every(k=>layoutFields.includes(k));
-    const source=layoutOnly||organizer?.knowledge[identity]?.supplement?previous.source:organizer?{kind:'discussion',sourceIds:[organizer.sourceId]}:{kind:'manual',authorId:patch.author.id,operationId:patch.operationId};
+    const source=layoutOnly||organizer?.knowledge[identity]?.supplement?previous.source:organizer?.knowledge[identity]?.humanIntent?{kind:'manual',authorization:organizer.knowledge[identity].humanIntent}:organizer?{kind:'discussion',sourceIds:[organizer.sourceId]}:{kind:'manual',authorId:patch.author.id,operationId:patch.operationId};
     Object.defineProperty(next.metadata,identity,{value:{...previous,...(organizer?{organizer:{taskId:organizer.taskId,attemptId:organizer.attemptId},knowledge:organizer.knowledge[identity]}:{}),...(op.type==='create-card'?{role:op.card.type==='group'?'visual-region':'knowledge'}:{}),...(op.type==='create-card'&&op.card.derivedFrom?{derivedFrom:op.card.derivedFrom}:{}),source,modifiedRevision:next.revision,fields:{...previous.fields,...Object.fromEntries(changed.map(k=>[k,{modifiedRevision:next.revision,authorId:patch.author.id,operationId:patch.operationId}]))}},enumerable:true,configurable:true,writable:true});
    }
   }
