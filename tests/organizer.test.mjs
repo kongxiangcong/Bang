@@ -43,7 +43,7 @@ test('manual semantic changes fence stale reasoning while unrelated topics and s
 });
 test('a newer received answer version invalidates the older running inference without losing either source',async()=>{
  let release,entered;const gate=new Promise(r=>release=r),started=new Promise(r=>entered=r);const f=await controlled(async input=>{entered();await gate;return {version:1,changes:[{type:'create-card',id:'old-answer',text:'旧答案',conditions:[],uncertainty:'不确定',sources:[input.completedTurns[0].id]}]};});
- try{await f.call('organizer-enable',{topicId:f.bound.topic.id});await f.call('turn-ingest',f.signed([f.turn()]));await started;await f.call('turn-ingest',f.signed([f.turn('calling-turn','c2','v2','新版本')],'c1'));release();const s=await settled(f);assert.equal(s.tasks[0].error.code,'REASONING_INVALIDATED');assert.equal((await runtimeOperation(f.project,'state',f.bound.topic.id)).revision,0);const q=await f.call('turn-status',{topicId:f.bound.topic.id});assert.equal(q.received,2);assert.equal(q.backlog,2);
+ try{await f.call('organizer-enable',{topicId:f.bound.topic.id});await f.call('turn-ingest',f.signed([f.turn()]));await started;await f.call('turn-ingest',f.signed([f.turn('calling-turn','c2','v2','新版本')],'c1'));await f.call('organizer-control',{topicId:f.bound.topic.id,action:'pause'});release();const s=await settled(f);assert.equal(s.tasks[0].error.code,'SOURCE_SUPERSEDED');assert.equal((await runtimeOperation(f.project,'state',f.bound.topic.id)).revision,0);const q=await f.call('turn-status',{topicId:f.bound.topic.id});assert.equal(q.received,2);assert.equal(q.backlog,1);
  }finally{release();await f.close();}
 });
 for(const [name,change,code] of [
