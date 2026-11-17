@@ -162,6 +162,13 @@
 !/tests/organizer.test.mjs
 !/tests/organizer-browser.mjs
 
+# Ticket 19 human intent and reviewable proposals.
+!/runtime/canvas/human-intent.mjs
+!/runtime/canvas/proposals.mjs
+!/runtime/canvas/HUMAN-INTENT.md
+!/prototypes/whiteboard-integration/src/ProposalsPanel.tsx
+!/tests/human-intent.test.mjs
+!/tests/human-intent-browser.mjs
 # Ticket 16 lifecycle controls and bounded resource policy.
 !/tests/organizer-controls.test.mjs
 !/tests/organizer-controls-browser.mjs
@@ -187,4 +194,7 @@
 !/runtime/canvas/structure-rules.mjs
 !/tests/canvas-structures.test.mjs
 !/tests/canvas-structures-browser.mjs
+
+# Ticket 18 controlled namespace switching and backlog recovery.
+!/tests/source-switch.test.mjs
 
