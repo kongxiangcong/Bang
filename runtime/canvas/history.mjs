@@ -59,7 +59,7 @@ export function compensate(db,topic,request,current){
    metadata.fields??={};metadata.fields[c.field]={modifiedRevision:next.revision,authorId:request.author.id,operationId:request.operationId};metadata.modifiedRevision=next.revision;
   }
  }
- if(changes.some(c=>c.collection==='nodes'&&c.field==='zIndex')){
+ if(changes.some(c=>c.collection==='nodes'&&(c.field==='zIndex'||c.field==='$object'))){
   const ranks=new Map(before.canvas.nodes.map((n,i)=>[n.id,i]));
   const currentRanks=new Map(next.canvas.nodes.map((n,i)=>[n.id,n.zIndex??ranks.get(n.id)??i]));
   next.canvas.nodes.sort((a,b)=>currentRanks.get(a.id)-currentRanks.get(b.id));

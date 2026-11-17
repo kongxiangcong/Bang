@@ -260,13 +260,13 @@ existing prepared/publication transaction apply before confirmation. Full versio
 restoration and queue invalidation remain ticket 23.
 
 Validation (Windows 11, Node v25.8.1, actual Chrome headless):
-- `node --test tests/canvas-history.test.mjs`: 4 public native CLI/HTTP cases passed;
+- `node --test tests/canvas-history.test.mjs`: 5 public native CLI/HTTP cases passed;
   initial history and undo tests failed with unknown runtime operation before code.
 - `npm --prefix prototypes/whiteboard-integration run build`: passed (existing
   large-bundle warning).
 - `node tests/canvas-history-browser.mjs`: actual keyboard/pointer save, history
   preview/diff, own committed undo, manual refresh, reload, delete/undo identity
-  recovery passed. No application state injection.
+  recovery passed. Local textarea Ctrl+Z restores typing without changing the committed revision. No application state injection.
 - Existing save/conflict/relation/layout public regressions: 14 passed.
 - No actual model/host integration, Windows 10/Linux, physical IME, accessibility
   audit, 10,000-revision latency or full restore acceptance is claimed here.

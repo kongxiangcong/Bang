@@ -54,6 +54,11 @@ try{
  await button('查看历史');await until(()=>evaluate(`document.body.innerText.includes("撤销修订 3")`));await button('撤销修订 3');await until(()=>evaluate(`document.body.innerText.includes("新修订 4")`));
  await button('关闭历史');await cmd('Page.reload');await until(()=>evaluate(`document.querySelectorAll("textarea").length===3`));
  const state=await (await canvasRequest(url+'/api/canvas/demo/state')).json();assert.equal(state.revision,4);assert.equal(state.canvas.nodes[0].id,'a');assert.equal(state.canvas.nodes[0].text,'A');
+ await type('卡片正文 1','local typing only');
+ await cmd('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});await cmd('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',modifiers:2});
+ await until(()=>evaluate(`document.querySelector('[aria-label="卡片正文 1"]')?.value==="A"`));
+ assert.equal((await (await canvasRequest(url+'/api/canvas/demo/state')).json()).revision,4);
+ await button('查看历史');await until(()=>evaluate(`document.body.innerText.includes("预览修订 4")`));await button('预览修订 4');await until(()=>evaluate(`document.querySelector('[aria-label="历史差异"]')!==null`));
  const shot=await cmd('Page.captureScreenshot',{format:'png'});await fs.writeFile(path.join(root,'canvas-history-browser.png'),Buffer.from(shot.data,'base64'));
  console.log(JSON.stringify({pass:true,evidence:'real Chrome edit/save, immutable history preview/diff, own committed undo, manual refresh, reload, delete/undo stable identity'}));
  }finally{ws?.close();chrome.kill();await new Promise(r=>server.close(r));await delay(500);spawnSync(process.execPath,[path.join(root,'runtime/canvas/bang.mjs'),'stop','--project',temp],{encoding:'utf8'});await fs.rm(temp,{recursive:true,force:true,maxRetries:5,retryDelay:200});}

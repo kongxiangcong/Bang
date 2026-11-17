@@ -79,3 +79,13 @@ test('undo preserves later stacking choice, restores default layer position, and
   assert.equal(ok(run(p,'state')).revision,5);
  }finally{run(p,'stop');await fs.rm(p,{recursive:true,force:true});}
 });
+test('undo deletion preserves a later unrelated layer edit',async()=>{
+ const p=await fs.mkdtemp(path.join(os.tmpdir(),'bang-undo-delete-order-'));
+ try{
+  ok(run(p,'generate',{cards:[...cards,{id:'c',text:'c',x:800,y:0,width:240,height:160}]}));
+  ok(run(p,'commit',patch('delete',0,[{type:'delete-card',id:'a'}])));
+  ok(run(p,'commit',patch('back',1,[{type:'edit-card',id:'c',zIndex:-10}])));
+  ok(run(p,'undo',undo('restore',1)));
+  assert.deepEqual(ok(run(p,'state')).canvas.nodes.map(n=>n.id),['c','a','b']);
+ }finally{run(p,'stop');await fs.rm(p,{recursive:true,force:true});}
+});
