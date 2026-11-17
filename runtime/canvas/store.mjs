@@ -1,5 +1,6 @@
+import {standardCanvas,parseImport,importChanges,exchangeDegradation} from './exchange.mjs';
 import {applyOperation as applyParsedOperation,orderOperations,operationIdentity} from './operations.ts';
-import {recoveryStatus,recoverUnknown,reconcile,publish,observed,recoveryError} from './publication.mjs';
+import {recoveryStatus,recoverUnknown,reconcile,publish,observed,recoveryError,hash} from './publication.mjs';
 import {revisionState,revisionList,boardDiff,parseUndo,compensate} from './history.mjs';
 import {parseEdge,relationFields,semanticRelations} from './relations.ts';
 import {validateResources,resourceStatus} from './resources.mjs';
@@ -24,7 +25,7 @@ export async function readCommitted(project,topic){
 }
 export async function generateBoard(project,topic,input){
  const board=compileCanvas(input),file=topicPath(project,topic);validateResources(project,board);fs.mkdirSync(path.dirname(file),{recursive:true,mode:0o700});
- const state={revision:0,canvas:board,relations:semanticRelations(board.edges),deletionIntents:[],editorExtras:[],metadata:Object.fromEntries([...board.nodes,...board.edges].map(n=>[n.id,{source:{kind:'bootstrap'},modifiedRevision:0}]))},db=open(project);
+ const state={revision:0,canvas:board,relations:semanticRelations(board.edges,board.nodes),deletionIntents:[],editorExtras:[],metadata:Object.fromEntries([...board.nodes,...board.edges].map(n=>[n.id,{role:n.type==='group'?'visual-region':'knowledge',source:{kind:'bootstrap'},modifiedRevision:0}]))},db=open(project);
  try{reconcile(db,project,topic,file);if(db.prepare('SELECT 1 FROM topics WHERE topic=?').get(topic)||observed(file)!==null)throw Error('Topic already exists; refusing overwrite');publish(db,project,topic,file,{operation:'$bootstrap',request:JSON.stringify(input),state,receipt:{topic,revision:0,status:'committed'}},null);}finally{db.close();}return board;
 }
 // Persistence canonicalizes newly supplied objects; draft merging deliberately
@@ -144,11 +145,11 @@ async function publishPatch(project,topic,value,undo){
     const previous=next.metadata[identity]??{},changed=op.type==='create-card'?Object.keys(op.card):op.type==='create-relation'?Object.keys(op.edge):(op.type==='edit-relation'?relationFields:editableFields).filter(k=>op[k]!==undefined);
     const layoutOnly=op.type==='edit-card'&&changed.every(k=>layoutFields.includes(k));
     const source=layoutOnly?previous.source:{kind:'manual',authorId:patch.author.id,operationId:patch.operationId};
-    Object.defineProperty(next.metadata,identity,{value:{...previous,...(op.type==='create-card'&&op.card.derivedFrom?{derivedFrom:op.card.derivedFrom}:{}),source,modifiedRevision:next.revision,fields:{...previous.fields,...Object.fromEntries(changed.map(k=>[k,{modifiedRevision:next.revision,authorId:patch.author.id,operationId:patch.operationId}]))}},enumerable:true,configurable:true,writable:true});
+    Object.defineProperty(next.metadata,identity,{value:{...previous,...(op.type==='create-card'?{role:op.card.type==='group'?'visual-region':'knowledge'}:{}),...(op.type==='create-card'&&op.card.derivedFrom?{derivedFrom:op.card.derivedFrom}:{}),source,modifiedRevision:next.revision,fields:{...previous.fields,...Object.fromEntries(changed.map(k=>[k,{modifiedRevision:next.revision,authorId:patch.author.id,operationId:patch.operationId}]))}},enumerable:true,configurable:true,writable:true});
    }
   }
   }
-  next.relations=semanticRelations(next.canvas.edges);
+  next.relations=semanticRelations(next.canvas.edges,next.canvas.nodes);
   validateCanvas(next.canvas);validateResources(project,next.canvas);
   const receipt={operationId:patch.operationId,topic,revision:next.revision,status:'committed'};
   publish(db,project,topic,file,{operation:patch.operationId,request,state:next,receipt},row.hash);
@@ -169,3 +170,51 @@ export async function diffHistory(project,topic,input){await readCommitted(proje
 
 export async function readRecoveryStatus(project,topic){const file=topicPath(project,topic),db=open(project);try{return recoveryStatus(db,topic,file);}finally{db.close();}}
 export async function recoverBoard(project,topic,input){const file=topicPath(project,topic),db=open(project);try{return recoverUnknown(db,project,topic,file,input);}finally{db.close();}}
+
+// Explicit exchange is also a typed board operation; all application is performed
+// by operations.ts and all durable writes by the common publication protocol.
+export async function exportCanvas(project,topic){const state=await readCommitted(project,topic);return {revision:state.revision,canvas:standardCanvas(state.canvas),degradation:exchangeDegradation(state)};}
+function inspectImport(db,project,topic,file,input){
+ if(!input||typeof input!=='object')throw Error('Expected Canvas import');
+ if(db.prepare("SELECT 1 FROM intents WHERE topic=? AND status='prepared'").get(topic))throw recoveryError('Prepared publication requires recovery before import');
+ const row=db.prepare('SELECT * FROM topics WHERE topic=?').get(topic);if(!row)throw Error('Unknown topic');
+ const expectedHash=observed(file),external=input.external===true;
+ if(expectedHash!==row.hash&&!external)throw recoveryError('External Canvas changed; preview external import explicitly');
+ const canvas=parseImport(external?JSON.parse(fs.readFileSync(file,'utf8')):input.canvas);validateResources(project,canvas);
+ const baseline=JSON.parse(row.state),changes=importChanges(baseline.canvas,canvas);
+ for(const id of changes.added){const existed=db.prepare("SELECT 1 FROM revisions, json_each(revisions.state, '$.canvas.nodes') AS object WHERE topic=? AND json_extract(object.value,'$.id')=? UNION ALL SELECT 1 FROM revisions, json_each(revisions.state, '$.canvas.edges') AS object WHERE topic=? AND json_extract(object.value,'$.id')=? LIMIT 1").get(topic,id,topic,id);if(existed)throw Error('Deleted identity cannot be reused by import');}
+ return {topic,baseRevision:row.revision,expectedHash,external,canvas:standardCanvas(canvas),changes,degradation:exchangeDegradation(baseline),candidateHash:hash(JSON.stringify(standardCanvas(canvas)))};
+}
+export async function previewImport(project,topic,input){const file=topicPath(project,topic),db=open(project);try{return inspectImport(db,project,topic,file,input);}finally{db.close();}}
+export async function importCanvas(project,topic,input){
+ if(!input||input.intent!=='explicit-import'||input.author?.kind!=='manual'||typeof input.author.id!=='string'||!input.author.id||typeof input.operationId!=='string'||!input.operationId||input.operationId.startsWith('$'))throw Error('Explicit manual import authorization required');
+ if(input.topic!==topic)throw Error('Import topic mismatch');
+ const file=topicPath(project,topic),db=open(project),request=JSON.stringify(input);
+ try{
+ const prior=db.prepare('SELECT * FROM intents WHERE topic=? AND operation=?').get(topic,input.operationId);
+ if(prior){if(prior.request!==request)throw Error('Operation identity reused for different content');reconcile(db,project,topic,file);return JSON.parse(prior.receipt);}
+ const preview=inspectImport(db,project,topic,file,input);
+ if(input.baseRevision!==preview.baseRevision||input.expectedHash!==preview.expectedHash||input.candidateHash!==preview.candidateHash)throw recoveryError('Import fingerprint or baseline changed; preview again');
+ const row=db.prepare('SELECT * FROM topics WHERE topic=?').get(topic),before=JSON.parse(row.state);
+ let next=applyParsedOperation(before,{type:'replace-canvas',canvas:parseImport(preview.canvas)});next.revision++;
+ const changed=new Set([...preview.changes.added,...preview.changes.changed]);
+ for(const object of [...before.canvas.nodes,...before.canvas.edges])if(![...next.canvas.nodes,...next.canvas.edges].some(n=>n.id===object.id)){(next.deletionIntents??=[]).push({id:object.id,object,revision:next.revision,authorId:input.author.id,operationId:input.operationId});delete next.metadata[object.id];}
+ for(const object of [...next.canvas.nodes,...next.canvas.edges]){
+  const old=before.canvas.nodes.find(n=>n.id===object.id)??before.canvas.edges.find(n=>n.id===object.id);
+  if(old&&((old.type??'text')!==(object.type??'text')||('fromNode' in old)!==('fromNode' in object)))throw Error('Import cannot change identity kind');
+  if(changed.has(object.id))Object.defineProperty(next.metadata,object.id,{value:{...next.metadata[object.id],role:object.type==='group'?'visual-region':'knowledge',source:{kind:'manual',authorId:input.author.id,operationId:input.operationId},modifiedRevision:next.revision},enumerable:true,writable:true,configurable:true});
+ }
+ next.relations=semanticRelations(next.canvas.edges,next.canvas.nodes);
+ // Preserve exact external bytes before publication; the publisher rechecks the
+ // fingerprint immediately before replacement. Concurrent applications aren't locked.
+ let preservedFile=null;
+ if(preview.external&&preview.expectedHash!==row.hash){
+  const dest=path.join(path.dirname(file),`preserved-${preview.expectedHash}.canvas`),content=fs.readFileSync(file);
+  if(hash(content)!==preview.expectedHash)throw recoveryError('External Canvas changed while preserving');
+  if(!fs.existsSync(dest)){const fd=fs.openSync(dest,'wx',0o600);try{fs.writeFileSync(fd,content);fs.fsyncSync(fd);}finally{fs.closeSync(fd);}}
+  if(observed(dest)!==preview.expectedHash)throw recoveryError('Preserved Canvas fingerprint mismatch');preservedFile=path.relative(project,dest);
+ }
+ const receipt={operationId:input.operationId,topic,revision:next.revision,status:'committed',preservedFile};
+ publish(db,project,topic,file,{operation:input.operationId,request,state:next,receipt},preview.expectedHash);return receipt;
+ }finally{db.close();}
+}

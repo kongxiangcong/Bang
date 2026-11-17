@@ -91,6 +91,7 @@ test('HTTP exposes received versus organized and gaps while browser tokens canno
   const accepted=await fetch(base+'session/ingest',{method:'POST',headers,body:JSON.stringify(signed)});assert.equal(accepted.status,200);
   const status=await (await fetch(base+f.bound.topic.id+'/turns',{headers})).json();assert.equal(status.received,1);assert.equal(status.organized,0);assert.equal(status.backlog,1);
   const source=await (await fetch(base+f.bound.topic.id+'/source?id='+status.pending[0].id,{headers})).json();assert.equal(source.user.content,'合成问题');
+  const cli=spawnSync(process.execPath,[fileURLToPath(new URL('../runtime/canvas/bang.mjs',import.meta.url)),'turn-status','--project',f.project],{encoding:'utf8',input:JSON.stringify({topicId:f.bound.topic.id})});assert.equal(cli.status,0,cli.stderr);assert.equal(JSON.parse(cli.stdout).backlog,1);
  }finally{if(server)await new Promise(r=>server.close(r));await f.close();}
 });
 test('concurrent duplicate delivery queues once and ignored internal records cannot bypass the calling turn',async()=>{

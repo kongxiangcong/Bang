@@ -32,7 +32,7 @@ export async function draftStore(workspace:string,topic:string){
 // their final safety. Recovery never navigates or reads these strings.
 function validateDraftCard(card:Card){
  parseCard({...card,type:'text'});
- if(card.type!==undefined&&!['text','file','link'].includes(card.type))throw Error('Invalid draft card type');
+ if(card.type!==undefined&&!['text','file','link','group'].includes(card.type))throw Error('Invalid draft card type');
  if(card.type==='file'&&typeof card.file!=='string'||card.type==='link'&&typeof card.url!=='string')throw Error('Invalid draft resource');
 }
 

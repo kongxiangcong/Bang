@@ -16,5 +16,5 @@ export function resourceStatus(project,reference){
  return {status:fs.statSync(real).isFile()?'available':'missing'};
 }
 export function validateResources(project,canvas){
- for(const card of canvas.nodes)if(card.type==='file')resourceStatus(project,card.file);
+ for(const card of canvas.nodes){if(card.type==='file')resourceStatus(project,card.file);if(card.type==='group'&&card.background)resourceStatus(project,card.background);}
 }

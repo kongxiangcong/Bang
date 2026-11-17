@@ -432,6 +432,21 @@ These results establish process-crash recovery on the tested systems, not power-
 
 Final expanded Windows command: `node --test tests/canvas-recovery.test.mjs tests/native-runtime.test.mjs tests/canvas-save.test.mjs tests/canvas-history.test.mjs` — **36 passed, 0 failed, 2 Linux-only skipped; 38 total**, 63.5 seconds. Final expanded Linux recovery suite — **14 passed, 0 failed, 1 Windows-only skipped; 15 total**, 33.6 seconds. A final review moved prepared-material validation before both old/new-hash branches; replacement/confirmation/repair regressions were rerun after that change. No power-loss test was performed.
 
+## Ticket 35 — standard Canvas exchange
+
+Public commands: `export-canvas`, `import-preview`, `import-canvas` (JSON stdin for imports); protected HTTP routes use the same names. Preview a supplied `{canvas}` or `{external:true}` for the exact on-disk current.canvas. Confirm the returned preview with `operationId`, `author:{kind:'manual',id:'...'}` and `intent:'explicit-import'`. The returned topic, committed baseline revision, observed byte hash and candidate hash are checked again. An external modification does not become a committed read until explicitly adopted. Imported state applies through the shared operations module and publishes through the existing prepared-intent protocol. Original external bytes are preserved in a hash-named file before replacement; damaged and raced files are left untouched. Concurrent writers outside Bang do not share its lock; this is a checked import, not cross-application serializability.
+
+Standard exchange preserves text/file/link/group nodes, standard color/subpath/group-background fields, exact Markdown, integer geometry, node/edge array order, identities, endpoints, sides, arrow ends and labels. Unsafe paths/URLs remain rejected and resources are not fetched. A group is a visual region. `knowledgeCards(canvas)` returns the shared narrowed knowledge projection; `visualRegions(canvas)` returns groups. Semantic relation projection requires node context and excludes group endpoints. Custom terms remain unclassified; unlabeled edges retain only generic related meaning.
+
+Export strips editor-only extras and lists degradation (free annotations, exact bends, rotations and nonstandard node attributes). It is not a full backup of provenance, history, resources or extras. The editor provides file/JSON input, explicit candidate preview/confirmation, external-change adoption and a downloadable standard file with the degradation report before download. Group backgrounds are retained references, not automatically rendered/downloaded.
+
+Validation (Windows 11, Node 25.8.1, real native daemon, temporary projects; user .bang untouched):
+- TDD first `node --test tests/canvas-exchange.test.mjs`: failed at missing `import-preview`; then four exchange tests pass. External race initially returned HTTP 400; corrected RECOVERY_REQUIRED mapping to 409. All four pass including exact four-type roundtrip/reopen, HTTP file adoption/preservation, damaged input, unsafe resources, stale baseline and degradation.
+- `node --test tests/canvas-runtime.test.mjs tests/canvas-save.test.mjs tests/canvas-relations.test.mjs tests/canvas-history.test.mjs tests/canvas-exchange.test.mjs`: 24 pass before the fourth exchange case was added.
+- `npm run build`: TypeScript and production build pass; existing large-bundle warnings retained.
+- `node tests/canvas-exchange-browser.mjs`: real headless Chrome gestures, preview with no revision change, explicit import, visual-region display, byte-content-equivalent downloaded standard JSON, real external file edit then explicit adoption, preserved original, no automatic resource fetch. Initial browser harness selector quoting and reload synchronization failures were fixed and retained here as test-harness failures.
+- Not claimed: Windows 10 / Linux exchange browser matrix, real external editor applications, full backup (ticket 36), real model/host consumption, or cross-application simultaneous-write consistency.
+
 Ticket 13 composition with ticket 05/core review: pending bootstrap topics remain
 discoverable by name after publication failure; selection reconciles their durable
 intent before binding. First binding-created SQLite uses the same Linux 0600 rule.
@@ -440,3 +455,4 @@ Post-merge frontend build passed; seven binding tests pass. Recovery regressions
 passed 14 with one Linux-only skip; the initial combined run retained the new
 red topic-discovery test, then the corrected binding suite passed in full.
 Both real Chrome binding and publication-recovery scenarios passed after the merge.
+- Final integration: merged ticket 13 / `f3ce31f` at `693f9a6`; resolved additive CLI/HTTP/native dispatch conflicts while preserving the single-owner operation queue and session/binding routes. Final combined `node --test tests/canvas-exchange.test.mjs tests/topic-binding.test.mjs`: 11 passed. Final build and `node tests/canvas-exchange-browser.mjs` passed again on the merged tree.
