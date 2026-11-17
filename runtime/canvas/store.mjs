@@ -1,12 +1,12 @@
-import {applyOperation,orderOperations,operationIdentity} from './operations.ts';
+import {applyOperation as applyParsedOperation,orderOperations,operationIdentity} from './operations.ts';
 import {revisionState,revisionList,boardDiff,parseUndo,compensate} from './history.mjs';
-import {relationFields,semanticRelations} from './relations.ts';
+import {parseEdge,relationFields,semanticRelations} from './relations.ts';
 import {validateResources,resourceStatus} from './resources.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {DatabaseSync} from 'node:sqlite';
-import {compileCanvas,validateCanvas,parsePatch,editableFields,layoutFields} from './contract.ts';
+import {compileCanvas,validateCanvas,parsePatch,parseCard,editableFields,layoutFields} from './contract.ts';
 export function topicPath(project,topic){
  if(!project||!topic||! /^[a-zA-Z0-9_-]+$/.test(topic))throw Error('Explicit project and safe topic are required');
  return path.join(path.resolve(project),'.bang','topics',topic,'current.canvas');
@@ -28,6 +28,12 @@ export async function generateBoard(project,topic,input){
  fs.writeFileSync(file,bytes(board),{flag:'wx'});
  const state={revision:0,canvas:board,relations:semanticRelations(board.edges),deletionIntents:[],editorExtras:[],metadata:Object.fromEntries([...board.nodes,...board.edges].map(n=>[n.id,{source:{kind:'bootstrap'},modifiedRevision:0}]))},db=open(project);
  try{db.exec('BEGIN IMMEDIATE');db.prepare('INSERT INTO topics VALUES(?,?,?,?)').run(topic,0,JSON.stringify(state),hash(bytes(board)));db.prepare('INSERT INTO revisions VALUES(?,?,?)').run(topic,0,JSON.stringify(state));db.exec('COMMIT');}finally{db.close();}return board;
+}
+// Persistence canonicalizes newly supplied objects; draft merging deliberately
+// permits incomplete resource strings until an explicit save validates them.
+function applyOperation(board,op){
+ const parsed=op.type==='create-card'?{...op,card:parseCard(op.card)}:op.type==='create-relation'?{...op,edge:parseEdge(op.edge)}:op;
+ return applyParsedOperation(board,parsed);
 }
 // All comparisons use persisted historical fields, including local acknowledged overlays.
 function inspectPatch(db,topic,patch,row,project){
