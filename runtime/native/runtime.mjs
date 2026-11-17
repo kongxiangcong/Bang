@@ -5,6 +5,7 @@ import {randomUUID,randomBytes,timingSafeEqual} from 'node:crypto';
 import {spawn,spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import * as store from '../canvas/store.mjs';
+import {ingestTurns,turnStatus,turnSource,authorizeBackfill} from '../canvas/ingestion.mjs';
 import {listTopics,createTopic,registerConnector,connectSession,enableBinding,bindingStatus,bindingSources} from '../canvas/binding.mjs';
 const here=fileURLToPath(import.meta.url);
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
@@ -98,6 +99,10 @@ async function daemon(project){
    else if(command==='binding-enable')result=await enableBinding(project,input,connection.epoch);
    else if(command==='binding-status')result=bindingStatus(project,input);
    else if(command==='binding-sources')result=bindingSources(project,input);
+   else if(command==='turn-ingest')result=ingestTurns(project,connection.workspaceId,input);
+   else if(command==='turn-status')result=turnStatus(project,input);
+   else if(command==='turn-source')result=turnSource(project,input);
+   else if(command==='turn-backfill')result=authorizeBackfill(project,input);
    else {if(stopping)throw Error('Runtime stopping');const method=methods[command];if(!Object.hasOwn(methods,command))throw Error('Unknown runtime operation');result=await method(project,topic,input);}
    return result;};
    const pending=operationQueue.then(execute);operationQueue=pending.catch(()=>{});
@@ -116,8 +121,3 @@ if(process.argv[1]&&path.resolve(process.argv[1])===here&&process.argv[2]==='--d
   process.stderr.write(`BANG_START stage=${startupStage} code=${code}\n`,()=>process.exit(1));
  }
 }
-
-
-
-
-

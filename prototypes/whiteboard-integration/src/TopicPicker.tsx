@@ -1,4 +1,5 @@
 import React,{useEffect,useState} from 'react';
+import {IngestionStatus} from './IngestionStatus';
 import {canvasFetch,canvasWorkspaceId} from './canvas-client';
 type Topic={id:string;name:string};
 type Source={host:string;sessionId:string;startTurnId:string;receivedCursor:string|null;completedTurns:number;backlog:number};
@@ -26,8 +27,9 @@ export function TopicPicker({topic}:{topic:string}){
   <button disabled={busy||!selected} onClick={()=>open(selected)}>打开专题</button>
   <label>新专题名称 <input aria-label="新专题名称" value={name} maxLength={120} onChange={e=>setName(e.target.value)}/></label><button disabled={busy||!name.trim()} onClick={create}>创建专题</button>
   <button disabled={busy||!token} onClick={()=>enable()}>启用当前会话到专题</button>
-  <p role="status">{!token?'绑定不可用：请从已安装的可信宿主连接器在当前会话启用。可先创建或打开专题。':source?`已绑定 ${binding?.topic?.name} · ${source.host} / ${source.sessionId} · 起始轮 ${source.startTurnId} · 接收游标 ${source.receivedCursor??'尚未接收'} · 完成轮 ${source.completedTurns} · 积压 ${source.backlog}`:binding?.status==='selection-required'?'多个专题，请明确选择后启用。':`当前可信会话 ${binding?.identity?.host??''} / ${binding?.identity?.sessionId??''} 尚未绑定所选专题。`}</p>
+  <p role="status">{!token?'绑定不可用：请从已安装的可信宿主连接器在当前会话启用。可先创建或打开专题。':source?`已绑定 ${binding?.topic?.name} · ${source.host} / ${source.sessionId} · 起始轮 ${source.startTurnId}`:binding?.status==='selection-required'?'多个专题，请明确选择后启用。':`当前可信会话 ${binding?.identity?.host??''} / ${binding?.identity?.sessionId??''} 尚未绑定所选专题。`}</p>
   {binding?.status==='takeover-required'&&<div role="dialog" aria-label="确认接管专题"><p>接管 {binding.topic?.name}：旧来源 {binding.oldSource?.host} / {binding.oldSource?.sessionId}，积压 {binding.backlog} 轮。旧来源接收将冻结，已接收积压保留。</p><button disabled={busy} onClick={()=>enable(binding.confirmation)}>确认接管</button><button disabled={busy} onClick={()=>setBinding(null)}>取消接管</button></div>}
+  <IngestionStatus topic={topic}/>
   {error&&<p role="alert">{error}</p>}
  </section>;
 }
