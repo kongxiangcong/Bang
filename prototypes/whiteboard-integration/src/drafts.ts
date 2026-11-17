@@ -1,5 +1,6 @@
-import {parseCard, validateCanvas, type Card, type CommittedBoard, type BoardPatch} from '../../../runtime/canvas/contract';
-export type Draft = {base:CommittedBoard;cards:Card[];retry:BoardPatch|null;updated:number;overlay?:Record<string,Record<string,number>>;ackRevision?:number};
+import {parseEdge} from '../../../runtime/canvas/relations';
+import {parseCard, validateCanvas, type Card, type Edge, type CommittedBoard, type BoardPatch} from '../../../runtime/canvas/contract';
+export type Draft = {base:CommittedBoard;cards:Card[];edges?:Edge[];retry:BoardPatch|null;updated:number;overlay?:Record<string,Record<string,number>>;ackRevision?:number};
 async function editorIdentity():Promise<string>{
  if(!window.name.startsWith('bang-editor:'))window.name='bang-editor:'+crypto.randomUUID();
  // A duplicated tab can inherit window.name. A document-lifetime lock makes
@@ -19,8 +20,8 @@ export async function draftStore(workspace:string,topic:string){
  if(!window.name.startsWith('bang-editor:'))window.name='bang-editor:'+crypto.randomUUID();
  const key=prefix+(await editorIdentity());
  return {
-  others():Draft[]{return Object.keys(localStorage).filter(k=>k.startsWith(prefix)&&k!==key).map(k=>{try{const d=JSON.parse(localStorage.getItem(k)!);validateCanvas(d.base.canvas);d.cards.forEach(validateDraftCard);return d as Draft;}catch{return null;}}).filter((d):d is Draft=>!!d);},
-  read():Draft|null {const raw=localStorage.getItem(key);if(!raw)return null;const d=JSON.parse(raw) as Draft;validateCanvas(d.base.canvas);d.cards.forEach(validateDraftCard);return d;},
+  others():Draft[]{return Object.keys(localStorage).filter(k=>k.startsWith(prefix)&&k!==key).map(k=>{try{const d=JSON.parse(localStorage.getItem(k)!);validateCanvas(d.base.canvas);d.cards.forEach(validateDraftCard);d.edges?.forEach(parseEdge);return d as Draft;}catch{return null;}}).filter((d):d is Draft=>!!d);},
+  read():Draft|null {const raw=localStorage.getItem(key);if(!raw)return null;const d=JSON.parse(raw) as Draft;validateCanvas(d.base.canvas);d.cards.forEach(validateDraftCard);d.edges?.forEach(parseEdge);return d;},
   write(d:Draft){localStorage.setItem(key,JSON.stringify(d));},
   clear(){localStorage.removeItem(key);},
  };

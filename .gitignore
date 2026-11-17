@@ -117,3 +117,9 @@
 !/prototypes/whiteboard-integration/src/canvas-edits.ts
 !/tests/canvas-conflicts.test.mjs
 !/tests/canvas-conflicts-browser.mjs
+
+# Ticket 08 relation editing and persistence.
+!/runtime/canvas/relations.ts
+!/prototypes/whiteboard-integration/src/canvas-relations.ts
+!/tests/canvas-relations.test.mjs
+!/tests/canvas-relations-browser.mjs

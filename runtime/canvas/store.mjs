@@ -1,3 +1,4 @@
+import {parseEdge,relationFields,semanticRelations} from './relations.ts';
 import {validateResources,resourceStatus} from './resources.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -23,13 +24,14 @@ export async function readCommitted(project,topic){
 export async function generateBoard(project,topic,input){
  const board=compileCanvas(input),file=topicPath(project,topic);validateResources(project,board);fs.mkdirSync(path.dirname(file),{recursive:true});
  fs.writeFileSync(file,bytes(board),{flag:'wx'});
- const state={revision:0,canvas:board,metadata:Object.fromEntries(board.nodes.map(n=>[n.id,{source:{kind:'bootstrap'},modifiedRevision:0}]))},db=open(project);
+ const state={revision:0,canvas:board,relations:semanticRelations(board.edges),deletionIntents:[],metadata:Object.fromEntries([...board.nodes,...board.edges].map(n=>[n.id,{source:{kind:'bootstrap'},modifiedRevision:0}]))},db=open(project);
  try{db.exec('BEGIN IMMEDIATE');db.prepare('INSERT INTO topics VALUES(?,?,?,?)').run(topic,0,JSON.stringify(state),hash(bytes(board)));db.prepare('INSERT INTO revisions VALUES(?,?,?)').run(topic,0,JSON.stringify(state));db.exec('COMMIT');}finally{db.close();}return board;
 }
 function applyOperation(canvas,op){
+ if(op.type.endsWith('relation')){const i=canvas.edges.findIndex(e=>e.id===op.id);if(op.type==='create-relation')canvas.edges.push(parseEdge(op.edge));else if(op.type==='delete-relation')canvas.edges.splice(i,1);else for(const field of relationFields)if(op[field]!==undefined)canvas.edges[i][field]=op[field];return;}
  const id=op.type==='create-card'?op.card.id:op.id,index=canvas.nodes.findIndex(n=>n.id===id);
  if(op.type==='create-card')canvas.nodes.push(parseCard(op.card));
- else if(op.type==='delete-card')canvas.nodes.splice(index,1);
+ else if(op.type==='delete-card'){canvas.nodes.splice(index,1);canvas.edges=canvas.edges.filter(e=>e.fromNode!==id&&e.toNode!==id);}
  else for(const field of editableFields)if(op[field]!==undefined)canvas.nodes[index][field]=op[field];
 }
 // All comparisons use persisted historical fields, including local acknowledged overlays.
@@ -37,20 +39,23 @@ function inspectPatch(db,topic,patch,row,project){
  const snapshots=new Map(),current=JSON.parse(row.state),conflicts=[],legalOperations=[],touched=new Set();
  const baseline=revision=>{if(revision>row.revision)throw Error('Unknown baseline');if(!snapshots.has(revision)){const old=db.prepare('SELECT state FROM revisions WHERE topic=? AND revision=?').get(topic,revision);if(!old)throw Error('Unknown baseline');snapshots.set(revision,JSON.parse(old.state));}return snapshots.get(revision);};
  const original=baseline(patch.baseRevision);
- const dependencyConflict=patch.readDependencies.some(id=>{const old=original.canvas.nodes.find(n=>n.id===id),now=current.canvas.nodes.find(n=>n.id===id);return !old||JSON.stringify(old)!==JSON.stringify(now);});
+ const dependencyConflict=patch.readDependencies.some(id=>{const old=[...original.canvas.nodes,...original.canvas.edges].find(n=>n.id===id),now=[...current.canvas.nodes,...current.canvas.edges].find(n=>n.id===id);return !old||JSON.stringify(old)!==JSON.stringify(now);});
  for(const [operationIndex,op] of patch.operations.entries()){
-  const id=op.type==='create-card'?op.card.id:op.id,now=current.canvas.nodes.find(n=>n.id===id),before=conflicts.length;
+  const relation=op.type.endsWith('relation'),collection=relation?'edges':'nodes',creating=op.type.startsWith('create-'),deleting=op.type.startsWith('delete-');
+  const id=creating?(relation?op.edge.id:op.card.id):op.id,now=current.canvas[collection].find(n=>n.id===id),before=conflicts.length;
   const conflict=(field,base,current,proposed,reason)=>conflicts.push({operationIndex,id,field,base:base??null,current:current??null,proposed:proposed??null,reason});
   if(touched.has(id))conflict('id',id,id,id,'Repeated object operation');touched.add(id);
   if(dependencyConflict)conflict('$dependency',null,null,null,'Read dependency changed');
-  if(op.type==='create-card'){
+  if(creating){
    const existed=db.prepare("SELECT 1 FROM revisions, json_each(revisions.state, '$.canvas.nodes') AS node WHERE topic=? AND json_extract(node.value,'$.id')=? LIMIT 1").get(topic,id);
-   if(existed)conflict('id',null,now,op.card,now?'Card already exists':'Deleted identity cannot be reused');
+   const edgeExisted=db.prepare("SELECT 1 FROM revisions, json_each(revisions.state, '$.canvas.edges') AS edge WHERE topic=? AND json_extract(edge.value,'$.id')=? LIMIT 1").get(topic,id);
+   if(existed||edgeExisted)conflict('id',null,now,op.card??op.edge,now?'Identity already exists':'Deleted identity cannot be reused');
+   if(relation&&(current.deletionIntents??[]).some(d=>d.revision>patch.baseRevision&&d.object.fromNode===op.edge.fromNode&&d.object.toNode===op.edge.toNode))conflict('$deletion',null,null,op.edge,'Relation deletion intent is newer than baseline');
   }
   else if(!now)conflict('id',id,null,op.type==='delete-card'?null:op,'Card deleted');
   else {
-   const fields=op.type==='delete-card'?['id','type','text','x','y','width','height','file','url']:['id',...editableFields.filter(k=>op[k]!==undefined)];
-   for(const field of fields){const old=baseline(op.fieldRevisions?.[field]??patch.baseRevision).canvas.nodes.find(n=>n.id===id);if(!old||old[field]!==now[field])conflict(field,old?.[field],now[field],op.type==='delete-card'?null:op[field],'Field changed');}
+   const fields=deleting?(relation?['id',...relationFields]:['id','type','text','x','y','width','height','file','url']):['id',...(relation?relationFields:editableFields).filter(k=>op[k]!==undefined)];
+   for(const field of fields){const old=baseline(op.fieldRevisions?.[field]??patch.baseRevision).canvas[collection].find(n=>n.id===id);if(!old||old[field]!==now[field])conflict(field,old?.[field],now[field],op.type==='delete-card'?null:op[field],'Field changed');}
    if(op.type==='edit-card'&&((op.file!==undefined&&now.type!=='file')||(op.url!==undefined&&now.type!=='link')))conflict('type',null,now.type,null,'Resource type mismatch');
   }
   if(conflicts.length===before){
@@ -81,15 +86,18 @@ export async function commitBoard(project,topic,value){
   const preview=inspectPatch(db,topic,patch,row,project);
   if(preview.conflicts.length)throw Object.assign(Error('Baseline conflict; full draft retained'),{preview});
   const next=JSON.parse(row.state);next.revision++;
-  for(const dependency of patch.readDependencies)if(!next.canvas.nodes.some(n=>n.id===dependency))throw Error('Missing read dependency');
+  for(const dependency of patch.readDependencies)if(![...next.canvas.nodes,...next.canvas.edges].some(n=>n.id===dependency))throw Error('Missing read dependency');
   const touched=new Set();
   for(const op of patch.operations){
-   const identity=op.type==='create-card'?op.card.id:op.id;
+   const identity=op.type==='create-card'?op.card.id:op.type==='create-relation'?op.edge.id:op.id;
    if(touched.has(identity))throw Error('Repeated object operation');touched.add(identity);
+   const deleted=op.type==='delete-card'?[...next.canvas.edges.filter(e=>e.fromNode===identity||e.toNode===identity),next.canvas.nodes.find(n=>n.id===identity)]:op.type==='delete-relation'?[next.canvas.edges.find(e=>e.id===identity)]:[];
+   for(const object of deleted){(next.deletionIntents??=[]).push({id:object.id,object,revision:next.revision,authorId:patch.author.id,operationId:patch.operationId});delete next.metadata[object.id];}
    applyOperation(next.canvas,op);
-   if(op.type==='delete-card')delete next.metadata[identity];
+   if(op.type.startsWith('delete-'))delete next.metadata[identity];
    else Object.defineProperty(next.metadata,identity,{value:{source:{kind:'manual',authorId:patch.author.id,operationId:patch.operationId},modifiedRevision:next.revision},enumerable:true,configurable:true,writable:true});
   }
+  next.relations=semanticRelations(next.canvas.edges);
   validateCanvas(next.canvas);validateResources(project,next.canvas);
   const content=bytes(next.canvas),digest=hash(content),state=JSON.stringify(next);
   const receipt={operationId:patch.operationId,topic,revision:next.revision,status:'committed'};
