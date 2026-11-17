@@ -87,3 +87,51 @@ test('split UTF-8 request bodies retain exact Chinese text at both public HTTP b
  assert.equal((await splitRequest(c.url+'/control',{'x-bang-token':c.token,'x-bang-epoch':c.epoch},{command:'commit',topic:'demo',input:next})).status,200);assert.equal(run(p,'state').canvas.nodes[0].text,'中文第二版');
  }finally{if(server)await new Promise(r=>server.close(r));run(p,'stop');await fs.rm(p,{recursive:true,force:true});}
 });
+
+test('failed public start reports bounded nonsecret startup stage and exit code',async()=>{
+ const p=await fs.mkdtemp(path.join(os.tmpdir(),'bang-start-error-'));
+ try{
+  await fs.mkdir(path.join(p,'.bang/runtime'),{recursive:true});
+  await fs.writeFile(path.join(p,'.bang/runtime/workspace.json'),'secret-sentinel-not-json');
+  const result=spawnSync(process.execPath,[cli,'start','--project',p],{encoding:'utf8',timeout:15000});
+  assert.equal(result.status,1);assert.match(result.stderr,/exit=1/);assert.match(result.stderr,/stage=identity-read/);
+  assert.ok(result.stderr.length<512);assert.doesNotMatch(result.stderr,/secret-sentinel|bang-start-error-/);
+ }finally{run(p,'stop');await fs.rm(p,{recursive:true,force:true});}
+});
+
+test('rapid public stop and restart preserves ownership and saved data',async()=>{
+ const p=await fs.mkdtemp(path.join(os.tmpdir(),'bang-restarts-'));
+ try{
+  run(p,'generate',{cards:[{id:'kept',text:'preserved',x:0,y:0,width:100,height:100}]});
+  let previous=run(p,'start');
+  for(let cycle=0;cycle<12;cycle++){
+   run(p,'stop');const current=run(p,'start');
+   assert.equal(current.workspaceId,previous.workspaceId);assert.notEqual(current.epoch,previous.epoch);
+   assert.equal(run(p,'read').nodes[0].text,'preserved');previous=current;
+  }
+ }finally{run(p,'stop');await fs.rm(p,{recursive:true,force:true});}
+});
+
+test('native setup failure reports OS error stage without exposing project paths',async()=>{
+ const p=await fs.mkdtemp(path.join(os.tmpdir(),'bang-lock-error-'));
+ try{
+  await fs.mkdir(path.join(p,'.bang/runtime/writer.lock'),{recursive:true});
+  const result=spawnSync(process.execPath,[cli,'start','--project',p],{encoding:'utf8',timeout:15000});
+  assert.equal(result.status,1);assert.match(result.stderr,/exit=74/);assert.match(result.stderr,/stage=lock-open; code=\d+/);
+  assert.ok(result.stderr.length<512);assert.doesNotMatch(result.stderr,/bang-lock-error-/);
+ }finally{run(p,'stop');await fs.rm(p,{recursive:true,force:true});}
+});
+
+for(const holdMs of [1800,8000])test(`restart ${holdMs===1800?'waits for transient':'bounds persistent'} Windows discovery sharing conflict`,{skip:process.platform!=='win32'},async()=>{
+ const p=await fs.mkdtemp(path.join(os.tmpdir(),'bang-discovery-sharing-'));let holder;
+ try{
+  const before=run(p,'start');run(p,'stop');
+  holder=spawn('powershell.exe',['-NoProfile','-NonInteractive','-Command',"$f=[IO.File]::Open($env:BANG_TEST_DESCRIPTOR,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::ReadWrite); Write-Output 'held'; Start-Sleep -Milliseconds $env:BANG_TEST_HOLD_MS; $f.Dispose()"],{env:{...process.env,BANG_TEST_HOLD_MS:String(holdMs),BANG_TEST_DESCRIPTOR:path.join(p,'.bang/runtime/connection.json')},windowsHide:true});
+  await new Promise((resolve,reject)=>{holder.stdout.once('data',resolve);holder.once('error',reject);holder.once('exit',code=>{if(code!==0)reject(Error('sharing fixture failed'));});});
+  if(holdMs===1800){const after=run(p,'start');assert.equal(after.workspaceId,before.workspaceId);assert.notEqual(after.epoch,before.epoch);}
+  else{
+   const began=Date.now(),result=spawnSync(process.execPath,[cli,'start','--project',p],{encoding:'utf8',timeout:10000});
+   assert.equal(result.status,1);assert.match(result.stderr,/stage=discovery-replace; code=EPERM/);assert.ok(Date.now()-began<6000);
+  }
+ }finally{if(holder&&holder.exitCode===null){const closed=new Promise(resolve=>holder.once('close',resolve));holder.kill();await closed;}run(p,'stop');await fs.rm(p,{recursive:true,force:true});}
+});
