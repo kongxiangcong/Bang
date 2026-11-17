@@ -27,8 +27,20 @@ export async function ensureRuntime(project){
  const dir=location(project);privateDirectory(dir);let connection=await live(dir);if(connection)return connection;
  const helper=fileURLToPath(new URL(process.platform==='win32'?'./lock-host.exe':'./lock-host',import.meta.url));
  if(!fs.existsSync(helper))throw Error('Native lock helper missing; install the prebuilt platform runtime');
- let failure,exitCode=null;const launch=()=>{exitCode=null;const child=spawn(helper,[path.join(dir,'writer.lock'),process.execPath,here,'--daemon',fs.realpathSync(project)],{detached:true,stdio:'ignore',windowsHide:true});child.on('error',error=>failure=error);child.on('exit',code=>exitCode=code);child.unref();};launch();
- for(let i=0;i<100;i++){if(failure)throw failure;connection=await live(dir);if(connection)return connection;if(exitCode===73&&i%5===0)launch();else if(exitCode!==null&&exitCode!==73)throw Error('Native runtime startup failed');await delay(50);}
+ let failure,exitCode=null,signal=null,diagnostic='',child;
+ const launch=()=>{
+  exitCode=null;signal=null;diagnostic='';
+  child=spawn(helper,[path.join(dir,'writer.lock'),process.execPath,here,'--daemon',fs.realpathSync(project)],{detached:true,stdio:['ignore','ignore','pipe'],windowsHide:true});
+  child.stderr.setEncoding('utf8');child.stderr.on('data',chunk=>{diagnostic=(diagnostic+chunk).slice(-2048);});
+  child.on('error',error=>failure=Error(`Native runtime launch failed (code=${/^[A-Z0-9_]+$/.test(error.code)?error.code:'UNKNOWN'})`));
+  child.on('close',(code,reason)=>{exitCode=code;signal=reason;});child.unref();child.stderr.unref();
+ };
+ const details=()=>{
+  const record=diagnostic.match(/BANG_START stage=([a-z-]{1,32}) code=([A-Z0-9_]{1,32})/);
+  return `exit=${exitCode??'none'}${signal?`; signal=${signal}`:''}${record?`; stage=${record[1]}; code=${record[2]}`:''}`;
+ };
+ launch();
+ for(let i=0;i<100;i++){if(failure)throw failure;connection=await live(dir);if(connection)return connection;if(exitCode===73&&i%5===0)launch();else if((exitCode!==null&&exitCode!==73)||signal)throw Error(`Native runtime startup failed (${details()})`);await delay(50);}
  throw Error('Runtime unavailable: ownership is held or startup failed; no stale-lock takeover attempted');
 }
 export async function runtimeOperation(project,command,topic,input){
@@ -40,12 +52,26 @@ export async function runtimeOperation(project,command,topic,input){
  if(command==='status'){const connection=await live(dir);return connection?request(connection,'status'):{status:'unavailable',ownership:'unknown'};}
  const connection=await ensureRuntime(project);return request(connection,command==='start'?'status':command,topic,input);
 }
+// Only the native owner publishes these files. Retry the atomic replacement,
+// never remove the destination or release ownership to recover sharing conflicts.
+async function publishMetadata(temporary,destination){
+ const deadline=Date.now()+2000;
+ for(;;){
+  try{fs.renameSync(temporary,destination);return;}catch(error){
+   if(process.platform!=='win32'||!['EPERM','EBUSY','EACCES'].includes(error.code)||Date.now()>=deadline)throw error;
+   await delay(50);
+  }
+ }
+}
+let startupStage='owner-check';
 async function daemon(project){
  if(process.env.BANG_NATIVE_LOCK_OWNER!==String(process.platform==='win32'?process.ppid:process.pid))throw Error('Daemon must be launched by the native lock owner');
+ startupStage='identity-read';
  const dir=location(project),identityFile=path.join(dir,'workspace.json');
  let identity;try{identity=JSON.parse(fs.readFileSync(identityFile,'utf8'));}catch(error){if(error.code!=='ENOENT')throw error;identity={workspaceId:randomUUID(),epoch:0};}
  if(typeof identity.workspaceId!=='string'||!Number.isSafeInteger(identity.epoch)||identity.epoch<0)throw Error('Invalid workspace identity; recovery required');
- identity.epoch++;const identityTemp=path.join(dir,'workspace.tmp');const identityFd=fs.openSync(identityTemp,'w',0o600);try{fs.writeFileSync(identityFd,JSON.stringify(identity));fs.fsyncSync(identityFd);}finally{fs.closeSync(identityFd);}fs.renameSync(identityTemp,identityFile);
+ startupStage='identity-publish';
+ identity.epoch++;const identityTemp=path.join(dir,'workspace.tmp');const identityFd=fs.openSync(identityTemp,'w',0o600);try{fs.writeFileSync(identityFd,JSON.stringify(identity));fs.fsyncSync(identityFd);}finally{fs.closeSync(identityFd);}await publishMetadata(identityTemp,identityFile);
  const connection={workspaceId:identity.workspaceId,instanceId:randomUUID(),epoch:String(identity.epoch),pid:process.pid,token:randomBytes(32).toString('hex')};
  const status=()=>({status:'running',ownership:'os-handle',workspaceId:connection.workspaceId,instanceId:connection.instanceId,epoch:connection.epoch,pid:process.pid,supervisorPid:process.ppid,url:connection.url});
  const methods={generate:store.generateBoard,read:store.readBoard,state:store.readCommitted,commit:store.commitBoard,'resource-status':(project,topic,input)=>store.readResourceStatus(project,topic,input.id)};
@@ -64,10 +90,17 @@ async function daemon(project){
    res.end(JSON.stringify(result));if(stopping){server.close(()=>process.exit(0));server.closeIdleConnections();}
   }catch(error){res.statusCode=400;res.end(JSON.stringify({error:error.message}));}
  });
+ startupStage='listen';
  await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});connection.url=`http://127.0.0.1:${server.address().port}`;
- const temporary=path.join(dir,'connection.tmp');fs.writeFileSync(temporary,JSON.stringify(connection),{mode:0o600});fs.renameSync(temporary,path.join(dir,'connection.json'));
+ startupStage='discovery-publish';
+ const temporary=path.join(dir,'connection.tmp');fs.writeFileSync(temporary,JSON.stringify(connection),{mode:0o600});startupStage='discovery-replace';await publishMetadata(temporary,path.join(dir,'connection.json'));
 }
-if(process.argv[1]&&path.resolve(process.argv[1])===here&&process.argv[2]==='--daemon')await daemon(process.argv[3]);
+if(process.argv[1]&&path.resolve(process.argv[1])===here&&process.argv[2]==='--daemon'){
+ try{await daemon(process.argv[3]);}catch(error){
+  const code=/^[A-Z0-9_]{1,32}$/.test(error.code)?error.code:error instanceof SyntaxError?'INVALID_JSON':'STARTUP_ERROR';
+  process.stderr.write(`BANG_START stage=${startupStage} code=${code}\n`,()=>process.exit(1));
+ }
+}
 
 
 
