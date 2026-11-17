@@ -13,6 +13,12 @@ if(mode==='strict-schema'){const schema=JSON.parse(fs.readFileSync(args[args.ind
 const task=JSON.parse(input.slice(input.indexOf('\n')+1));
 if(mode==='tool')console.log(JSON.stringify({type:'item.completed',item:{type:'command_execution',command:'PRIVATE_TOOL'}}));
 console.log(JSON.stringify({type:'thread.started',thread_id:'controlled'}));console.log(JSON.stringify({type:'turn.started'}));
-console.log(JSON.stringify({type:'item.completed',item:{type:'agent_message',text:JSON.stringify({version:1,changes:[{type:'create-card',id:'codex-card',text:task.completedTurns[0].assistant.content,conditions:[],uncertainty:'controlled external CLI',sources:[task.completedTurns[0].id]}]})}}));
+const candidate={version:1,changes:[{type:'create-card',id:'codex-card',text:task.completedTurns[0].assistant.content,conditions:[],uncertainty:'controlled external CLI',sources:[task.completedTurns[0].id],...(mode==='timeline'?{structure:{version:1,kind:'timeline',rootId:'codex-card',eventTime:null}}:{})}]};
+if(mode==='timeline'){
+ const schema=JSON.parse(fs.readFileSync(args[args.indexOf('--output-schema')+1],'utf8'));
+ function matches(s,v){if(s.anyOf)return s.anyOf.some(x=>matches(x,v));if('const'in s&&s.const!==v||s.enum&&!s.enum.includes(v))return false;const types=Array.isArray(s.type)?s.type:[s.type];if(s.type&&!types.some(t=>t==='null'?v===null:t==='array'?Array.isArray(v):t==='integer'?Number.isInteger(v):t==='object'?v!==null&&typeof v==='object'&&!Array.isArray(v):typeof v===t))return false;if(s.items&&Array.isArray(v)&&v.some(x=>!matches(s.items,x)))return false;if(s.properties){if(s.required?.some(k=>!(k in v)))return false;if(s.additionalProperties===false&&Object.keys(v).some(k=>!(k in s.properties)))return false;for(const [k,x] of Object.entries(v))if(s.properties[k]&&!matches(s.properties[k],x))return false;}return true;}
+ if(!matches(schema,candidate)){console.log(JSON.stringify({type:'turn.failed',error:{message:'400 Candidate cannot satisfy requested structured output schema'}}));process.exit(1);}
+}
+console.log(JSON.stringify({type:'item.completed',item:{type:'agent_message',text:JSON.stringify(candidate)}}));
 if(mode==='failed-terminal')console.log(JSON.stringify({type:'turn.failed',error:{message:'unavailable'}}));
 console.log(JSON.stringify({type:'turn.completed',usage:{input_tokens:42,output_tokens:17}}));
