@@ -64,3 +64,66 @@ test('relation read dependencies support current reads and reject stale endpoint
   assert.notEqual(run(p,'commit',{...request,operationId:'stale-dependent',operations:[{type:'edit-card',id:'a',text:'stale implication'}]}).status,0);
  }finally{run(p,'stop');await fs.rm(p,{recursive:true,force:true});}
 });
+
+test('stale card deletion cannot cascade a newer relation, including after refresh overlays',async()=>{
+ const p=await fs.mkdtemp(path.join(os.tmpdir(),'bang-cascade-baseline-'));
+ try{
+  ok(run(p,'generate',{cards,edges:[{id:'r',fromNode:'a',toNode:'b',label:'original'}]}));
+  ok(run(p,'commit',patch('label',0,[{type:'edit-relation',id:'r',label:'new intent'}])));
+  for(const [name,baseRevision,fieldRevisions] of [['stale',0,undefined],['merged',1,{id:0}]]){
+   const deletion=patch(name,baseRevision,[{type:'delete-card',id:'a',fieldRevisions}]);
+   assert.notEqual(run(p,'commit',deletion).status,0,'new relation intent must survive stale deletion');
+   const preview=ok(run(p,'preview',deletion));assert.equal(preview.legalOperations.length,0);
+   assert.ok(preview.conflicts.some(c=>c.field==='$incidentRelations'));
+   const state=ok(run(p,'state'));assert.equal(state.revision,1);assert.equal(state.canvas.edges[0].label,'new intent');
+  }
+ }finally{run(p,'stop');await fs.rm(p,{recursive:true,force:true});}
+});
+
+test('HTTP atomic reconnect and endpoint deletion preserve intent in either order and conflict subsets',async()=>{
+ const p=await fs.mkdtemp(path.join(os.tmpdir(),'bang-rewire-delete-'));let server;
+ try{
+  ok(run(p,'generate',{cards,edges:[{id:'r',fromNode:'a',toNode:'b'}]}));
+  server=http.createServer(createCanvasMiddleware({project:p}));await new Promise(r=>server.listen(0,'127.0.0.1',r));const url=`http://127.0.0.1:${server.address().port}/api/canvas/demo`;
+  const post=(action,p)=>canvasRequest(url+'/'+action,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)});
+  const operations=[{type:'delete-card',id:'a'},{type:'edit-relation',id:'r',fromNode:'c'}];
+  for(const ordered of [operations,[...operations].reverse()]){
+   const preview=await (await post('preview',patch('preview',0,ordered))).json();
+   assert.deepEqual(preview.conflicts,[],'valid final graph must not depend on request order');assert.equal(preview.legalOperations.length,2);
+  }
+  // A competing endpoint edit invalidates rewiring; preview must not offer deletion
+  // alone, which would silently erase the relation the user intended to retain.
+  assert.equal((await post('commit',patch('compete',0,[{type:'edit-relation',id:'r',fromNode:'b'}]))).status,200);
+  const stale=patch('stale',0,[...operations,{type:'edit-card',id:'c',text:'independent'}]);
+  assert.equal((await post('commit',stale)).status,409);
+  const preview=await (await post('preview',stale)).json();
+  assert.deepEqual(preview.legalOperations,[{type:'edit-card',id:'c',text:'independent'}]);
+  assert.equal((await post('commit',patch('fresh',1,operations))).status,200);
+  const state=ok(run(p,'state'));assert.deepEqual(state.canvas.nodes.map(c=>c.id),['b','c']);assert.equal(state.canvas.edges[0].fromNode,'c');assert.equal(state.canvas.edges[0].toNode,'b');assert.deepEqual(state.deletionIntents.map(d=>d.id),['a']);
+ }finally{if(server)await new Promise(r=>server.close(r));run(p,'stop');await fs.rm(p,{recursive:true,force:true});}
+});
+
+test('card deletion protects newly attached and newly reconnected incident relations',async()=>{
+ for(const mode of ['attached','reconnected']){
+  const p=await fs.mkdtemp(path.join(os.tmpdir(),'bang-new-incident-'));
+  try{
+   ok(run(p,'generate',{cards,edges:mode==='reconnected'?[{id:'r',fromNode:'c',toNode:'b'}]:[]}));
+   ok(run(p,'commit',patch('remote',0,[mode==='attached'?{type:'create-relation',edge:{id:'r',fromNode:'a',toNode:'b'}}:{type:'edit-relation',id:'r',toNode:'a'}])));
+   assert.notEqual(run(p,'commit',patch('stale',0,[{type:'delete-card',id:'a'}])).status,0);
+   assert.equal(ok(run(p,'state')).revision,1);
+   ok(run(p,'commit',patch('current',1,[{type:'delete-card',id:'a'}])));
+   assert.equal(ok(run(p,'state')).canvas.edges.length,0);
+  }finally{run(p,'stop');await fs.rm(p,{recursive:true,force:true});}
+ }
+});
+
+test('a relation explicitly retained by the transaction cannot be silently cascaded away',async()=>{
+ const p=await fs.mkdtemp(path.join(os.tmpdir(),'bang-retained-relation-'));
+ try{
+  ok(run(p,'generate',{cards,edges:[{id:'r',fromNode:'a',toNode:'b'}]}));
+  const request=patch('contradictory',0,[{type:'delete-card',id:'a'},{type:'edit-relation',id:'r',label:'retain this edited relation'},{type:'edit-card',id:'c',text:'independent'}]);
+  assert.notEqual(run(p,'commit',request).status,0);
+  const preview=ok(run(p,'preview',request));assert.deepEqual(preview.legalOperations,[{type:'edit-card',id:'c',text:'independent'}]);
+  assert.equal(ok(run(p,'state')).revision,0);
+ }finally{run(p,'stop');await fs.rm(p,{recursive:true,force:true});}
+});

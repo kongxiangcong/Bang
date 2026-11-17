@@ -138,3 +138,7 @@
 !/tests/canvas-annotations.test.mjs
 !/tests/canvas-annotations-browser.mjs
 !/prototypes/whiteboard-integration/src/canvas-annotations.ts
+
+# Core review shared transaction application and browser regression.
+!/runtime/canvas/operations.ts
+!/tests/canvas-transaction-browser.mjs

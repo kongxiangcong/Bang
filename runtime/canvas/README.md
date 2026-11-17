@@ -320,3 +320,42 @@ Validation on Windows 11, Node v25.8.1 and actual headless Google Chrome:
   real visible borders/rotation handles and awaited editor/refresh readiness.
 - No physical IME, clipboard cross-project transfer, accessibility audit, Windows 10,
   Linux, real model/host roundtrip, full export or performance acceptance is claimed.
+
+## Core review corrections (2026-11-18)
+
+The review's two spec findings are fixed: card deletion checks every relation
+actually removed by its cascade against the deletion's persisted baseline (also
+when a refresh carries an older field overlay). New, relabeled and reconnected
+incident relations therefore block the whole stale save. Acknowledged local
+relation changes use explicit relation deletions with their own field baselines,
+so the page need not refresh merely to delete a relation it just saved.
+
+A shared pure `operations.ts` now orders creations/rewiring before endpoint
+removal and applies card, relation, extra, cascade and stacking changes identically
+in the Runtime, browser acknowledgement and keep-and-merge. It does not mutate its
+input. Conflict/dependency/provenance and publication logic stay in the Runtime;
+draft overlays stay in the browser. Structural dependency groups are validated
+against their final graph; a failed rewire cannot leave its endpoint deletion in
+the legal subset. Explicitly retained relations cannot be silently cascaded away.
+Draft recovery has one parser with existing caller-specific error handling.
+
+Red evidence retained: CLI stale relabel + deletion initially succeeded; HTTP
+rewire + deletion initially failed with missing `fromNode`; an explicit relation
+edit plus endpoint deletion initially silently removed that relation. Real Chrome
+caught two further cases: keep-and-merge grouping lost historical endpoint
+baselines, and deletion after a locally acknowledged label edit was over-rejected.
+Both have passing regression assertions in `canvas-transaction-browser.mjs`.
+The first sandbox run failed with native `spawn UNKNOWN`; authorized native runs
+worked. A test-file generator initially used Windows GBK rather than UTF-8; no
+product result is inferred from that harness failure.
+
+Validation uses synthetic temporary projects, public CLI/HTTP and real Chrome
+pointer/keyboard input, with no API interception or editor state injection.
+An initial 33-test public regression suite passed; final additional relation cases
+cover new attachments/reconnections, both request orders and safe subset intent.
+The TypeScript/production build passed (existing large-chunk warning). Browser
+regressions passed for transactions, native relations, layout, conflicts, draft
+recovery and annotations. Detailed final commands/results are in the local tracker
+`.scratch/collaborative-whiteboard/review-fixes.md`.
+No real model/host roundtrip, physical IME, accessibility or performance claim is
+made. This correction does not close any later implementation tickets.
