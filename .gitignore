@@ -209,3 +209,7 @@
 !/tests/source-versions.test.mjs
 !/tests/source-versions-browser.mjs
 !/runtime/canvas/SOURCE-VERSIONS.md
+# Ticket 33 comparison and event timeline UI and public acceptance.
+!/prototypes/whiteboard-integration/src/ComparisonTimeline.tsx
+!/tests/canvas-comparison-timeline.test.mjs
+!/tests/canvas-comparison-timeline-browser.mjs

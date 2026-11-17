@@ -1,4 +1,4 @@
-import {parseStructure,layoutStructures,type StructureIntent} from './structures.ts';
+import {parseStructure,layoutStructures,validateStructureGroups,type StructureIntent} from './structures.ts';
 import {layoutCards,type Bounds,type LayoutWarning} from './layout.ts';
 import {parseEdge,relationFields,validateRelationFields,semanticRelations,type Edge,type RelationOperation} from './relations.ts';
 export type {Edge} from './relations.ts';
@@ -50,13 +50,17 @@ export function validateCanvas(value:unknown):Canvas {
  for(const edge of v.edges){const e=parseEdge(edge);if(ids.has(e.id))throw Error('Duplicate identity');if(!v.nodes.some((n:any)=>n.id===e.fromNode)||!v.nodes.some((n:any)=>n.id===e.toNode))throw Error('Dangling relation');ids.add(e.id);}
  return value as Canvas;
 }
+export function validateCanvasCandidate(value:unknown):Canvas {
+ const canvas=validateCanvas(value);validateStructureGroups(canvas.nodes);return canvas;
+}
 export function compileCanvas(input:unknown):Canvas {
  if(!input||typeof input!=='object'||!Array.isArray((input as {cards?:unknown}).cards))throw Error('Expected cards array');
  const v=input as {cards:Partial<Card>[];edges?:Edge[];previous?:Canvas;relayoutIds?:string[];bounds?:Bounds};
+ // Legacy group disagreement may be repaired; only the final candidate must agree.
  if(v.previous)validateCanvas(v.previous);
  const result=layoutCards(v.cards,v.previous?.nodes,v.relayoutIds,v.bounds);
  layoutStructures(result,v.cards,v.edges??v.previous?.edges??[],v.previous?.nodes??[],v.relayoutIds??[],v.bounds);
- return validateCanvas({nodes:result.nodes.map(parseCard),edges:(v.edges??v.previous?.edges??[]).map(parseEdge),...(result.warnings.length?{layoutWarnings:result.warnings}:{})});
+ return validateCanvasCandidate({nodes:result.nodes.map(parseCard),edges:(v.edges??v.previous?.edges??[]).map(parseEdge),...(result.warnings.length?{layoutWarnings:result.warnings}:{})});
 }
 
 export const layoutFields=['structure','x','y','width','height','regionId','fixed','zIndex'] as const;

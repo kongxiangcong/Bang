@@ -9,7 +9,7 @@ import {validateResources,resourceStatus} from './resources.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
-import {compileCanvas,validateCanvas,parsePatch,parseCard,editableFields,layoutFields} from './contract.ts';
+import {compileCanvas,validateCanvasCandidate as validateCanvas,parsePatch,parseCard,editableFields,layoutFields} from './contract.ts';
 export function topicPath(project,topic){
  if(!project||!topic||! /^[a-zA-Z0-9_-]+$/.test(topic))throw Error('Explicit project and safe topic are required');
  return path.join(path.resolve(project),'.bang','topics',topic,'current.canvas');
@@ -71,6 +71,16 @@ function inspectPatch(db,topic,patch,row,project){
  // endpoint deletion in a supposedly safe subset. Independent field edits survive.
  const groups=patch.operations.map((op,i)=>new Set([i]));
  const join=(a,b)=>{const combined=new Set([...groups[a],...groups[b]]);for(const i of combined)groups[i]=combined;};
+ // A dimension migration is one structural dependency, even with fixed cards
+ // and no coordinate changes. Validate its final group, not intermediate edits.
+ const comparisonOperations=new Map();
+ for(const [i,op] of patch.operations.entries()){
+  if(!['create-card','delete-card','edit-card'].includes(op.type)||op.type==='edit-card'&&op.structure===undefined)continue;
+  const id=operationIdentity(op),intents=[original.canvas.nodes.find(n=>n.id===id)?.structure,current.canvas.nodes.find(n=>n.id===id)?.structure,op.card?.structure,op.structure];
+  for(const intent of intents)if(intent?.kind==='comparison'){
+   const prior=comparisonOperations.get(intent.rootId);if(prior!==undefined)join(i,prior);comparisonOperations.set(intent.rootId,i);
+  }
+ }
  for(const [i,card] of patch.operations.entries())if(card.type==='create-card'||card.type==='delete-card'){
   const id=operationIdentity(card);
   for(const [j,relation] of patch.operations.entries())if(relation.type.endsWith('relation')){
