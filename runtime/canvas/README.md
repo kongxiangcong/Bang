@@ -321,6 +321,61 @@ Validation on Windows 11, Node v25.8.1 and actual headless Google Chrome:
 - No physical IME, clipboard cross-project transfer, accessibility audit, Windows 10,
   Linux, real model/host roundtrip, full export or performance acceptance is claimed.
 
+## Ticket 13 — Topics and trusted current-session binding
+
+Public native operations: `topics`, `topic-create` (`{name}`),
+`connector-register` (`{id,host,versions,publicKey}`), `session-connect`,
+`binding-enable`, `binding-status`, `binding-sources`. JSON goes on CLI stdin.
+All operations use the existing native owner/capability and one owner queue.
+Topic creation invokes the existing board publisher; metadata uses the same
+`board.sqlite`. No second writable board or host transcript reader is installed.
+
+`SessionConnector.verifyProof` is the host trust boundary. The supplied signed
+adapter verifies Ed25519 proof with an explicitly installed host/version/public
+key registration (native administrative capability only, never browser routes).
+The private signing key stays in the adapter. A proof is `{connectorId,payload,
+signature}`; payload is base64url JSON, signature covers that exact payload string.
+Claims: host, version, instanceId, exact sessionId, stable workspaceId, role=primary,
+scope (topic IDs or explicit `*`), calling turnId/cursor, nonce, issuedAt/expiresAt
+(integer milliseconds, maximum five-minute window). Replay, expired/forged proofs,
+unknown host/version, wrong workspace, child agents and organizers fail closed.
+No recent-chat lookup exists; bare `verified:true` or session ID is not authority.
+Only whitelisted identity/boundary metadata is persisted, never message bodies.
+
+A valid handshake returns an opaque sessionToken; only its hash is persisted.
+Use it for binding-enable/status. A connector may launch
+`canvas.html#session=<token>`; the UI immediately removes the fragment and keeps
+the token in workspace-keyed sessionStorage. Browser capability remains separate;
+HTTP session routes expose topics/create-topic/connect/enable/binding, not trust
+registration. Session tokens remain valid across daemon restart until a fresh
+handshake for that exact host/instance/session rotates them.
+
+Zero topics creates a named default; one auto-selects; several require explicit
+selection. Existing binding repeats preserve source identity and initial boundary.
+Switching freezes previous source metadata. Takeover first returns old identity,
+backlog and a confirmation token; cancellation has no effects. Confirmation is
+bound to requester, target, old source metadata/backlog, board revision and owner
+epoch, expires in five minutes and is consumed on success. Stale previews fail.
+Received cursor/turn counts/backlog are initially empty/zero; ingestion is ticket
+14 and real Codex/DSH adapters are tickets 24/27. These are not host acceptance.
+
+Validation on Windows / Node v25.8.1 / Chrome headless (2026-11-18):
+- `node --test tests/topic-binding.test.mjs`: seven public Runtime/HTTP scenarios;
+  creation and restart, single/multiple selection, concurrent default enable,
+  signed proof adversaries/scope, same-session idempotency, stale takeover.
+- `npm --prefix prototypes/whiteboard-integration run build`: passed; existing
+  large chunk warning remains.
+- `node tests/topic-binding-browser.mjs`: real UI creation/default selection,
+  controlled precise host identity, takeover preview/cancel/confirm, topic switch
+  and reload through real HTTP/native Runtime/SQLite, no fetch interception.
+- Native regression selection `browser proxy|split UTF|simultaneous public starts`:
+  three passed, preserving capability/origin checks and UTF-8 body handling.
+- TDD red evidence: unknown topics/registration operation, unique-topic takeover
+  failure and accepted replay; each corrected before proceeding. Browser harness
+  initially clicked before operation completion; now waits for enabled controls.
+- No real user transcript, paid model, host installation, Linux binding UI,
+  screen-reader or full lifecycle/ingestion acceptance is claimed.
+
 ## Core review corrections (2026-11-18)
 
 The review's two spec findings are fixed: card deletion checks every relation
@@ -391,3 +446,12 @@ Validation (Windows 11, Node 25.8.1, real native daemon, temporary projects; use
 - `npm run build`: TypeScript and production build pass; existing large-bundle warnings retained.
 - `node tests/canvas-exchange-browser.mjs`: real headless Chrome gestures, preview with no revision change, explicit import, visual-region display, byte-content-equivalent downloaded standard JSON, real external file edit then explicit adoption, preserved original, no automatic resource fetch. Initial browser harness selector quoting and reload synchronization failures were fixed and retained here as test-harness failures.
 - Not claimed: Windows 10 / Linux exchange browser matrix, real external editor applications, full backup (ticket 36), real model/host consumption, or cross-application simultaneous-write consistency.
+
+Ticket 13 composition with ticket 05/core review: pending bootstrap topics remain
+discoverable by name after publication failure; selection reconciles their durable
+intent before binding. First binding-created SQLite uses the same Linux 0600 rule.
+An added public failure/reopen test initially found zero topics and now passes.
+Post-merge frontend build passed; seven binding tests pass. Recovery regressions
+passed 14 with one Linux-only skip; the initial combined run retained the new
+red topic-discovery test, then the corrected binding suite passed in full.
+Both real Chrome binding and publication-recovery scenarios passed after the merge.

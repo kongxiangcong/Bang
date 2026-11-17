@@ -139,6 +139,13 @@
 !/tests/canvas-annotations-browser.mjs
 !/prototypes/whiteboard-integration/src/canvas-annotations.ts
 
+# Ticket 13 trusted session binding and topic selection.
+!/runtime/native/session-connector.mjs
+!/runtime/canvas/binding.mjs
+!/prototypes/whiteboard-integration/src/TopicPicker.tsx
+!/tests/topic-binding.test.mjs
+!/tests/topic-binding-browser.mjs
+
 # Core review shared transaction application and browser regression.
 !/runtime/canvas/operations.ts
 !/tests/canvas-transaction-browser.mjs
