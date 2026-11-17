@@ -27,6 +27,7 @@ export function startCodexWatch(project,runtimeCall){
     if(stopped)break;
     const sources=await runtimeCall('binding-sources',{topicId:entry.topicId}),source=sources.find(s=>s.id===entry.sourceId);
     if(!source?.active||source.instanceId!==install.instanceId)continue;
+    if(source.receptionStopped&&!source.resumeRequested){statuses.set(project,{status:'reception-stopped',sourceId:entry.sourceId});continue;}
     try{
      transport=await openCodexStoredTransport({executable:install.executable,threadId:source.sessionId});
      if(stopped){transport.close();break;}
