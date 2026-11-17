@@ -55,6 +55,12 @@ Commands: `node --test --test-force-exit tests/organizer-controls.test.mjs tests
 
 Final merged verification: 50 public tests passed, no failures/skips; two additional focused default-limit/actual JSON-stdin CLI checks passed. TypeScript/Vite production build passed with the existing chunk-size warning. Final actual Chrome all-controls script passed. git diff --check clean. No real-host or native process-tree claims are inferred from these controlled adapter/HTTP results.
 
+## Native execution — ticket 17
+
+An owner-configured restricted native adapter now uses the same task lifecycle and common publisher. Native process receipts survive reopen; cancellation first revokes publication, then requests cooperative stop and bounds force/exit confirmation. Cancelling tasks retain their concurrency slot until physical cleanup; model and cleanup waits remain outside the owner queue and SQLite transactions. Orderly daemon stop waits for native exit and prevents publication, while abrupt death/new epochs retain the prior interruption fence. Per-attempt process evidence is part of the existing task body, not a new persistence table.
+
+See [native supervision contract and evidence](../native/README.md#native-organizer-supervision--ticket-17-2026-11-18) for literal CLI/stdin transport, sanitized environment, Windows Job/Linux process-group implementation, prebuilt binary provenance, real controlled-process tests and the explicit trusted-adapter/no-host-credential boundary. This extends the earlier HTTP-only cancellation statement; real host authorization and executor flags remain tickets 25/28.
+
 ## Ticket 31 structure extension
 
 The existing version-1 result additionally accepts `structure:{version:1,kind:"classification"|"radial",rootId}` on `create-card` only and `kind:"classification"|"general"` on `create-relation` only. The versioned `structureRules` input explains relation definitions, examples and safe migration. Existing card structure stays protected and is a read dependency even though changing it preserves knowledge provenance. The Compiler resolves coordinates; the model never supplies geometry. Both new and existing roots must be knowledge in the active/new set and the root must share the intent. Uncertainty defaults to free layout; visual grouping is never evidence of classification. Controlled executor/public Runtime and real editor evidence is recorded under Ticket 31 in README.md; real model quality remains ticket 43.
