@@ -1,32 +1,30 @@
+import {recoveryStatus,recoverUnknown,reconcile,publish,observed,recoveryError} from './publication.mjs';
 import {revisionState,revisionList,boardDiff,parseUndo,compensate} from './history.mjs';
 import {parseEdge,relationFields,semanticRelations} from './relations.ts';
 import {validateResources,resourceStatus} from './resources.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
-import {createHash} from 'node:crypto';
 import {DatabaseSync} from 'node:sqlite';
 import {compileCanvas,validateCanvas,parsePatch,parseCard,editableFields,layoutFields} from './contract.ts';
 export function topicPath(project,topic){
  if(!project||!topic||! /^[a-zA-Z0-9_-]+$/.test(topic))throw Error('Explicit project and safe topic are required');
  return path.join(path.resolve(project),'.bang','topics',topic,'current.canvas');
 }
-const hash=s=>createHash('sha256').update(s).digest('hex');
-const bytes=board=>JSON.stringify(board,null,2)+'\n';
 function open(project,readonly=false){
- const db=new DatabaseSync(path.join(path.resolve(project),'.bang','board.sqlite'),{readOnly:readonly});
+ const database=path.join(path.resolve(project),'.bang','board.sqlite'),fresh=!fs.existsSync(database);
+ const db=new DatabaseSync(database,{readOnly:readonly});if(fresh&&process.platform!=='win32')fs.chmodSync(database,0o600);
  if(!readonly){db.exec(`PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS topics(topic TEXT PRIMARY KEY, revision INTEGER NOT NULL, state TEXT NOT NULL, hash TEXT NOT NULL); CREATE TABLE IF NOT EXISTS revisions(topic TEXT, revision INTEGER, state TEXT NOT NULL, PRIMARY KEY(topic,revision)); CREATE TABLE IF NOT EXISTS intents(topic TEXT, operation TEXT, request TEXT NOT NULL, state TEXT NOT NULL, hash TEXT NOT NULL, receipt TEXT NOT NULL, status TEXT NOT NULL, PRIMARY KEY(topic,operation));`);}
  return db;
 }
 export async function readBoard(project,topic){return (await readCommitted(project,topic)).canvas;}
 export async function readCommitted(project,topic){
- const file=topicPath(project,topic),db=open(project,true);
- try{const row=db.prepare('SELECT * FROM topics WHERE topic=?').get(topic);if(!row)throw Error('Unknown topic');if(hash(fs.readFileSync(file))!==row.hash)throw Error('Canvas publication pending or externally changed; recovery required');return JSON.parse(row.state);}finally{db.close();}
+ const file=topicPath(project,topic),db=open(project);
+ try{reconcile(db,project,topic,file);const row=db.prepare('SELECT * FROM topics WHERE topic=?').get(topic);if(!row)throw Error('Unknown topic');if(observed(file)!==row.hash)throw recoveryError('Canvas publication pending or externally changed; recovery required');return JSON.parse(row.state);}finally{db.close();}
 }
 export async function generateBoard(project,topic,input){
- const board=compileCanvas(input),file=topicPath(project,topic);validateResources(project,board);fs.mkdirSync(path.dirname(file),{recursive:true});
- fs.writeFileSync(file,bytes(board),{flag:'wx'});
+ const board=compileCanvas(input),file=topicPath(project,topic);validateResources(project,board);fs.mkdirSync(path.dirname(file),{recursive:true,mode:0o700});
  const state={revision:0,canvas:board,relations:semanticRelations(board.edges),deletionIntents:[],editorExtras:[],metadata:Object.fromEntries([...board.nodes,...board.edges].map(n=>[n.id,{source:{kind:'bootstrap'},modifiedRevision:0}]))},db=open(project);
- try{db.exec('BEGIN IMMEDIATE');db.prepare('INSERT INTO topics VALUES(?,?,?,?)').run(topic,0,JSON.stringify(state),hash(bytes(board)));db.prepare('INSERT INTO revisions VALUES(?,?,?)').run(topic,0,JSON.stringify(state));db.exec('COMMIT');}finally{db.close();}return board;
+ try{reconcile(db,project,topic,file);if(db.prepare('SELECT 1 FROM topics WHERE topic=?').get(topic)||observed(file)!==null)throw Error('Topic already exists; refusing overwrite');publish(db,project,topic,file,{operation:'$bootstrap',request:JSON.stringify(input),state,receipt:{topic,revision:0,status:'committed'}},null);}finally{db.close();}return board;
 }
 function applyOperation(canvas,op){
  if(op.type.endsWith('relation')){const i=canvas.edges.findIndex(e=>e.id===op.id);if(op.type==='create-relation')canvas.edges.push(parseEdge(op.edge));else if(op.type==='delete-relation')canvas.edges.splice(i,1);else for(const field of relationFields)if(op[field]!==undefined)canvas.edges[i][field]=op[field];return;}
@@ -88,11 +86,12 @@ async function publishPatch(project,topic,value,undo){
  const patch=undo?parseUndo(value):parsePatch(value),file=topicPath(project,topic);if(patch.topic!==topic)throw Error('Patch topic mismatch');
  const db=open(project);const request=JSON.stringify(patch);
  try{
+  reconcile(db,project,topic,file);
   const prior=db.prepare('SELECT * FROM intents WHERE topic=? AND operation=?').get(topic,patch.operationId);
   if(prior){if(prior.request!==request)throw Error('Operation identity reused for different content');if(prior.status==='confirmed')return JSON.parse(prior.receipt);throw Error('Prepared publication requires recovery');}
   if(db.prepare("SELECT 1 FROM intents WHERE topic=? AND status='prepared'").get(topic))throw Error('Prepared publication requires recovery');
   const row=db.prepare('SELECT * FROM topics WHERE topic=?').get(topic);if(!row)throw Error('Unknown topic');
-  if(hash(fs.readFileSync(file))!==row.hash)throw Error('Canvas externally changed; refusing overwrite');
+  if(observed(file)!==row.hash)throw recoveryError('Canvas externally changed; recovery required');
   let next;
   if(undo)next=compensate(db,topic,patch,JSON.parse(row.state));
   else {
@@ -119,15 +118,8 @@ async function publishPatch(project,topic,value,undo){
   }
   next.relations=semanticRelations(next.canvas.edges);
   validateCanvas(next.canvas);validateResources(project,next.canvas);
-  const content=bytes(next.canvas),digest=hash(content),state=JSON.stringify(next);
   const receipt={operationId:patch.operationId,topic,revision:next.revision,status:'committed'};
-  db.prepare('INSERT INTO intents VALUES(?,?,?,?,?,?,?)').run(topic,patch.operationId,request,state,digest,JSON.stringify(receipt),'prepared');
-  const temporary=path.join(path.dirname(file),'publish.tmp');
-  const fd=fs.openSync(temporary,'wx');try{fs.writeFileSync(fd,content);fs.fsyncSync(fd);}finally{fs.closeSync(fd);}
-  if(hash(fs.readFileSync(file))!==row.hash)throw Error('Canvas externally changed during preparation; recovery required');
-  fs.renameSync(temporary,file);
-  db.exec('BEGIN IMMEDIATE');
-  try{db.prepare('UPDATE topics SET revision=?,state=?,hash=? WHERE topic=?').run(next.revision,state,digest,topic);db.prepare('INSERT INTO revisions VALUES(?,?,?)').run(topic,next.revision,state);db.prepare("UPDATE intents SET status='confirmed' WHERE topic=? AND operation=?").run(topic,patch.operationId);db.exec('COMMIT');}catch(e){db.exec('ROLLBACK');throw e;}
+  publish(db,project,topic,file,{operation:patch.operationId,request,state:next,receipt},row.hash);
   return receipt;
  }finally{db.close();}
 }
@@ -142,3 +134,6 @@ export async function readHistory(project,topic){await readCommitted(project,top
 export async function previewHistory(project,topic,input){await readCommitted(project,topic);const db=open(project,true);try{return revisionState(db,topic,input?.revision);}finally{db.close();}}
 export async function diffHistory(project,topic,input){await readCommitted(project,topic);const db=open(project,true);try{return boardDiff(revisionState(db,topic,input?.fromRevision),revisionState(db,topic,input?.toRevision));}finally{db.close();}}
 
+
+export async function readRecoveryStatus(project,topic){const file=topicPath(project,topic),db=open(project);try{return recoveryStatus(db,topic,file);}finally{db.close();}}
+export async function recoverBoard(project,topic,input){const file=topicPath(project,topic),db=open(project);try{return recoverUnknown(db,project,topic,file,input);}finally{db.close();}}
