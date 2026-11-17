@@ -89,7 +89,7 @@ export type CanvasImportPatch={operationId:string;topic:string;baseRevision:numb
 export type CanvasImportOperation={type:'replace-canvas';canvas:Canvas};
 export type BoardOperation = (ExtraOperation|{type:'create-card';card:Card}|{type:'edit-card';id:string;structure?:StructureIntent|null;text?:string;label?:string;file?:string;url?:string;x?:number;y?:number;width?:number;height?:number;regionId?:string|null;fixed?:boolean;zIndex?:number}|{type:'delete-card';id:string}|RelationOperation) & {fieldRevisions?:FieldRevisions};
 export type BoardPatch = {operationId:string;topic:string;baseRevision:number;author:{kind:'manual';id:string};readDependencies:string[];intent:'explicit-save';operations:BoardOperation[]};
-export type CardMetadata = {derivedFrom?:string;role?:'visual-region'|'knowledge';knowledge?:{conditions:string[];uncertainty:string;sources:string[];dependencies:string[]};organizer?:{taskId:string;attemptId:string};source:{kind:'discussion';sourceIds:string[]}|{kind:'manual';authorId:string;operationId:string}|{kind:'bootstrap'};modifiedRevision:number;fields?:Record<string,{modifiedRevision:number;authorId:string;operationId:string}>};
+export type CardMetadata = {semanticRevision?:number;basis?:{status:'needs-review'|'reviewed';revision:number;changedIds:string[];history?:unknown[]};derivedFrom?:string;role?:'visual-region'|'knowledge';knowledge?:{conditions:string[];uncertainty:string;sources:string[];dependencies:string[]};organizer?:{taskId:string;attemptId:string};source:{kind:'discussion';sourceIds:string[]}|{kind:'manual';authorId:string;operationId:string}|{kind:'bootstrap'};modifiedRevision:number;fields?:Record<string,{modifiedRevision:number;authorId:string;operationId:string}>};
 export type CommittedBoard = {revision:number;canvas:Canvas;editorExtras?:EditorExtra[];metadata:Record<string,CardMetadata>;relations?:ReturnType<typeof semanticRelations>;deletionIntents?:{id:string;object:Card|Edge;revision:number;authorId:string;operationId:string}[]};
 export function parsePatch(value:unknown):BoardPatch {
  const p=value as BoardPatch;
@@ -101,4 +101,3 @@ export function parsePatch(value:unknown):BoardPatch {
  }
  return p;
 }
-

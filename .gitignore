@@ -187,3 +187,9 @@
 !/runtime/canvas/structure-rules.mjs
 !/tests/canvas-structures.test.mjs
 !/tests/canvas-structures-browser.mjs
+# Ticket 20 evidence validity, explicit review and public/browser acceptance.
+!/runtime/canvas/evidence.mjs
+!/runtime/canvas/EVIDENCE.md
+!/prototypes/whiteboard-integration/src/BasisReview.tsx
+!/tests/evidence-revalidation.test.mjs
+!/tests/evidence-revalidation-browser.mjs
