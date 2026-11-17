@@ -55,3 +55,22 @@
 !/runtime/companion/output.schema.json
 !/runtime/companion/README.md
 !/runtime/companion/whiteboard.mjs
+
+# Reviewed public regression tests and synthetic frozen baseline only.
+!/tests/
+/tests/*
+!/tests/legacy-runtime.test.mjs
+!/tests/legacy-http.test.mjs
+!/tests/legacy-browser.mjs
+!/baselines/
+/baselines/*
+!/baselines/whiteboard-v1/
+/baselines/whiteboard-v1/*
+!/baselines/whiteboard-v1/README.md
+!/baselines/whiteboard-v1/manifest.json
+!/baselines/whiteboard-v1/quality-cases.json
+!/baselines/whiteboard-v1/legacy-session.json
+!/baselines/whiteboard-v1/scoring.md
+!/baselines/whiteboard-v1/performance.json
+!/baselines/whiteboard-v1/performance-dataset.mjs
+!/.gitattributes
