@@ -64,3 +64,15 @@ test('unsupported answer replacement fails closed without advancing the public c
 test('stopped DSH reception reads no bodies and a fresh durable boundary excludes the disabled interval',async()=>{
  const f=await fixture();try{const bound=await f.connector.enable();await f.call('organizer-control',{topicId:bound.topic.id,action:'stop-reception'});const original=f.ctx.sessionQuery.readEvent;f.ctx.sessionQuery.readEvent=()=>{throw Error('disabled body read');};f.append('assistant/message',{turn:1,message:{content:[{type:'text',text:'disabled'}]}});f.append('turn/end',{turn:1,reason:{kind:'completed'}});await f.connector.poll();await f.call('organizer-control',{topicId:bound.topic.id,action:'resume-reception'});await f.connector.poll();f.ctx.sessionQuery.readEvent=original;f.append('turn/start',{turn:2});f.append('user/message',{source:{kind:'user'},content:[{type:'text',text:'new'}]});f.append('assistant/message',{turn:2,message:{content:[{type:'text',text:'new answer'}]}});f.append('turn/end',{turn:2,reason:{kind:'completed'}});await f.connector.poll();const status=await f.call('turn-status',{topicId:bound.topic.id});assert.deepEqual(status.pending.map(s=>s.turnId),['2']);}finally{await f.close();}
 });
+
+test('DSH recovery drains more than one bounded batch from the durable authorized cursor after Runtime exit',async()=>{
+ const f=await fixture();try{
+  const bound=await f.connector.enable();await f.call('stop');
+  for(let turn=1;turn<=101;turn++){
+   if(turn>1){f.append('turn/start',{turn});f.append('user/message',{source:{kind:'user'},content:[{type:'text',text:'authorized '+turn}]});}
+   f.append('assistant/message',{turn,message:{content:[{type:'text',text:'answer '+turn}]}});f.append('turn/end',{turn,reason:{kind:'completed'}});
+  }
+  await f.connector.poll();let status=await f.call('turn-status',{topicId:bound.topic.id});assert.equal(status.received,100);assert.equal(status.pending[99].turnId,'100');
+  await f.call('stop');await f.connector.poll();status=await f.call('turn-status',{topicId:bound.topic.id});assert.equal(status.received,101);assert.equal(status.pending[100].turnId,'101');await f.connector.poll();assert.equal((await f.call('turn-status',{topicId:bound.topic.id})).received,101);
+ }finally{await f.close();}
+});

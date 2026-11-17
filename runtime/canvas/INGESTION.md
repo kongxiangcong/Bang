@@ -34,3 +34,54 @@ Windows 10, native Linux ingestion, actual Codex/DSH source adapters, model orga
 Final integration verification: merged ticket 35 (`3a16c80`) preserving both CLI command sets. Combined CompletedTurn/binding/Canvas exchange suite: **17 passed**, zero failures/skips. A subsequent focused HTTP/CLI status test passed after adding the actual JSON-stdin CLI assertion. TypeScript/Vite build passed (existing large chunk warning). Three real Chrome scripts passed: completed-turn receive/close/restart/reopen; topic create/select/switch/takeover; standard Canvas exchange. `git diff --check` clean. Source reception remains synthetic connector evidence, not actual host integration.
 
 Ticket 16 adds stopped-reception handling before body reads. The accepted cursor freezes; a separate discard observation cursor never counts received turns. `resume-reception` waits for a signed metadata-only `reception-boundary` checkpoint, closes a visible disabled interval, and excludes its current in-progress turn. See `ORGANIZER.md` for exact contract, controlled adapter tests and limits. Original calling-turn/backfill rules still apply outside an explicitly resumed interval.
+
+## Ticket 18 — Source switching and bounded recovery
+
+Source takeover reuses the existing signed binding and atomic frozen-boundary
+protocol. Confirming a fresh preview freezes the old accepted cursor immediately;
+already-received source versions retain their queue order and remain eligible for
+organization, including an in-flight attempt. A failed Executor or project pause
+does not prevent new binding or reception. Old-source new batches are rejected;
+exact already-accepted delivery retries still return their durable receipt.
+Binding identity namespaces include connector, host, installation and session;
+identical turn/version/cursor strings in different bindings do not deduplicate.
+Recovery retains manual card identity, content, and history.
+
+DSH recovery now yields after 100 completed/gap events, matching the existing
+public ingestion bound. Its next poll resumes the persisted cursor rather than
+resending an oversized batch forever. A 101-turn controlled idle interval is
+received as 100 then 1 across native Runtime reopen, with no duplicate sources.
+No schema, trust, publication, cancellation or model execution contract changed.
+The stop/re-enable signed metadata boundary remains authoritative; disabled
+intervals are not replayed, and terminal/missing-record gaps remain inspectable.
+
+### Verification (2026-11-18)
+
+Windows 11, Node 25.8.1, packaged native helper, controlled signed sources/DSH
+SessionQuery/Codex transport and loopback Executor. No real user chat/model calls,
+credentials, host configuration or native binary changes. Physical OS sleep was
+not triggered: source accumulation while polling is idle plus Runtime reopen is
+the controlled recovery scenario. Real-host and platform release gates remain
+with tickets 24/27 and the acceptance matrix.
+
+RED: the 101-turn DSH public test failed with `Bounded ingestion events required`;
+GREEN: yield at the 100-event boundary; all six DSH tests passed. Cross-namespace
+regression observes authentication failure, nonempty preview, successful takeover,
+old late-event rejection, persistent ordered old/new backlog, explicit retry plus
+project resume, source receipts and unchanged manual knowledge. A separate gated
+Executor test proves takeover finishes while model work is still waiting and the
+old accepted turn may finish. These existing primitives passed without replacement.
+An initial fixture retried without explicitly resuming an authentication-paused
+project and correctly timed out; the fixture now performs both public controls.
+
+Commands: `node --test --test-force-exit tests/source-switch.test.mjs tests/dsh-session-connector.test.mjs tests/codex-connector.test.mjs tests/organizer-controls.test.mjs tests/topic-binding.test.mjs`;
+`npm run build --prefix prototypes/whiteboard-integration`;
+`node tests/topic-binding-browser.mjs`. The suite includes actual process-death
+recovery from ticket 14, controlled stopped intervals in both adapters, missing
+records, receipt deduplication and signed authority rejection. Actual Chrome
+verified a one-turn backlog in takeover preview, cancellation, confirmation,
+frozen accepted cursor, retained backlog and reload. The browser driver first
+hit a same-document fragment navigation timeout; it now opens a new document
+for the separate host launch. Build passed with the existing chunk-size warning.
+
+Final merged verification against integration aeee00e: 44 public test executions passed, zero failures/skips (shared ingestion fixture imports also execute its six regression tests in two files). Actual Chrome passed; git diff --check clean. No new persistent tables or backup mapping changes.

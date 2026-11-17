@@ -180,3 +180,6 @@
 !/runtime/canvas/structure-rules.mjs
 !/tests/canvas-structures.test.mjs
 !/tests/canvas-structures-browser.mjs
+
+# Ticket 18 controlled namespace switching and backlog recovery.
+!/tests/source-switch.test.mjs
