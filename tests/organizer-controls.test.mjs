@@ -1,15 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
+import {spawnSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
 import {fixture} from './completed-turns.test.mjs';
 import {runtimeOperation} from '../runtime/native/runtime.mjs';
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 async function until(fn){for(let i=0;i<100;i++){const v=await fn();if(v)return v;await delay(50);}throw Error('condition timed out');}
 async function controlled(handler){const server=createServer(async(req,res)=>{let raw='';for await(const c of req)raw+=c;await handler(JSON.parse(raw),res);});await new Promise(r=>server.listen(0,'127.0.0.1',r));process.env.BANG_ORGANIZER_ENDPOINT=`http://127.0.0.1:${server.address().port}`;const f=await fixture();delete process.env.BANG_ORGANIZER_ENDPOINT;f.status=()=>f.call('organizer-status',{topicId:f.bound.topic.id});f.control=action=>f.call('organizer-control',{topicId:f.bound.topic.id,action});const close=f.close;f.close=async()=>{await close();server.closeAllConnections();await new Promise(r=>server.close(r));};return f;}
-test('pause keeps reception and allows in-flight completion; cancel fences late publication and skip preserves a durable gap',async()=>{
+test('pause keeps reception and allows in-flight completion before explicitly resuming backlog',async()=>{
  let release,started;const gate=new Promise(r=>release=r),entered=new Promise(r=>started=r);
  const f=await controlled(async(input,res)=>{started();await gate;res.end(JSON.stringify({version:1,changes:[]}));});
- try{await f.call('organizer-enable',{topicId:f.bound.topic.id});await f.call('turn-ingest',f.signed([f.turn()]));await entered;await f.control('pause');await f.call('turn-ingest',f.signed([f.turn('second','c2')],'c1'));release();await until(async()=> (await f.status()).tasks[0]?.status==='no-change');assert.equal((await f.call('turn-status',{topicId:f.bound.topic.id})).backlog,1);assert.equal((await f.status()).enabled,false);
+ try{assert.deepEqual((await f.status()).limits,{concurrency:1,timeoutMs:120000,callsPerHour:60,batchSize:1});await f.call('organizer-enable',{topicId:f.bound.topic.id});await f.call('turn-ingest',f.signed([f.turn()]));await entered;await f.control('pause');await f.call('turn-ingest',f.signed([f.turn('second','c2')],'c1'));release();await until(async()=> (await f.status()).tasks[0]?.status==='no-change');assert.equal((await f.call('turn-status',{topicId:f.bound.topic.id})).backlog,1);assert.equal((await f.status()).enabled,false);
  await f.control('resume');await until(async()=> (await f.call('turn-status',{topicId:f.bound.topic.id})).organized===2);
  }finally{release();await f.close();}
 });
@@ -18,9 +20,9 @@ test('cancel immediately revokes publication and explicit skip retains source pl
  const f=await controlled(async(input,res)=>{entered();await gate;res.end(JSON.stringify({version:1,changes:[{type:'create-card',id:'late',text:'late',conditions:[],uncertainty:'',sources:[input.completedTurns[0].id]}]}));});
  try{await f.call('organizer-enable',{topicId:f.bound.topic.id});await f.call('turn-ingest',f.signed([f.turn()]));await started;await f.control('cancel');release();await delay(200);assert.equal((await runtimeOperation(f.project,'state',f.bound.topic.id)).revision,0);assert.equal((await f.status()).tasks[0].status,'cancelled');await f.control('skip');await f.call('stop');const queue=await f.call('turn-status',{topicId:f.bound.topic.id});assert.equal(queue.received,1);assert.equal(queue.organized,0);assert.equal(queue.backlog,0);assert.equal(queue.gaps[0].reason,'user-skipped');assert.equal((await f.status()).tasks[0].status,'skipped');}finally{release();await f.close();}
 });
-test('project limits count retries, persist exhaustion, and require explicit resume after budget reset',async()=>{
+test('project limits count retries and persist exhaustion across reopen',async()=>{
  const f=await controlled(async(input,res)=>{res.statusCode=503;res.end('{}');});
- try{const configured=await f.call('organizer-configure',{limits:{callsPerHour:2,timeoutMs:500,concurrency:1,batchSize:1}});assert.equal(configured.limits.callsPerHour,2);await f.call('organizer-enable',{topicId:f.bound.topic.id});await f.call('turn-ingest',f.signed([f.turn()]));const s=await until(async()=>{const s=await f.status();return s.pauseReason==='BUDGET_EXHAUSTED'&&s;});assert.equal(s.callsLastHour,2);assert.equal(s.tasks[0].attempts.length,2);await f.call('stop');assert.equal((await f.status()).pauseReason,'BUDGET_EXHAUSTED');assert.equal((await f.status()).callsLastHour,2);assert.equal((await f.call('turn-status',{topicId:f.bound.topic.id})).backlog,1);
+ try{const configured=await f.call('organizer-configure',{limits:{callsPerHour:2,timeoutMs:500,concurrency:1,batchSize:1}});assert.equal(configured.limits.callsPerHour,2);await f.call('organizer-enable',{topicId:f.bound.topic.id});await f.call('turn-ingest',f.signed([f.turn()]));const s=await until(async()=>{const s=await f.status();return s.pauseReason==='BUDGET_EXHAUSTED'&&s;});assert.equal(s.callsLastHour,2);assert.equal(s.tasks[0].attempts.length,2);await f.call('stop');assert.equal((await f.status()).pauseReason,'BUDGET_EXHAUSTED');assert.equal((await f.status()).callsLastHour,2);const cli=spawnSync(process.execPath,[fileURLToPath(new URL('../runtime/canvas/bang.mjs',import.meta.url)),'organizer-status','--project',f.project],{input:JSON.stringify({topicId:f.bound.topic.id}),encoding:'utf8',windowsHide:true});assert.equal(cli.status,0,cli.stderr);assert.equal(JSON.parse(cli.stdout).callsLastHour,2);assert.equal((await f.call('turn-status',{topicId:f.bound.topic.id})).backlog,1);
  }finally{await f.close();}
 });
 test('transport timeout retries at most twice, authentication pauses immediately, and manual saves stay available',async()=>{
@@ -55,4 +57,11 @@ test('controlled hourly clock expires usage without silently resuming budget pau
 test('executor reported usage is visible and survives reopen without prompts',async()=>{
  const f=await controlled(async(input,res)=>res.end(JSON.stringify({version:1,changes:[],usage:{inputTokens:12,outputTokens:4}})));
  try{await f.call('organizer-enable',{topicId:f.bound.topic.id});await f.call('turn-ingest',f.signed([f.turn()]));await until(async()=> (await f.status()).tasks[0]?.status==='no-change');await f.call('stop');assert.deepEqual((await f.status()).tasks[0].usage,{inputTokens:12,outputTokens:4});}finally{await f.close();}
+});
+test('complete backup preserves limits and freezes restored project policy and pending sources',async()=>{
+ const f=await controlled(async(input,res)=>res.end(JSON.stringify({version:1,changes:[]})));let restored;
+ try{await f.call('organizer-configure',{limits:{callsPerHour:7,batchSize:2}});await f.call('turn-ingest',f.signed([f.turn()]));const backup=await f.call('backup-export');restored=(await f.call('backup-restore',{backup})).projectPath;const status=await runtimeOperation(restored,'organizer-status',undefined,{topicId:f.bound.topic.id});assert.equal(status.limits.callsPerHour,7);assert.equal(status.pauseReason,'RESTORED_FROZEN');assert.equal(status.enabled,false);assert.equal((await runtimeOperation(restored,'turn-status',undefined,{topicId:f.bound.topic.id})).frozen,1);}finally{if(restored)await runtimeOperation(restored,'stop');await f.close();}
+});
+test('explicit retry reuses its source identity after transport exhaustion',async()=>{
+ let ready=false;const f=await controlled(async(input,res)=>{if(!ready){res.statusCode=503;res.end('{}');}else res.end(JSON.stringify({version:1,changes:[]}));});try{await f.call('organizer-enable',{topicId:f.bound.topic.id});await f.call('turn-ingest',f.signed([f.turn()]));const failed=await until(async()=>{const s=await f.status();return s.tasks[0]?.status==='failed'&&s.tasks[0];});assert.equal(failed.attempts.length,3);ready=true;await f.control('retry');const success=await until(async()=>{const s=await f.status();return s.tasks[0]?.status==='no-change'&&s.tasks[0];});assert.equal(success.id,failed.id);assert.equal(success.sourceId,failed.sourceId);assert.equal(success.attempts.length,4);assert.equal((await f.call('turn-status',{topicId:f.bound.topic.id})).organized,1);}finally{await f.close();}
 });

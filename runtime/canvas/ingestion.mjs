@@ -33,6 +33,7 @@ export function ingestTurns(project,workspaceId,input){
    if(batch.previousCursor!==(metadata.discardCursor??metadata.receivedCursor??metadata.startCursor))throw Error('Disabled interval observation cursor mismatch');
    if(!Array.isArray(batch.events)||!batch.events.length||batch.events.length>100||batch.events.some(e=>!string(e.cursor)))throw Error('Bounded checkpoint events required');
    const event=batch.events[0],resume=batch.events.length===1&&event.kind==='reception-boundary';
+   if(resume&&!string(event.turnId))throw Error('Verified resume turn identity required');
    if(resume&&!metadata.resumeRequested)throw Error('Explicit reception resume required');
    if(resume){metadata.receptionStopped=false;metadata.resumeRequested=false;metadata.receivedCursor=event.cursor;metadata.callingTurnObserved=true;const interval=metadata.receptionIntervals.at(-1);interval.endCursor=event.cursor;interval.resumedAt=new Date().toISOString();delete metadata.discardCursor;}
    else metadata.discardCursor=batch.events.at(-1).cursor;

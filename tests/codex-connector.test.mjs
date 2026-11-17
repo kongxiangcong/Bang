@@ -96,3 +96,6 @@ test('a genuine prompt hook may precede persisted turn creation; no body or earl
   assert.equal((await f.connector.poll(binding.topic.id,binding.source.id)).received,1);
  }finally{await f.close();}
 });
+test('stopped Codex reception skips bodies, resumes at metadata head and never backfills that turn',async()=>{
+ const f=await fixture();try{const bound=await f.connector.enable(f.hook,{scope:['*']});await f.call('organizer-control',{topicId:bound.topic.id,action:'stop-reception'});f.turns[1]={id:'calling',status:'completed',completedAt:2};await f.connector.poll(bound.topic.id,bound.source.id);assert.deepEqual(f.reads,[]);await f.call('organizer-control',{topicId:bound.topic.id,action:'resume-reception'});await f.connector.poll(bound.topic.id,bound.source.id);assert.deepEqual(f.reads,[]);f.turns.push({id:'new',status:'completed',completedAt:3});f.bodies.set('new',[{type:'userMessage',id:'u2',content:[{type:'text',text:'new'}]},{type:'agentMessage',id:'a2',phase:'final_answer',text:'new answer'}]);await f.connector.poll(bound.topic.id,bound.source.id);assert.deepEqual(f.reads,['new']);assert.deepEqual((await f.call('turn-status',{topicId:bound.topic.id})).pending.map(s=>s.turnId),['new']);}finally{await f.close();}
+});

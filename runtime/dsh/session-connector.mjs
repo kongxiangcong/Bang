@@ -26,6 +26,13 @@ export function createDshConnector(ctx,config){
   if(!active||closed)return;
   const a=active;if(ctx.agents.get(a.agent.id)!==a.agent)throw Error('DSH initiating Agent no longer live');
   const bound=await call('binding-status',a.capability);if(bound.status!=='bound'||bound.source.id!==a.sourceId)return;
+  if(bound.source.receptionStopped){
+   if(!bound.source.resumeRequested)return;
+   const cut=a.session.seq;if(await ctx.sessions.flush(a.session)!==true)throw Error('DSH durability listener unavailable');
+   const turnId=starts.get(a.session)?.turnId;if(!turnId)throw Error('DSH current boundary unavailable');
+   const batch={sourceId:a.sourceId,previousCursor:bound.source.discardCursor??bound.source.receivedCursor??bound.source.startCursor,events:[{kind:'reception-boundary',cursor:cursor(cut),turnId}]};
+   await call('turn-ingest',{batch,proof:proof(a.identity,{purpose:'completed-turn-ingestion',sourceId:a.sourceId,batchHash:hash(JSON.stringify(batch))})});return;
+  }
   const previousCursor=bound.source.receivedCursor??bound.source.startCursor;
   // Capture the cut BEFORE flush: later appends may not be part of this receipt.
   const cut=a.session.seq;if(await ctx.sessions.flush(a.session)!==true)throw Error('DSH durability listener unavailable');

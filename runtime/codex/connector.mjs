@@ -52,7 +52,14 @@ export class CodexSessionConnector {
  async poll(topicId,sourceId){
   const sources=await this.call('binding-sources',{topicId}),source=sources.find(s=>s.id===sourceId);
   if(!source?.active||source.host!=='codex'||source.instanceId!==this.instanceId) return {status:'disabled',received:0};
+  if(source.receptionStopped&&!source.resumeRequested)return {status:'reception-stopped',received:0};
   await this.identity(source.sessionId);
+  if(source.receptionStopped){
+   const result=await this.transport.request('thread/turns/list',{threadId:source.sessionId,limit:1,itemsView:'notLoaded',sortDirection:'desc'}),head=result.data?.[0];
+   if(!head||typeof head.id!=='string')return {status:'waiting-for-resume-boundary',received:0};
+   const {workspaceId}=await this.call('start'),batch={sourceId,previousCursor:source.discardCursor??source.receivedCursor??source.startCursor,events:[{kind:'reception-boundary',turnId:head.id,cursor:cursor(head.id,'reception-resume')}]};
+   await this.call('turn-ingest',{batch,proof:this.proof({workspaceId,sessionId:source.sessionId,turnId:source.startTurnId,cursor:source.startCursor,scope:[topicId],purpose:'completed-turn-ingestion',sourceId,batchHash:hash(JSON.stringify(batch))})});return {status:'resumed',received:0};
+  }
   const previous=source.receivedCursor??source.startCursor,[anchorId,anchorVersion,anchorHash]=decode(previous);
   let pageCursor=await this.anchor(source.sessionId,anchorId),received=0,last=previous;
   if(!pageCursor){if(!source.receivedCursor)return {status:'waiting-for-calling-turn',received:0};failure('authorized boundary missing; explicit gap decision required');}
@@ -61,6 +68,10 @@ export class CodexSessionConnector {
    const result=await this.transport.request('thread/turns/list',{threadId:source.sessionId,limit:1,itemsView:'notLoaded',sortDirection:'asc',cursor:pageCursor});
    if(!Array.isArray(result.data)||result.data.length>1)failure('invalid metadata page');
    const turn=result.data[0];if(!turn)return {status:'idle',received};
+   if(turn.id===anchorId&&anchorVersion==='reception-resume'){
+    if(!result.nextCursor)return {status:'idle',received};
+    if(result.nextCursor===pageCursor)failure('metadata cursor did not advance');pageCursor=result.nextCursor;continue;
+   }
    // A separate stored reader reports active turns as interrupted with no
    // completedAt. Neither Stop nor that projection is terminal evidence.
    if(!['completed','failed','interrupted'].includes(turn.status)||!Number.isFinite(turn.completedAt))return {status:'waiting-for-completion',received};
