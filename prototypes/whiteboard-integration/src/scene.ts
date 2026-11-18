@@ -7,7 +7,7 @@ export type Source = {messageId:string;startLine:number;endLine:number};
 export type Thought = {id:string;groupId:string;text:string;explanation:string;sources:Source[];status:'reported'|'hypothesis'|'open'|'inferred'|'supported'|'rejected'|'disputed'};
 export type Group = {id:string;title:string;goal:string;relation:'loose'|'hierarchy'|'radial'|'sequence';explanation:string};
 export type Relation = {id:string;from:string;to:string;kind:'contains'|'sequence'|'association'|'supports'|'revises';label?:string};
-export type Change = {id:string;throughRound:number;goal:string;changes:{upsertGroups?:Group[];upsertNodes?:Thought[];upsertRelations?:Relation[];removeNodeIds?:string[];removeRelationIds?:string[]}};
+export type Change = {id:string;throughRound:number;goal:string;changes:{upsertGroups?:Group[];upsertNodes?:Thought[];upsertRelations?:Relation[];removeNodeIds?:string[];removeRelationIds?:string[];removeGroupIds?:string[]}};
 export type Meta = {bangNode?:Thought;bangGroup?:Group;bangRelation?:Relation;generatedText?:string;generatedPosition?:{x:number;y:number};pendingNode?:Thought;pendingRemoval?:boolean;userEdited?:boolean;eventId?:string;manualRoute?:boolean;routeVersion?:number};
 export const metadata=(e:ExcalidrawElement):Meta=>(e.customData??{}) as Meta;
 const style={roughness:0,fontFamily:2,fontSize:18,strokeColor:'#364c43',strokeWidth:1};
@@ -85,6 +85,9 @@ export async function applyChange(current:readonly ExcalidrawElement[],event:Cha
  const removed=new Set(event.changes.removeNodeIds??[]);
  for(const id of [...removed]){const owner=output.find(e=>e.id===id&&!e.isDeleted);if(!owner)continue;const meta=metadata(owner),label=output.find(e=>e.type==='text'&&e.containerId===id);if(meta.userEdited||(label?.type==='text'&&label.originalText!==meta.generatedText)){removed.delete(id);output=output.map(e=>e.id===id?bump(e,{customData:{...meta,pendingRemoval:true,eventId:event.id}}):e)}}
  for(const id of removed)nodes.delete(id);
+ const removedGroups=new Set((event.changes.removeGroupIds??[]).filter(id=>![...nodes.values()].some(n=>n.groupId===id)));
+ for(const id of removedGroups)groups.delete(id);
+ output=output.map(e=>metadata(e).bangGroup&&removedGroups.has(metadata(e).bangGroup!.id)?bump(e,{isDeleted:true}):e);
  for(const [id,e]of relations)if(removed.has(e.from)||removed.has(e.to)||(event.changes.removeRelationIds??[]).includes(id))relations.delete(id);
  const removedElements=new Set([...removed,...output.filter(e=>metadata(e).bangRelation&&!relations.has(e.id)).map(e=>e.id)]);
  output=output.map(e=>removedElements.has(e.id)||(e.type==='text'&&e.containerId&&removedElements.has(e.containerId))?bump(e,{isDeleted:true}):e);
