@@ -18,6 +18,20 @@ export const platforms = {
       'process-host.exe': '4af1c4ab8344bfab690fccad2588496c87de6415c90d516592bb191b2ac00dbd',
     },
   },
+  'linux-x64': {
+    name: 'linux-x64',
+    launcher: 'bang',
+    packageExtension: '.tar.gz',
+    archive: 'node-v25.8.1-linux-x64.tar.xz',
+    archiveSha256: '8c13c85f73b1f8e57d5fff0732b3f25880910aafa6d5c811073a2ec7fcd45b4c',
+    archiveRoot: 'node-v25.8.1-linux-x64',
+    node: 'bin/node',
+    npm: 'lib/node_modules/npm/bin/npm-cli.js',
+    helpers: {
+      'lock-host': '37911f69f2c447131d253f745b028b303a60d287919c4fd857f33145c288d50d',
+      'process-host': '22c0d7ec82f98d43e418ba8c0fd0491d1703c55a2dd1cad450764383a5fb5ec5',
+    },
+  },
 };
 
 export function sha256(file) {

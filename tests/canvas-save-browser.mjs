@@ -85,15 +85,20 @@ async function click(x,y){await cmd('Input.dispatchMouseEvent',{type:'mousePress
   await cmd('Input.insertText',{text});
   assert.equal(await evaluate('document.activeElement.value'),text);
  }
+ async function reloadWithCards(count) {
+  const previousNavigation=await evaluate('performance.timeOrigin');
+  await cmd('Page.reload');
+  await until(()=>evaluate(`performance.timeOrigin!==${previousNavigation} && document.querySelectorAll('textarea[aria-label^="卡片正文 "]').length===${count}`));
+ }
  await button('新增知识卡片');await type('卡片正文 3','无聊天来源的人工知识');
  assert.equal((await (await canvasRequest(url+'/api/canvas/demo/state')).json()).revision,0);
  await button('保存');await until(()=>evaluate('document.body.innerText.includes("已保存 · 修订 1")'));
  let state=await (await canvasRequest(url+'/api/canvas/demo/state')).json();const manualId=state.canvas.nodes[2].id;assert.equal(state.metadata[manualId].source.kind,'manual');assert.equal(state.canvas.nodes[2].text,'无聊天来源的人工知识');
- await cmd('Page.reload');await until(()=>evaluate(`document.querySelectorAll('textarea[aria-label^="卡片正文 "]').length===3`));
+ await reloadWithCards(3);
  assert.equal(await evaluate(`document.querySelectorAll('textarea[aria-label^="卡片正文 "]')[2].value`),'无聊天来源的人工知识');
  await type('卡片正文 3','人工改写');await button('保存');await until(()=>evaluate('document.body.innerText.includes("已保存 · 修订 2")'));
  await button('删除卡片 3');await button('保存');await until(()=>evaluate('document.body.innerText.includes("已保存 · 修订 3")'));
- await cmd('Page.reload');await until(()=>evaluate(`document.querySelectorAll('textarea[aria-label^="卡片正文 "]').length===2`));
+ await reloadWithCards(2);
  state=await (await canvasRequest(url+'/api/canvas/demo/state')).json();assert.equal(state.revision,3);assert.equal(state.canvas.nodes.length,2);
  await cmd('Page.bringToFront');
  await until(()=>evaluate('!!window.canvasBoard?.snapshot().length'));
