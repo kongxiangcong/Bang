@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -53,7 +53,7 @@ function codexCheck(candidate) {
 function packageFiles() {
   const manifestName = 'package-manifest.json';
   if (!regularFile(manifestPath)) throw Error('Bang package manifest is missing');
-  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  const { manifest, release } = packageMetadata();
   const platform = platforms[manifest.platform];
   if (manifest.format !== 1 || manifest.platform !== process.platform + '-' + process.arch ||
       !platform || manifest.nodeVersion !== nodeVersion || process.versions.node !== nodeVersion ||
@@ -67,7 +67,7 @@ function packageFiles() {
       throw Error('Bang package file failed integrity check: ' + relative);
     }
   }
-  return manifest;
+  return { manifest, release };
 }
 
 function explicitPreparation(project, executable) {
@@ -92,8 +92,15 @@ function explicitPreparation(project, executable) {
   return JSON.parse(prepared.stdout);
 }
 
-function releaseIdentity(manifest) {
-  return { directory: root, sourceCommit: manifest.sourceCommit, manifestSha256: sha256(manifestPath) };
+function packageMetadata() {
+  const bytes = fs.readFileSync(manifestPath);
+  const manifest = JSON.parse(bytes.toString('utf8'));
+  const release = {
+    directory: root,
+    sourceCommit: manifest.sourceCommit,
+    manifestSha256: createHash('sha256').update(bytes).digest('hex'),
+  };
+  return { manifest, release };
 }
 
 async function projectPlan(project, release, values = {}) {
@@ -158,15 +165,14 @@ try {
   }
   if (command === 'plan' || command === 'status') {
     const release = regularFile(manifestPath)
-      ? releaseIdentity(JSON.parse(fs.readFileSync(manifestPath, 'utf8')))
+      ? packageMetadata().release
       : null;
     console.log(JSON.stringify(await projectPlan(project, release, values)));
   } else if (command === 'stop') {
     const { runtimeOperation } = await import('../runtime/native/runtime.mjs');
     console.log(JSON.stringify(await runtimeOperation(project, 'stop')));
   } else {
-    const manifest = packageFiles();
-    const release = releaseIdentity(manifest);
+    const { manifest, release } = packageFiles();
     if (Object.hasOwn(operations, command)) {
       console.log(JSON.stringify(maintain(project, operations[command], release)));
     } else if (command === 'serve') {

@@ -75,9 +75,8 @@ function sameRelease(left, right) {
   return left?.directory === right?.directory && left?.manifestSha256 === right?.manifestSha256;
 }
 
-export function maintenancePlan(project, targetRelease = null) {
-  const files = paths(project);
-  const { current, previousRelease, pending } = readReceipt(files);
+function describeMaintenance(project, files, receipt, targetRelease) {
+  const { current, previousRelease, pending } = receipt;
   const hook = readHook(files);
   const state = hook.state === 'existing'
     ? current ? (hook.sha256 === current.hook.sha256 ? 'owned' : 'modified') : 'untracked'
@@ -103,9 +102,15 @@ export function maintenancePlan(project, targetRelease = null) {
     activeRelease: current?.release ?? null,
     previousRelease,
     targetRelease,
+    targetHookSha256: targetRelease ? digest(codexHookFiles(project).hooks) : null,
     interrupted: pending !== null,
     actions,
   };
+}
+
+export function maintenancePlan(project, targetRelease = null) {
+  const files = paths(project);
+  return describeMaintenance(project, files, readReceipt(files), targetRelease);
 }
 
 function publish(file, text, create = false, verify = () => {}) {
@@ -178,7 +183,7 @@ function transact(files, receipt, before, after, next) {
 function apply(project, command, release) {
   const files = paths(project);
   const receipt = readReceipt(files);
-  const plan = maintenancePlan(project, release);
+  const plan = describeMaintenance(project, files, receipt, release);
   if (command === 'rollback') {
     if (!receipt.pending) return { status: 'unchanged', ...plan };
     rollback(files, receipt);
