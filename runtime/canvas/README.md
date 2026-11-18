@@ -733,3 +733,106 @@ Six focused Compiler/model Runtime/comparison validation tests passed, including
 fixed/rootless agreement and atomic public rejection. Final production build and
 actual Chrome argument/flow browser script passed again on that merged tree.
 `git diff --check` passed. No broad model/host/platform claims were added.
+
+
+## Ticket 34 — mixed regions and selected reorganization (2026-11-18)
+
+Structure rules revision 4 coordinates independent typed connected regions. New
+unstructured knowledge with a unique explicit relation family selects
+classification, argument or flow. General cross links do not merge regions;
+ambiguous/unconnected knowledge stays free. Explicit new-card comparison,
+timeline and radial intents retain the existing shared contracts. Compiler
+`autoStructure:true` and automatic Organizer publication share this selection;
+decisions report rule revision, actual scope and reason. Existing cards are never
+retyped by this automatic pass. No edges or missing facts are fabricated.
+
+Protected CLI JSON stdin and HTTP POST add `reorganize-request` with
+`{ids,baseRevision,intent:"reorganize-selection"}`, `reorganize-preview` with `{id}`,
+and `reorganize-accept` with `{id,previewKey}`. A request authorizes analysis of
+1–100 committed knowledge cards, not publication or general background processing.
+The existing resource-limited Organizer task lifecycle invokes the configured
+executor outside the owner queue. Its input includes only selected usable knowledge,
+internal usable relations, their metadata and versioned rules. Withdrawn knowledge
+requires review first. Unseen persisted objects never enter a deletion/replacement
+operation. Both Codex and DSH trusted prompts distinguish this task subtype, and
+both use the same closed provider result schema.
+
+`reorganize-card` output contains only `id`, nullable `structure`, and `reason`.
+The coordinator rejects outside-selection identities, text, geometry, new relations,
+unsupported inference and changes to an already committed structure. Ambiguous
+regions remain free; changing an existing explicit type remains the existing manual
+structure-choice operation. Model candidates compile locally; previews contain the
+actual candidate geometry, reasons and scope without changing the committed board.
+The page supports authorization, candidate viewing, an SVG preview, explicit adoption,
+commit receipt and manual refresh. Pending candidate lookup and committed state
+survive reopen.
+
+Acceptance binds the exact current board baseline (including metadata and manual
+ABA), project, topic, task and compiled candidate, then uses the existing common
+publisher with explicit manual adoption. This intentionally rejects even unrelated
+intervening changes rather than guessing a safe rebase. Fixed/unselected positions,
+stacking, identity, original body/source metadata and all relations are retained.
+Ticket 19 rejection/reconsideration code is unchanged. Restore fences pending and
+running selected tasks; late results cannot even create a usable preview. Complete
+backup retains task evidence but freezes selected authority in its existing closed
+`organizer_tasks` table. No new persistent tables or native binaries.
+
+Evidence: Windows 11 / Node 25.8.1, packaged native helper, synthetic sources,
+controlled HTTP executor and controlled Codex/DSH CLI fixtures. No personal chat,
+real service/model request, credentials or global configuration changes. RED/GREEN
+observed unknown public operation, missing mixed selection, and missing DSH trusted
+selected prompt. The Codex/DSH native fixtures validate actual adapter dispatch,
+process exit, provider grammar/prompt and common acceptance, not model quality.
+
+Before integration: 41 shared structure/Runtime tests and 42 selected/human-intent/
+historical-restore tests passed. Actual JSON-stdin acceptance, invalid capability,
+idempotent receipt, 2-of-107 bounded context, fixed/unrelated preservation, manual
+ABA, complete-backup freeze, restore and late-result revocation are covered.
+Integrated DSH commit b8fb8bc at 4df8210; resolved its one Organizer status conflict
+by retaining both DSH detection and selected-task private-body redaction.
+Final merged focused test/build/browser results are recorded below.
+
+Not claimed: real model structure quality (ticket 43), real host conversations,
+Windows 10/Linux browser coverage, automatic semantic evidence-novelty detection,
+retyping existing regions after new evidence, optimal layout, or performance targets.
+The full current baseline check is deliberately conservative. Model waits share
+existing timeout/cancellation/budget controls; remote cost cancellation is not implied.
+
+Final merged validation: **12 passed**, no failures/skips, using
+`node --test --test-force-exit --test-name-pattern='mixed rules|automatic Organizer|model cannot|reorganization|restore revokes|trusted selected|DSH completed terminal|Codex CLI stdout|structured output schema' tests/canvas-reorganize.test.mjs tests/codex-executor.test.mjs tests/dsh-executor.test.mjs`.
+`npm run build --prefix prototypes/whiteboard-integration` passed (existing bundle
+size warning). `node tests/canvas-reorganize-browser.mjs` passed in actual Chrome,
+including reopen before adopting the persisted candidate, real protected HTTP,
+compiled geometry, durable receipt, manual refresh and committed reopen.
+`git diff --check` passed. No broad platform/service/quality claim is inferred.
+
+
+### Ticket 34 independent-review correction — directed roots
+
+The original revision-4 rule incorrectly chose the first relation endpoint as a
+root. Independent review reproduced animal → mammal → whale selecting mammal
+when that edge came first, flattening the actual hierarchy. That implementation
+is superseded by rule revision 5; the earlier completion claim was premature.
+
+Root inference now examines the whole directed component: classification/flow
+use a root that reaches every member, argument uses the reversed direction
+(a claim reachable from every reason). Equivalent candidates belong to the same
+cyclic source/sink component, where stable card order chooses the representative.
+Competing root components with no common directed root remain free rather than
+inventing a hierarchy. Scope order is also stable card order. All original edges,
+including cycles and general cross links, remain untouched. Existing committed
+structure is not migrated or retyped by this rule correction.
+
+Public Compiler RED/GREEN reproduced the reported hierarchy and the cycle-order
+failure before implementation. Tests cover classification/flow/argument chains,
+reversed edge/card order, all six edge permutations of three-node cycles and
+competing root components. One test initially assumed argument layers were vertical;
+it was corrected to the established reason-left/claim-right contract. An overly
+broad test filter also selected a native test in the sandbox, where spawn was
+blocked; final native evidence below uses the authorized execution environment.
+
+Final correction: 9 focused Compiler/public Runtime tests passed, including
+controlled automatic publication, selected preview/adoption/reopen, scope guards
+and existing argument/flow preservation. TypeScript check and diff-check passed.
+Latest integration remains b8fb8bc and is already merged. No new browser, real
+model, cross-platform or performance claims; original reviewed failures retained.

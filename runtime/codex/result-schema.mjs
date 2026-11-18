@@ -10,6 +10,7 @@ const structure={anyOf:[
  object({version:{type:'integer',const:1},kind:{type:'string',const:'comparison'},rootId:str,dimensions:strings,option:{type:['string','null']},dimension:{type:['string','null']}})
 ]};
 export const resultSchema=object({version:{type:'integer',const:1},changes:{type:'array',items:{anyOf:[
+ object({type:{type:'string',const:'reorganize-card'},id:str,structure:{anyOf:[...structure.anyOf,{type:'null'}]},reason:str}),
  operation('create-card',{text:str}),operation('create-card',{text:str,structure}),
  operation('edit-card',{text:str}),operation('supplement-card'),operation('delete-relation'),
  operation('create-relation',{fromNode:str,toNode:str,label:str}),

@@ -1,4 +1,5 @@
 import {historyCapacity,maintenancePreview,maintenanceConfirm} from '../canvas/capacity.mjs';
+import {requestReorganization,previewReorganization,acceptReorganization} from '../canvas/reorganize.mjs';
 import {previewRestore,restoreVersion} from '../canvas/restore.mjs';
 import {registerContextBridge,contextOperation,contextStatus} from '../canvas/context.mjs';
 import {proposals,reviewProposal,reconsiderPreview,reconsiderProposal} from '../canvas/proposals.mjs';
@@ -116,6 +117,9 @@ async function daemon(project){
    else if(command==='binding-enable')result=await enableBinding(project,input,connection.epoch);
    else if(command==='binding-status')result=bindingStatus(project,input);
    else if(command==='binding-sources')result=bindingSources(project,input);
+   else if(command==='reorganize-request'){organizerStatus(project,{topicId:topic});result=await requestReorganization(project,topic,input);}
+   else if(command==='reorganize-preview')result=await previewReorganization(project,topic,input);
+   else if(command==='reorganize-accept')result=await acceptReorganization(project,topic,input);
    else if(command==='proposals')result=proposals(project,topic);
    else if(command==='proposal-reconsider-preview')result=await reconsiderPreview(project,topic,input);
    else if(command==='proposal-reconsider')result=await reconsiderProposal(project,topic,input);
