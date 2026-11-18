@@ -275,3 +275,6 @@
 !/prototypes/whiteboard-integration/src/ReorganizeSelection.tsx
 !/tests/canvas-reorganize.test.mjs
 !/tests/canvas-reorganize-browser.mjs
+
+# Ticket 27 actual pinned native Session acceptance with a controlled loopback model.
+!/tests/dsh-session-installed.mjs

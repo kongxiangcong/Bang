@@ -76,3 +76,24 @@ test('DSH recovery drains more than one bounded batch from the durable authorize
   await f.call('stop');await f.connector.poll();status=await f.call('turn-status',{topicId:bound.topic.id});assert.equal(status.received,101);assert.equal(status.pending[100].turnId,'101');await f.connector.poll();assert.equal((await f.call('turn-status',{topicId:bound.topic.id})).received,101);
  }finally{await f.close();}
 });
+test('host durability checkpoints reject failed persistence and join concurrent timer work without recursive flush or duplicate receipt',async()=>{
+ const f=await fixture();try{
+  const bound=await f.connector.enable();f.append('assistant/message',{turn:1,message:{content:[{type:'text',text:'checkpoint answer'}]}});f.append('turn/end',{turn:1,reason:{kind:'completed'}});
+  f.ctx.sessionPersistence={flush:async()=>{throw Error('controlled persistence unavailable');}};
+  await assert.rejects(f.connector.checkpoint(f.session),/persistence unavailable/);assert.equal((await f.call('turn-status',{topicId:bound.topic.id})).received,0);
+  f.ctx.sessionPersistence.flush=async()=>{};
+  f.ctx.sessions.flush=async session=>{await f.connector.checkpoint(session);return true;};
+  await Promise.all([f.connector.poll(),f.connector.checkpoint(f.session),f.connector.checkpoint(f.session)]);
+  const status=await f.call('turn-status',{topicId:bound.topic.id});assert.equal(status.received,1);assert.equal(status.pending[0].turnId,'1');
+ }finally{await f.close();}
+});
+test('a host terminal checkpoint drains every bounded pending batch before acknowledging shutdown',async()=>{
+ const f=await fixture();try{
+  const bound=await f.connector.enable();f.ctx.sessionPersistence={flush:async()=>{}};
+  for(let turn=1;turn<=101;turn++){
+   if(turn>1){f.append('turn/start',{turn});f.append('user/message',{source:{kind:'user'},content:[{type:'text',text:'checkpoint question '+turn}]});}
+   f.append('assistant/message',{turn,message:{content:[{type:'text',text:'checkpoint answer '+turn}]}});f.append('turn/end',{turn,reason:{kind:'completed'}});
+  }
+  await f.connector.checkpoint(f.session);assert.equal((await f.call('turn-status',{topicId:bound.topic.id})).received,101);
+ }finally{await f.close();}
+});
