@@ -8,6 +8,46 @@ import {runCompanion} from '../runtime/companion/bang.mjs';
 import {createCompanionView} from '../runtime/companion/whiteboard.mjs';
 import {spawn,spawnSync} from 'node:child_process';
 
+async function relationFixture(){
+ const p=await fs.mkdtemp(path.join(os.tmpdir(),'bang-migration-label-'));
+ const elements=['a','b'].flatMap((id,i)=>[{id,type:'rectangle',x:i*400,y:0,width:200,height:100,boundElements:[{id:id+'-text',type:'text'}],customData:{bangNode:{id,text:id}}},{id:id+'-text',type:'text',containerId:id,text:id,originalText:id}]);
+ elements.push({id:'edge',type:'arrow',x:200,y:50,points:[[0,0],[100,40],[200,0]],startBinding:{elementId:'a'},endBinding:{elementId:'b'},boundElements:[{id:'native-label',type:'text'}],customData:{bangRelation:{id:'edge',from:'a',to:'b',label:'Generated'}}},{id:'native-label',type:'text',containerId:'edge',text:'Human',originalText:'Human'});
+ const session={events:[],messages:[],scene:{elements,appliedEventIds:[]}},file=path.join(p,'.bang/sessions/pim.json');await fs.mkdir(path.dirname(file),{recursive:true});
+ const write=()=>fs.writeFile(file,JSON.stringify(session));await write();return {p,session,write};
+}
+test('saved native relationship label overrides generated label and retains original identity on reopen',async()=>{
+ const f=await relationFixture();let destination;try{
+  const report=await op(f.p,'legacy-preflight',undefined,{kind:'session'});assert.equal(report.replay.at(-1).canvas.edges[0].label,'Human');
+  destination=(await op(f.p,'legacy-migrate',undefined,{kind:'session',fingerprint:report.fingerprint,confirmOffline:true,confirmReplay:true,confirmUncertainties:true})).projectPath;
+  await op(destination,'stop');const saved=await op(destination,'state','legacy');assert.equal(saved.canvas.edges[0].label,'Human');assert.equal(saved.editorExtras.find(e=>e.id==='native-label').element.customData.relationId,'edge');
+ }finally{if(destination)await op(destination,'stop');await op(f.p,'stop');await fs.rm(f.p,{recursive:true,force:true,maxRetries:5});}
+});
+test('each migration confirmation requires boolean true, never truthy strings or numbers',async()=>{
+ const f=await relationFixture();let unexpected;
+ try{const report=await op(f.p,'legacy-preflight',undefined,{kind:'session'}),input={kind:'session',fingerprint:report.fingerprint,confirmOffline:true,confirmReplay:true,confirmUncertainties:true};
+  for(const key of ['confirmOffline','confirmReplay','confirmUncertainties'])for(const invalid of ['false','true',1,{},null,false])await assert.rejects(async()=>{const result=await op(f.p,'legacy-migrate',undefined,{...input,[key]:invalid});unexpected=result.projectPath;},/confirm/i);
+  assert.equal(await fs.stat(path.join(f.p,'.bang/restored-projects')).then(()=>true,()=>false),false);
+ }finally{if(unexpected)await op(unexpected,'stop');await op(f.p,'stop');await fs.rm(f.p,{recursive:true,force:true,maxRetries:5});}
+});
+test('manual label deletion stays empty and ambiguous or dangling saved label identities block migration',async()=>{
+ const f=await relationFixture();let destination;
+ try{
+  const label=f.session.scene.elements.find(e=>e.id==='native-label');label.isDeleted=true;await f.write();
+  let report=await op(f.p,'legacy-preflight',undefined,{kind:'session'});assert.equal(report.replay.at(-1).canvas.edges[0].label,'');
+  destination=(await op(f.p,'legacy-migrate',undefined,{kind:'session',fingerprint:report.fingerprint,confirmOffline:true,confirmReplay:true,confirmUncertainties:true})).projectPath;
+  assert.equal((await op(destination,'state','legacy')).canvas.edges[0].label,'');
+  label.isDeleted=false;f.session.scene.elements.push({...label,id:'second-label',text:'Other',originalText:'Other'});await f.write();await assert.rejects(op(f.p,'legacy-preflight',undefined,{kind:'session'}),/ambiguous.*label/i);
+  f.session.scene.elements.pop();f.session.scene.elements.find(e=>e.id==='edge').boundElements=[{id:'missing-label',type:'text'}];await f.write();await assert.rejects(op(f.p,'legacy-preflight',undefined,{kind:'session'}),/ambiguous.*label/i);
+ }finally{if(destination)await op(destination,'stop');await op(f.p,'stop');await fs.rm(f.p,{recursive:true,force:true,maxRetries:5});}
+});
+test('saved deleted relationship without event history retains a deletion intent',async()=>{
+ const f=await relationFixture();let destination;
+ try{for(const e of f.session.scene.elements)if(e.id==='edge'||e.id==='native-label')e.isDeleted=true;await f.write();const report=await op(f.p,'legacy-preflight',undefined,{kind:'session'});destination=(await op(f.p,'legacy-migrate',undefined,{kind:'session',fingerprint:report.fingerprint,confirmOffline:true,confirmReplay:true,confirmUncertainties:true})).projectPath;
+  const saved=await op(destination,'state','legacy');assert.equal(saved.canvas.edges.length,0);assert.equal(saved.deletionIntents.some(d=>d.id==='edge'),true);
+  await assert.rejects(op(destination,'commit','legacy',{operationId:'revive-edge',topic:'legacy',baseRevision:0,author:{kind:'manual',id:'test'},readDependencies:[],intent:'explicit-save',operations:[{type:'create-relation',edge:{id:'edge',fromNode:'a',toNode:'b',label:'resurrect'}}]}),/conflict/i);
+ }finally{if(destination)await op(destination,'stop');await op(f.p,'stop');await fs.rm(f.p,{recursive:true,force:true,maxRetries:5});}
+});
+
 test('public companion output migrates saved manual body, deletion, history and source provenance; stop is explicit',async()=>{
  const p=await fs.mkdtemp(path.join(os.tmpdir(),'bang-migration-companion-'));let destination;
  try{

@@ -73,12 +73,17 @@ function replay(data){
   const r=e.customData?.bangRelation;if(!r||e.isDeleted)continue;
   const from=e.startBinding?.elementId,to=e.endBinding?.elementId;
   if(from!==r.from||to!==r.to||!cards.some(n=>n.id===from)||!cards.some(n=>n.id===to)){uncertainties.push({id:e.id,reason:'visual-semantic-endpoints-need-confirmation',visual:{from:from??null,to:to??null},semantic:{from:r.from,to:r.to}});continue;}
-  edges.push({id:e.id,fromNode:from,toNode:to,label:r.label??'',fromEnd:e.startArrowhead?'arrow':'none',toEnd:e.endArrowhead?'arrow':'none'});
+  const labels=elements.filter(t=>t.type==='text'&&t.containerId===e.id&&!t.isDeleted);
+  const references=(e.boundElements??[]).filter(b=>b.type==='text');
+  if(labels.length>1||references.length>1||references.some(b=>!elements.some(t=>t.id===b.id&&t.type==='text'&&t.containerId===e.id))||labels.length===1&&references.length===1&&references[0].id!==labels[0].id||labels.some(t=>typeof (t.originalText??t.text)!=='string'))throw Error('Ambiguous saved relationship label; inspect original scene before migration');
+  const label=labels[0]?.originalText??labels[0]?.text??'';
+  edges.push({id:e.id,fromNode:from,toNode:to,label,fromEnd:e.startArrowhead?'arrow':'none',toEnd:e.endArrowhead?'arrow':'none'});
  }
  const extras=elements.map(e=>({id:e.id,element:structuredClone(e)}));
- for(const extra of extras){const e=extra.element;if(cards.some(n=>n.id===e.id||n.id===e.containerId))e.customData={...e.customData,businessId:e.containerId??e.id};if(edges.some(r=>r.id===e.id))e.customData={...e.customData,relationId:e.id};}
+ for(const extra of extras){const e=extra.element;if(cards.some(n=>n.id===e.id||n.id===e.containerId))e.customData={...e.customData,businessId:e.containerId??e.id};const relation=edges.find(r=>r.id===e.id||r.id===e.containerId);if(relation)e.customData={...e.customData,relationId:relation.id};}
  const current=make(cards,edges,extras,'actual-saved-scene');
  current.deletionIntents=deleted.map(id=>({id,object:{id,type:'text',text:elements.find(e=>e.id===id).customData.bangNode.text??'',x:0,y:0,width:1,height:1},revision:current.revision,authorId:'legacy-migration',operationId:data.fingerprint}));
+ for(const e of elements){const r=e.customData?.bangRelation;if(!e.isDeleted||!r)continue;if(typeof r.from!=='string'||typeof r.to!=='string')throw Error('Invalid deleted legacy relationship');const label=elements.find(t=>t.type==='text'&&t.containerId===e.id);current.deletionIntents.push({id:e.id,object:{id:e.id,fromNode:r.from,toNode:r.to,label:label?.originalText??label?.text??''},revision:current.revision,authorId:'legacy-migration',operationId:data.fingerprint});}
  current.legacyMigration={fingerprint:data.fingerprint,files:data.files,events:data.events,sources:data.sources,savedScene:data.scene,legacyState:data.state,discussion:data.discussion,uncertainties,historyNote:'Event revisions reconstruct semantic content only; no historical saved geometry existed. Final revision uses actual saved scene. Sources are legacy provenance, not newly authenticated CompletedTurns.'};
  states.push(current);for(const s of states)validateCanvas(s.canvas);
  return {states,uncertainties,counts:{events:data.events.length,sources:data.sources.length,elements:elements.length,deleted:elements.filter(e=>e.isDeleted).length,knowledgeCards:cards.length,knowledgeRelations:edges.length,annotations:elements.filter(e=>!e.isDeleted&&!cards.some(n=>n.id===e.id||n.id===e.containerId)&&!edges.some(r=>r.id===e.id)).length}};
@@ -94,7 +99,7 @@ export async function stopLegacy(project,_topic,input){
  return {status:'stop-requested',workerDrained:capture(project,input).writerStopped,browserWriterMustBeClosed:true};
 }
 export async function migrateLegacy(project,_topic,input){
- if(!input?.confirmOffline||!input.confirmReplay||!input.confirmUncertainties)throw Error('Confirm all legacy writers offline, visual replay and uncertainties before migration');
+ if(input?.confirmOffline!==true||input.confirmReplay!==true||input.confirmUncertainties!==true)throw Error('Confirm all legacy writers offline, visual replay and uncertainties before migration');
  const data=capture(project,input);if(!data.writerStopped)throw Error('Stop legacy companion and wait for worker lock to disappear; never infer death from PID');
  if(data.fingerprint!==input.fingerprint)throw Error('Legacy source fingerprint changed; repeat preflight');
  const result=replay(data),backup=legacyBackup('legacy',result.states),h=data.fingerprint,id=h.slice(0,8)+'-'+h.slice(8,12)+'-4'+h.slice(13,16)+'-8'+h.slice(17,20)+'-'+h.slice(20,32);
