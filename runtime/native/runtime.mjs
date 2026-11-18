@@ -29,8 +29,8 @@ function privateDirectory(dir){
  }else fs.chmodSync(dir,0o700);
 }
 function metadata(dir){try{return JSON.parse(fs.readFileSync(path.join(dir,'connection.json'),'utf8'));}catch{return null;}}
-async function request(connection,command,topic,input){
- const response=await fetch(connection.url+'/control',{method:'POST',headers:{'Content-Type':'application/json','x-bang-token':connection.token,'x-bang-epoch':connection.epoch},body:JSON.stringify({command,topic,input}),signal:AbortSignal.timeout((command.startsWith('backup-')||command.startsWith('maintenance-'))?60000:5000)});
+async function request(connection,command,topic,input,signal){
+ const response=await fetch(connection.url+'/control',{method:'POST',redirect:'error',headers:{'Content-Type':'application/json','x-bang-token':connection.token,'x-bang-epoch':connection.epoch},body:JSON.stringify({command,topic,input}),signal:signal??AbortSignal.timeout((command.startsWith('backup-')||command.startsWith('maintenance-'))?60000:5000)});
  const result=await response.json();if(!response.ok)throw Object.assign(Error(result.error||'Runtime request rejected'),{preview:result.preview,code:result.code});return result;
 }
 async function live(dir){const connection=metadata(dir);if(!connection)return null;try{await request(connection,'status');return connection;}catch{return null;}}
@@ -62,6 +62,15 @@ export async function runtimeOperation(project,command,topic,input){
  }
  if(command==='status'){const connection=await live(dir);return connection?request(connection,'status'):{status:'unavailable',ownership:'unknown'};}
  const connection=await ensureRuntime(project);return request(connection,command==='start'?'status':command,topic,input);
+}
+// Prompt hooks must not start a daemon or wait for a regular CLI timeout.
+export function runningContextOperation(project,command,input,signal){
+ if(!['context-start','context-query','context-ack'].includes(command))throw Error('Invalid context operation');
+ const directory=location(project);
+ if(!fs.lstatSync(path.join(directory,'connection.json')).isFile())throw Error('Local Runtime unavailable');
+ const connection=metadata(directory);
+ if(!connection||!/^http:\/\/127\.0\.0\.1:[1-9]\d{0,4}$/.test(connection.url))throw Error('Local Runtime unavailable');
+ return request(connection,command,undefined,input,signal);
 }
 // Only the native owner publishes these files. Retry the atomic replacement,
 // never remove the destination or release ownership to recover sharing conflicts.
