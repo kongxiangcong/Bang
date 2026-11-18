@@ -1,3 +1,4 @@
+import {revisionText} from './history-storage.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import {createHash,randomUUID} from 'node:crypto';
@@ -112,6 +113,8 @@ export async function exportProject(project){
   db.exec('BEGIN');const names=db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all().map(r=>r.name);
   if(names.some(n=>!Object.hasOwn(schemas,n)&&!excluded.has(n)))throw Error('Backup schema version unsupported; upgrade exporter');
   for(const name of Object.keys(schemas))tables[name]=names.includes(name)?db.prepare(`SELECT * FROM ${name} ORDER BY rowid`).all():[];
+  for(const row of tables.revisions)row.state=revisionText(db,row.topic,row.revision);
+  for(const row of tables.intents)if(JSON.parse(row.state).encoding==='bang-revision-reference-v1')row.state=revisionText(db,row.topic,JSON.parse(row.state).revision);
   db.exec('COMMIT');
  }finally{db.close();}
  for(const row of tables.context_turns){const c=JSON.parse(row.body);c.frozen=true;c.expiresAt=0;delete c.token;delete c.projection;delete c.objects;delete c.sources;row.body=JSON.stringify(c);}

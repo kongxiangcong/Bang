@@ -1,3 +1,4 @@
+import {identityExists} from './history-storage.mjs';
 import {reconcileRestoredEvidence} from './restore.mjs';
 import {invalidateBasis,parseBasisReview,applyBasisReview,knowledgeContext} from './evidence.mjs';
 import {isDeepStrictEqual} from 'node:util';
@@ -40,7 +41,7 @@ function applyOperation(board,op){
 // All comparisons use persisted historical fields, including local acknowledged overlays.
 function inspectPatch(db,topic,patch,row,project){
  const snapshots=new Map(),current=JSON.parse(row.state),conflicts=[],legalOperations=[],touched=new Set();
- const baseline=revision=>{if(revision>row.revision)throw Error('Unknown baseline');if(!snapshots.has(revision)){const old=db.prepare('SELECT state FROM revisions WHERE topic=? AND revision=?').get(topic,revision);if(!old)throw Error('Unknown baseline');snapshots.set(revision,JSON.parse(old.state));}return snapshots.get(revision);};
+ const baseline=revision=>{if(revision>row.revision)throw Error('Unknown baseline');if(!snapshots.has(revision)){snapshots.set(revision,revisionState(db,topic,revision));}return snapshots.get(revision);};
  const original=baseline(patch.baseRevision);
  const dependencyConflict=patch.readDependencies.some(id=>{const old=[...original.canvas.nodes,...original.canvas.edges].find(n=>n.id===id),now=[...current.canvas.nodes,...current.canvas.edges].find(n=>n.id===id);return !old||JSON.stringify(old)!==JSON.stringify(now);});
  for(const [operationIndex,op] of patch.operations.entries()){
@@ -55,10 +56,9 @@ function inspectPatch(db,topic,patch,row,project){
   if(touched.has(id))conflict('id',id,id,id,'Repeated object operation');touched.add(id);
   if(dependencyConflict)conflict('$dependency',null,null,null,'Read dependency changed');
   if(creating){
-   const existed=db.prepare("SELECT 1 FROM revisions, json_each(revisions.state, '$.canvas.nodes') AS node WHERE topic=? AND json_extract(node.value,'$.id')=? LIMIT 1").get(topic,id);
-   const edgeExisted=db.prepare("SELECT 1 FROM revisions, json_each(revisions.state, '$.canvas.edges') AS edge WHERE topic=? AND json_extract(edge.value,'$.id')=? LIMIT 1").get(topic,id);
+   const existed=identityExists(db,topic,id);
    if(op.card?.derivedFrom&&!current.canvas.nodes.some(n=>n.id===op.card.derivedFrom))conflict('derivedFrom',null,null,op.card.derivedFrom,'Unknown derivation source');
-   if(existed||edgeExisted||(current.deletionIntents??[]).some(d=>d.id===id))conflict('id',null,now,op.card??op.edge,now?'Identity already exists':'Deleted identity cannot be reused');
+   if(existed||(current.deletionIntents??[]).some(d=>d.id===id))conflict('id',null,now,op.card??op.edge,now?'Identity already exists':'Deleted identity cannot be reused');
    if(relation&&(current.deletionIntents??[]).some(d=>d.revision>patch.baseRevision&&d.object.fromNode===op.edge.fromNode&&d.object.toNode===op.edge.toNode))conflict('$deletion',null,null,op.edge,'Relation deletion intent is newer than baseline');
   }
   else if(!now)conflict('id',id,null,op.type==='delete-card'?null:op,'Card deleted');
@@ -201,7 +201,7 @@ function inspectImport(db,project,topic,file,input){
  if(expectedHash!==row.hash&&!external)throw recoveryError('External Canvas changed; preview external import explicitly');
  const canvas=parseImport(external?JSON.parse(fs.readFileSync(file,'utf8')):input.canvas);validateResources(project,canvas);
  const baseline=JSON.parse(row.state),changes=importChanges(baseline.canvas,canvas);
- for(const id of changes.added){const existed=db.prepare("SELECT 1 FROM revisions, json_each(revisions.state, '$.canvas.nodes') AS object WHERE topic=? AND json_extract(object.value,'$.id')=? UNION ALL SELECT 1 FROM revisions, json_each(revisions.state, '$.canvas.edges') AS object WHERE topic=? AND json_extract(object.value,'$.id')=? LIMIT 1").get(topic,id,topic,id);if(existed)throw Error('Deleted identity cannot be reused by import');}
+ for(const id of changes.added)if(identityExists(db,topic,id))throw Error('Deleted identity cannot be reused by import');
  return {topic,baseRevision:row.revision,expectedHash,external,canvas:standardCanvas(canvas),changes,degradation:exchangeDegradation(baseline),candidateHash:hash(JSON.stringify(standardCanvas(canvas)))};
 }
 export async function previewImport(project,topic,input){const file=topicPath(project,topic),db=open(project);try{return inspectImport(db,project,topic,file,input);}finally{db.close();}}

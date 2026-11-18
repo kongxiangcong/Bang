@@ -260,6 +260,15 @@
 !/tests/canvas-argument-flow.test.mjs
 !/tests/canvas-argument-flow-browser.mjs
 
+# Ticket 38 reviewed bounded history storage, capacity management and public acceptance.
+!/runtime/canvas/history-storage.mjs
+!/runtime/canvas/capacity.mjs
+!/runtime/canvas/CAPACITY.md
+!/prototypes/whiteboard-integration/src/HistoryCapacity.tsx
+!/tests/history-capacity.test.mjs
+!/tests/history-capacity-browser.mjs
+!/tests/history-stress.mjs
+!/tests/history-stress-worker.mjs
 # Ticket 34 mixed regions and explicit selected reorganization.
 !/runtime/canvas/reorganize.mjs
 !/runtime/canvas/mixed-structures.ts
