@@ -284,3 +284,4 @@
 !/tests/performance-generate.mjs
 !/prototypes/whiteboard-integration/src/InspectorPage.tsx
 !/runtime/canvas/PERFORMANCE.md
+!/runtime/dsh/context-delivery.mjs

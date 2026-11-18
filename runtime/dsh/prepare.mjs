@@ -5,7 +5,7 @@ import {generateKeyPairSync,randomUUID} from 'node:crypto';
 import {runtimeOperation} from '../native/runtime.mjs';
 // Explicit provisioning command; never executes DSH, reads credentials, or edits host config.
 const project=fs.realpathSync(process.argv[2]??'.');
-await runtimeOperation(project,'start');
+const {workspaceId}=await runtimeOperation(project,'start');
 const directory=path.join(project,'.bang','runtime','dsh');fs.mkdirSync(directory,{recursive:true,mode:0o700});
 const manifestFile=path.join(directory,'manifest.json');
 if(!fs.existsSync(manifestFile)){
@@ -13,6 +13,16 @@ if(!fs.existsSync(manifestFile)){
  const privateKeyFile=path.join(directory,'signing-key.pem');fs.writeFileSync(privateKeyFile,privateKey.export({type:'pkcs8',format:'pem'}),{flag:'wx',mode:0o600});
  await runtimeOperation(project,'connector-register',undefined,{id:connectorId,host:'dsh',versions:['0.2.1-rc.2'],publicKey:publicKey.export({type:'spki',format:'pem'})});
  fs.writeFileSync(manifestFile,JSON.stringify({project,connectorId,instanceId:randomUUID(),hostVersion:'0.2.1-rc.2',scope:['*'],privateKeyFile}),{flag:'wx',mode:0o600});
+}
+const manifest=JSON.parse(fs.readFileSync(manifestFile,'utf8'));
+if(!manifest.bridgeId){
+ const {privateKey,publicKey}=generateKeyPairSync('ed25519'),bridgeId='context-'+randomUUID();
+ const bridgeKeyFile=path.join(directory,bridgeId+'.pem');
+ fs.writeFileSync(bridgeKeyFile,privateKey.export({type:'pkcs8',format:'pem'}),{flag:'wx',mode:0o600});
+ await runtimeOperation(project,'context-register',undefined,{id:bridgeId,host:'dsh',versions:[manifest.hostVersion],publicKey:publicKey.export({type:'spki',format:'pem'})});
+ const temp=manifestFile+'.'+randomUUID();
+ fs.writeFileSync(temp,JSON.stringify({...manifest,bridgeId,bridgeKeyFile,workspaceId}),{flag:'wx',mode:0o600});
+ fs.renameSync(temp,manifestFile);
 }
 const plugin=fileURLToPath(new URL('./plugin.mjs',import.meta.url));
 const overlay=path.join(directory,'overlay.yml');
