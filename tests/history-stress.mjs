@@ -9,8 +9,8 @@ import {generateKeyPairSync,sign,randomUUID,createHash} from 'node:crypto';
 import {runtimeOperation} from '../runtime/native/runtime.mjs';
 const project=await fs.mkdtemp(path.join(os.tmpdir(),'bang-10000-turns-')),started=Date.now(),hash=v=>createHash('sha256').update(v).digest('hex');
 const report={workload:'10000 completed turns, 100 batches/native calls, 100 board revisions, 100 incrementally created cards, zero attachments',controlledModel:true,realModelCalls:0,project,platform:process.platform,node:process.version,os:os.version(),cpu:os.cpus()[0].model,ramBytes:os.totalmem(),progress:[],failures:[]};
-report.sourceHashes=Object.fromEntries(await Promise.all(['runtime/canvas/history-storage.mjs','runtime/canvas/capacity.mjs','runtime/canvas/ingestion.mjs','runtime/canvas/publication.mjs','runtime/native/runtime.mjs','tests/history-stress-worker.mjs'].map(async file=>[file,hash(await fs.readFile(new URL('../'+file,import.meta.url)))])));
-const call=(command,input,topic)=>runtimeOperation(project,command,topic,input),delay=ms=>new Promise(r=>setTimeout(r,ms));
+report.sourceHashes=Object.fromEntries(await Promise.all(['runtime/canvas/history-storage.mjs','runtime/canvas/capacity.mjs','runtime/canvas/ingestion.mjs','runtime/canvas/organizer.mjs','runtime/canvas/publication.mjs','runtime/native/runtime.mjs','tests/history-stress-worker.mjs'].map(async file=>[file,hash(await fs.readFile(new URL('../'+file,import.meta.url)))])));
+const call=async(command,input,topic)=>{const start=Date.now();try{const result=await runtimeOperation(project,command,topic,input);if(Date.now()-start>1000)(report.slowCalls??=[]).push({command,ms:Date.now()-start});return result;}catch(error){(report.failedCalls??=[]).push({command,elapsedMs:Date.now()-started,callMs:Date.now()-start});throw Object.assign(Error(command+': '+error.message),{cause:error});}},delay=ms=>new Promise(r=>setTimeout(r,ms));
 async function files(dir){const out=[];for(const entry of await fs.readdir(dir,{withFileTypes:true})){const file=path.join(dir,entry.name);if(entry.isDirectory())out.push(...await files(file));else out.push({path:path.relative(project,file),bytes:(await fs.stat(file)).size});}return out;}
 try{
  process.env.BANG_ORGANIZER_NATIVE=JSON.stringify({version:1,executable:process.execPath,args:[fileURLToPath(new URL('./history-stress-worker.mjs',import.meta.url))],policy:'no-tools',graceMs:200});
@@ -42,6 +42,11 @@ try{
  report.afterCompact=await call('history-capacity',undefined,topic);
  const archivePreview=await call('maintenance-preview',{action:'archive'},topic);const archive=await call('maintenance-confirm',{...archivePreview,confirm:true},topic);
  report.archive=await call('backup-verify',{backup:archive.backup},topic);assert.equal(report.archive.sources,10000);assert.equal(report.archive.revisions,101);
+ // 101 publication log records total 8,071 bytes, just below the 8 KiB bound.
+ // Two additional public layout saves explicitly cross it; these are not model rounds.
+ const last=(await call('state',undefined,topic)).canvas.nodes.at(-1);
+ for(let i=1;i<=2;i++)await call('commit',{operationId:'rotation-validation-'+i,topic,baseRevision:99+i,author:{kind:'manual',id:'capacity-validation'},intent:'explicit-save',readDependencies:[],operations:[{type:'edit-card',id:last.id,x:last.x+i}]},topic);
+ report.rotationValidation={additionalManualSaves:2,headRevision:(await call('state',undefined,topic)).revision};
  report.files=await files(path.join(project,'.bang'));const logs=report.files.filter(f=>/events.*jsonl$/.test(f.path));assert.equal(logs.length,2);assert.ok(logs.every(f=>f.bytes<=8192));
  assert.equal(report.files.some(f=>/publish\.tmp|preserve\.tmp|transient-cache/.test(f.path)),false);
  report.elapsedMs=Date.now()-started;report.completedTurns=10000;report.modelAttempts=100;report.status='passed';

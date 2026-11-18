@@ -7,6 +7,7 @@ import {runtimeOperation} from '../runtime/native/runtime.mjs';
 import http from 'node:http';
 import {createCanvasMiddleware} from '../runtime/canvas/http.mjs';
 import {canvasRequest} from './canvas-request.mjs';
+import {createHash} from 'node:crypto';
 
 test('capacity reports retained history and compact revisions remain inspectable after reopening',async()=>{
  const project=await fs.mkdtemp(path.join(os.tmpdir(),'bang-capacity-'));
@@ -33,6 +34,25 @@ test('capacity reports retained history and compact revisions remain inspectable
    assert.equal((await restoredCall('history')).length,71);
   }finally{await restoredCall('stop');}
  }finally{await call('stop');await fs.rm(project,{recursive:true,force:true});}
+});
+
+test('legacy JSON property ordering remains exact across restored history checkpoints',async()=>{
+ const project=await fs.mkdtemp(path.join(os.tmpdir(),'bang-history-order-'));let destination;
+ const call=(command,input)=>runtimeOperation(project,command,'demo',input);
+ try{
+  await call('generate',{cards:[{id:'a',text:'first',x:0,y:0,width:240,height:160}]});
+  await call('commit',{operationId:'edit',topic:'demo',baseRevision:0,author:{kind:'manual',id:'human'},intent:'explicit-save',readDependencies:[],operations:[{type:'edit-card',id:'a',text:'second'}]});
+  const backup=await call('backup-export');
+  // A valid legacy package can serialize equivalent state keys in another order.
+  for(const rows of [backup.payload.tables.topics,backup.payload.tables.revisions,backup.payload.tables.intents])for(const row of rows){const state=JSON.parse(row.state);if(state.revision===1){const {metadata,...rest}=state;row.state=JSON.stringify({metadata,...rest});}}
+  backup.sha256=createHash('sha256').update(JSON.stringify(backup.payload)).digest('hex');
+  destination=(await call('backup-restore',{backup})).projectPath;
+  const restored=(command,input)=>runtimeOperation(destination,command,'demo',input);
+  const preview=await restored('restore-preview',{revision:0});
+  await restored('restore-version',{...preview,operationId:'restore',author:{kind:'manual',id:'human'},intent:'restore-version'});
+  assert.deepEqual(await restored('history-preview',{revision:2}),await restored('state'));
+  assert.equal((await restored('backup-verify',{backup:await restored('backup-export')})).valid,true);
+ }finally{if(destination)await runtimeOperation(destination,'stop');await call('stop');await fs.rm(project,{recursive:true,force:true});}
 });
 
 test('archive confirmation rejects attachments changed since the reviewed package',async()=>{

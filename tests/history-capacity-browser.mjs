@@ -55,7 +55,3 @@ try{
  const shot=await cmd('Page.captureScreenshot',{format:'png'});await fs.writeFile(path.join(root,'history-capacity-browser.png'),Buffer.from(shot.data,'base64'));
  console.log(JSON.stringify({pass:true,evidence:'actual Chrome capacity, cleanup preview/cancel/confirm, archive download/verify, historical preview and reload'}));
  }finally{ws?.close();chrome.kill();await new Promise(r=>server.close(r));await delay(500);spawnSync(process.execPath,[path.join(root,'runtime/canvas/bang.mjs'),'stop','--project',temp],{encoding:'utf8'});await fs.rm(temp,{recursive:true,force:true,maxRetries:5,retryDelay:200});}
-
-
-
-

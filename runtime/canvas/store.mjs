@@ -244,4 +244,3 @@ export async function readOperationReceipt(project,topic,operation){await readCo
 
 
 export async function readKnowledgeContext(project,topic){return knowledgeContext(await readCommitted(project,topic));}
-

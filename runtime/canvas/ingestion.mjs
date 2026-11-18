@@ -112,13 +112,22 @@ export function turnStatus(project,input){
   return {versions,received:rows.length,frozen:rows.filter(s=>s.state==='frozen').length,frozenSources:rows.filter(s=>s.state==='frozen').map(s=>({id:s.id,bindingId:s.binding,turnId:s.turn_id,versionId:s.version_id,sourceHash:s.source_hash})),organized:rows.filter(s=>s.state==='organized').length,backlog:rows.filter(s=>s.state==='pending').length,pending:rows.filter(s=>s.state==='pending').map(s=>({id:s.id,bindingId:s.binding,turnId:s.turn_id,versionId:s.version_id,sourceHash:s.source_hash})),gaps:db.prepare('SELECT binding AS bindingId,cursor,reason FROM ingestion_gaps WHERE topic=? ORDER BY rowid').all(topic),ignored:db.prepare('SELECT binding AS bindingId,cursor,reason FROM ingestion_ignored WHERE topic=? ORDER BY rowid').all(topic)};
  }finally{db.close();}
 }
-export function turnSource(project,input){
- const db=open(project);try{const row=db.prepare('SELECT body FROM completed_sources WHERE topic=? AND id=?').get(input?.topicId??'',input?.id??'');if(!row)throw Error('Unknown source in topic');const source=JSON.parse(row.body);
+function sourceFromDatabase(db,input){
+ const row=db.prepare('SELECT body FROM completed_sources WHERE topic=? AND id=?').get(input?.topicId??'',input?.id??'');if(!row)throw Error('Unknown source in topic');const source=JSON.parse(row.body);
  // The existing (binding,turn_id,version_id) index bounds this lookup to one
  // source identity. Loading every topic version for each batch member makes
  // CompletedTurn preparation grow with unrelated retained history.
  const rows=db.prepare('SELECT s.id,s.binding,s.turn_id,s.version_id,s.source_hash,s.body FROM completed_sources s JOIN ingestion_queue q ON q.source_id=s.id WHERE s.topic=? AND s.binding=? AND s.turn_id=? ORDER BY s.rowid').all(input.topicId,source.bindingId,source.turnId);
- const versions=rows.map((s,i)=>({id:s.id,bindingId:s.binding,turnId:s.turn_id,versionId:s.version_id,sourceHash:s.source_hash,current:JSON.parse(s.body).current??(i===rows.length-1)}));return {...source,current:versions.find(v=>v.id===source.id).current,currentVersionId:versions.find(v=>v.current)?.versionId,history:versions};}finally{db.close();}
+ const versions=rows.map((s,i)=>({id:s.id,bindingId:s.binding,turnId:s.turn_id,versionId:s.version_id,sourceHash:s.source_hash,current:JSON.parse(s.body).current??(i===rows.length-1)}));return {...source,current:versions.find(v=>v.id===source.id).current,currentVersionId:versions.find(v=>v.current)?.versionId,history:versions};
+}
+
+// One read connection for the Organizer's bounded source batch; source identity,
+// lineage and currentness are still resolved by the exact same scalar reader.
+export function turnSources(project,topicId,ids){
+ const db=open(project);try{return ids.map(id=>sourceFromDatabase(db,{topicId,id}));}finally{db.close();}
+}
+export function turnSource(project,input){
+ const db=open(project);try{return sourceFromDatabase(db,input);}finally{db.close();}
 }
 
 export function authorizeBackfill(project,input){
