@@ -1,8 +1,8 @@
+import {revisionText} from './history-storage.mjs';
 // History compares persisted committed states; previews never become the current board.
 export function revisionState(db,topic,revision){
  if(!Number.isSafeInteger(revision)||revision<0)throw Error('Invalid history revision');
- const row=db.prepare('SELECT state FROM revisions WHERE topic=? AND revision=?').get(topic,revision);
- if(!row)throw Error('Unknown history revision');return JSON.parse(row.state);
+ return JSON.parse(revisionText(db,topic,revision));
 }
 export function revisionList(db,topic){
  const operations=new Map(db.prepare("SELECT request,receipt FROM intents WHERE topic=? AND status='confirmed'").all(topic).map(row=>{const request=JSON.parse(row.request),receipt=JSON.parse(row.receipt);return [receipt.revision,{operationId:request.operationId,author:request.author,intent:request.intent,undoOf:request.undoOf}];}));
@@ -35,7 +35,7 @@ export function compensate(db,topic,request,current){
  const before=revisionState(db,topic,request.revision-1),after=revisionState(db,topic,request.revision);
  if(entry.intent==='restore-version'){
   for(const c of boardDiff(before,after).changes.filter(c=>c.collection==='metadata'&&!['fields','modifiedRevision','semanticRevision'].includes(c.field))){
-   const states=db.prepare('SELECT state FROM revisions WHERE topic=? AND revision>? ORDER BY revision').all(topic,request.revision).map(r=>JSON.parse(r.state));
+   const states=db.prepare('SELECT revision FROM revisions WHERE topic=? AND revision>? ORDER BY revision').all(topic,request.revision).map(r=>revisionState(db,topic,r.revision));
    for(const state of states){const m=state.metadata[c.id],original=after.metadata[c.id];if(c.field==='$object'?!equal(m,original):!equal(m?.[c.field],original?.[c.field]))throw Error('Undo conflict; restored knowledge changed after restore');}
   }
  }
@@ -49,7 +49,7 @@ export function compensate(db,topic,request,current){
   next.compensation={operationId:request.operationId,undoOf:request.revision,authorId:request.author.id};return next;
  }
  const changes=boardDiff(before,after).changes.filter(c=>['nodes','edges','editorExtras'].includes(c.collection));
- const later=db.prepare('SELECT state FROM revisions WHERE topic=? AND revision>? ORDER BY revision').all(topic,request.revision).map(r=>JSON.parse(r.state));
+ const later=db.prepare('SELECT revision FROM revisions WHERE topic=? AND revision>? ORDER BY revision').all(topic,request.revision).map(r=>revisionState(db,topic,r.revision));
  const values=(state,collection)=>collection==='editorExtras'?(state.editorExtras??=[]):state.canvas[collection];
  const lookup=(state,c)=>values(state,c.collection).find(n=>n.id===c.id);
  const conflicts=[];

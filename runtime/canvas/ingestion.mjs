@@ -113,7 +113,12 @@ export function turnStatus(project,input){
  }finally{db.close();}
 }
 export function turnSource(project,input){
- const db=open(project);try{const row=db.prepare('SELECT body FROM completed_sources WHERE topic=? AND id=?').get(input?.topicId??'',input?.id??'');if(!row)throw Error('Unknown source in topic');const source=JSON.parse(row.body),versions=turnStatus(project,input).versions.filter(v=>v.bindingId===source.bindingId&&v.turnId===source.turnId);return {...source,current:versions.find(v=>v.id===source.id).current,currentVersionId:versions.find(v=>v.current)?.versionId,history:versions.map(({processing,...version})=>version)};}finally{db.close();}
+ const db=open(project);try{const row=db.prepare('SELECT body FROM completed_sources WHERE topic=? AND id=?').get(input?.topicId??'',input?.id??'');if(!row)throw Error('Unknown source in topic');const source=JSON.parse(row.body);
+ // The existing (binding,turn_id,version_id) index bounds this lookup to one
+ // source identity. Loading every topic version for each batch member makes
+ // CompletedTurn preparation grow with unrelated retained history.
+ const rows=db.prepare('SELECT s.id,s.binding,s.turn_id,s.version_id,s.source_hash,s.body FROM completed_sources s JOIN ingestion_queue q ON q.source_id=s.id WHERE s.topic=? AND s.binding=? AND s.turn_id=? ORDER BY s.rowid').all(input.topicId,source.bindingId,source.turnId);
+ const versions=rows.map((s,i)=>({id:s.id,bindingId:s.binding,turnId:s.turn_id,versionId:s.version_id,sourceHash:s.source_hash,current:JSON.parse(s.body).current??(i===rows.length-1)}));return {...source,current:versions.find(v=>v.id===source.id).current,currentVersionId:versions.find(v=>v.current)?.versionId,history:versions};}finally{db.close();}
 }
 
 export function authorizeBackfill(project,input){
