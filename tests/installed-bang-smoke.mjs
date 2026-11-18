@@ -71,6 +71,7 @@ try {
   const preview = fs.readFileSync(path.join(prepared.review, 'command.txt'), 'utf8');
   assert.ok(preview.includes(path.join(install, 'node', 'node.exe')));
   assert.ok(preview.includes(project));
+  assert.match(preview, / --context-v1$/);
   assert.equal(prepared.activationPrompt, 'Bang: enable current session');
 
   const installed = JSON.parse(successful(bang('install-codex', '--codex', codex)));
@@ -79,7 +80,9 @@ try {
   assert.equal(installed.hookFile, hooksFile);
   const hooks = fs.readFileSync(hooksFile, 'utf8');
   assert.deepEqual(JSON.parse(hooks), JSON.parse(fs.readFileSync(path.join(installed.review, 'hooks.json'), 'utf8')));
-  assert.ok(JSON.parse(hooks).hooks.UserPromptSubmit[0].hooks[0].command.includes('-EncodedCommand'));
+  const promptHook = JSON.parse(hooks).hooks.UserPromptSubmit[0].hooks[0];
+  assert.ok(promptHook.command.includes('-EncodedCommand'));
+  assert.equal(promptHook.additionalContextLimit, 0);
   assert.equal(bang('install-codex', '--codex', codex).status, 1);
   assert.equal(fs.readFileSync(hooksFile, 'utf8'), hooks);
   assert.equal(JSON.parse(successful(bang('plan'))).hooks, 'existing');
