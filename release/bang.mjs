@@ -20,23 +20,6 @@ const operations = {
   'rollback-codex': 'rollback',
 };
 const manifestPath = path.join(root, 'package-manifest.json');
-const hooksRelative = path.join('.codex', 'hooks.json');
-
-function describe(project) {
-  const codexDirectory = fs.lstatSync(path.join(project, '.codex'), { throwIfNoEntry: false });
-  const hooks = codexDirectory?.isDirectory()
-    ? fs.lstatSync(path.join(project, hooksRelative), { throwIfNoEntry: false }) : undefined;
-  const state = (codexDirectory && !codexDirectory.isDirectory()) || (hooks && !hooks.isFile())
-    ? 'unsafe' : hooks ? 'existing' : 'absent';
-  return {
-    project,
-    host: 'codex',
-    requiredVersion: CODEX_VERSION,
-    hookFile: path.join(project, hooksRelative),
-    hooks: state,
-    trust: 'review-in-codex',
-  };
-}
 
 function codexCheck(candidate) {
   if (!candidate) return { status: 'not-supplied' };
@@ -115,7 +98,16 @@ function releaseIdentity(manifest) {
 
 async function projectPlan(project, release, values = {}) {
   const maintenance = maintenancePlan(project, release);
-  const plan = { ...describe(project), maintenance };
+  const { entry } = maintenance;
+  const plan = {
+    project,
+    host: 'codex',
+    requiredVersion: CODEX_VERSION,
+    hookFile: entry.path,
+    hooks: ['absent', 'unsafe'].includes(entry.state) ? entry.state : 'existing',
+    trust: 'review-in-codex',
+    maintenance,
+  };
   if (values.legacy !== undefined || values['legacy-topic'] !== undefined) {
     const kind = values.legacy;
     const topic = values['legacy-topic'];
@@ -192,7 +184,10 @@ try {
           sessionAcceptance: 'unverified-by-check',
         }));
         if (codex.status !== 'compatible' || plan.maintenance.interrupted ||
-            ['unsafe', 'modified'].includes(plan.maintenance.entry.state)) process.exitCode = 1;
+            ['unsafe', 'modified'].includes(plan.maintenance.entry.state) ||
+            (plan.maintenance.activeRelease && plan.maintenance.entry.state === 'absent')) {
+          process.exitCode = 1;
+        }
       } else {
         if (codex.status !== 'compatible') throw Error('Pinned native Codex required: ' + codex.status);
         if (plan.hooks === 'unsafe') throw Error('Codex hook path must be a real directory and regular file');

@@ -33,7 +33,7 @@ function readHook(files) {
   if (!safeDirectory(files.codex)) return { state: 'unsafe', sha256: null };
   const stat = optionalStat(files.hook);
   if (!stat) return { state: 'absent', sha256: null };
-  if (!stat.isFile() || stat.nlink !== 1 || stat.size > 1024 * 1024) {
+  if (!stat.isFile() || stat.size > 1024 * 1024) {
     return { state: 'unsafe', sha256: null };
   }
   return { state: 'existing', sha256: digest(fs.readFileSync(files.hook)) };
@@ -41,7 +41,8 @@ function readHook(files) {
 
 function releaseValid(release) {
   return release && typeof release.directory === 'string' && path.isAbsolute(release.directory) &&
-    hashPattern.test(release.manifestSha256) && /^[a-f0-9]{40,64}$/.test(release.sourceCommit);
+    typeof release.manifestSha256 === 'string' && hashPattern.test(release.manifestSha256) &&
+    typeof release.sourceCommit === 'string' && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(release.sourceCommit);
 }
 
 function snapshotValid(snapshot) {
@@ -55,7 +56,7 @@ function readReceipt(files) {
   }
   const stat = optionalStat(files.receipt);
   if (!stat) return empty;
-  if (!stat.isFile() || stat.nlink !== 1 || stat.size > 1024 * 1024) {
+  if (!stat.isFile() || stat.size > 1024 * 1024) {
     throw Error('Unsafe Bang maintenance receipt');
   }
   const value = JSON.parse(fs.readFileSync(files.receipt, 'utf8'));
@@ -107,7 +108,7 @@ export function maintenancePlan(project, targetRelease = null) {
   };
 }
 
-function publish(file, text, create = false) {
+function publish(file, text, create = false, verify = () => {}) {
   const temporary = path.join(path.dirname(file), '.bang-pending-' + randomUUID());
   const fd = fs.openSync(temporary, 'wx', 0o600);
   try {
@@ -117,6 +118,7 @@ function publish(file, text, create = false) {
     } finally {
       fs.closeSync(fd);
     }
+    verify();
     if (create) fs.linkSync(temporary, file);
     else fs.renameSync(temporary, file);
   } finally {
@@ -125,7 +127,7 @@ function publish(file, text, create = false) {
 }
 
 function saveReceipt(files, receipt) {
-  publish(files.receipt, JSON.stringify(receipt, null, 2) + '\n', !optionalStat(files.receipt));
+  publish(files.receipt, JSON.stringify(receipt, null, 2) + '\n');
 }
 
 function hookMatches(files, snapshot) {
@@ -137,11 +139,14 @@ function hookMatches(files, snapshot) {
 
 function writeHook(files, before, after) {
   if (after !== null && before === null) fs.mkdirSync(files.codex, { recursive: true });
-  if (!hookMatches(files, before)) throw Error('Codex hook changed during maintenance; preserved');
+  function verify() {
+    if (!hookMatches(files, before)) throw Error('Codex hook changed during maintenance; preserved');
+  }
   if (after === null) {
+    verify();
     if (before !== null) fs.unlinkSync(files.hook);
   } else {
-    publish(files.hook, after.text, before === null);
+    publish(files.hook, after.text, before === null, verify);
   }
 }
 
@@ -238,7 +243,10 @@ export function maintain(project, command, release) {
   const files = paths(project);
   readReceipt(files);
   if (!optionalStat(files.runtime)) {
-    if (command === 'uninstall') return { status: 'unchanged', ...maintenancePlan(project, release) };
+    const plan = maintenancePlan(project, release);
+    if (command === 'uninstall') {
+      return { status: plan.actions.uninstall === 'preserve' ? 'preserved' : 'unchanged', ...plan };
+    }
     throw Error('No Bang-owned Codex entry; run install-codex first');
   }
   return underLock(files.lock, 'locked', project, command, release);
