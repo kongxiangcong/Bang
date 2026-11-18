@@ -5,7 +5,7 @@ import {fileURLToPath} from 'node:url';
 import {CodexSessionConnector,CODEX_VERSION} from './connector.mjs';
 import {openCodexStoredTransport} from './transport.mjs';
 import {runtimeOperation} from '../native/runtime.mjs';
-import {enablePromptContext,offerPromptContext,queryPromptContext,readCodexInstall} from './context-delivery.mjs';
+import {enablePromptContext,offerPromptContext,queryPromptContext,readCodexInstall,revokePromptContext} from './context-delivery.mjs';
 
 const activationPrompt='Bang: enable current session';
 const unverified={systemMessage:'Bang could not verify this session. No completion or synchronization is claimed. Check Bang connector status.'};
@@ -24,6 +24,7 @@ export async function runCodexHook(hook,{project,threadId,hostVersion,contextEna
   if(fs.realpathSync(hook.cwd)!==project)return emit(activating?unverified:{});
   if(!activating)return offerPromptContext({project,sessionId:threadId,turnId:hook.turn_id,emit});
 
+  if(contextEnabled)revokePromptContext(project,threadId);
   const install=readCodexInstall(project);
   transport=await openTransport({executable:install.executable,threadId});
   const connector=new CodexSessionConnector({project,transport,connectorId:install.connectorId,

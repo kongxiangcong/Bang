@@ -43,6 +43,11 @@ function atomicWrite(project,name,value){
 export const readCodexInstall = project => privateRead(project,'codex-install.json');
 const locator = (threadId,kind) => `codex-context-${kind}-${digest(threadId)}.json`;
 
+export function revokePromptContext(project,sessionId){
+ const name=locator(sessionId,'turn');
+ if(fs.existsSync(runtimeFile(project,name)))atomicWrite(project,name,{});
+}
+
 export function enablePromptContext(project,install,sessionId,binding){
  if(!install.bridge)return false;
  atomicWrite(project,locator(sessionId,'binding'),{
@@ -75,7 +80,6 @@ function queryCommand(project,reference){
 }
 
 export async function offerPromptContext({project,sessionId,turnId,emit}){
- if(!validId(turnId))return emit({});
  let binding;
  try{binding=privateRead(project,locator(sessionId,'binding'));}
  catch(error){return emit(error.code==='ENOENT'?{}:failedOutput);}
@@ -85,7 +89,8 @@ export async function offerPromptContext({project,sessionId,turnId,emit}){
  let call,started,hash,emitted=false;
  try{
   // A new prompt invalidates the previous query reference before any RPC.
-  atomicWrite(project,stateFile,{reference,turnId});
+  atomicWrite(project,stateFile,{reference});
+  if(!validId(turnId))throw Error('Missing Codex turn identity');
   const install=readCodexInstall(project);
   call=scopedCall(project,install,binding,sessionId,turnId,signal);
   started=await call('context-start',{budgetBytes:turnBudget});

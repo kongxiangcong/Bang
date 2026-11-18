@@ -184,3 +184,16 @@ test('an unresponsive Runtime cannot stall the next prompt or expose the previou
   await fs.rm(metadata,{force:true});
  }
 });
+
+test('activation and prompts missing a turn identity invalidate the previous turn query',async t=>{
+ const f=await fixture(t);
+ await f.run(f.event('enable','Bang: enable current session'));
+ const first=readOutput(await f.run(f.event('first','Ordinary prompt')));
+ await f.run(f.event('enable-again','Bang: enable current session'));
+ await assert.rejects(f.query(first.reference,'changes'),/pinned/);
+ const next=readOutput(await f.run(f.event('next','Ordinary prompt')));
+ assert.equal((await f.query(next.reference,'changes')).revision,next.data.revision);
+ const unavailable=await f.run(f.event(undefined,'Ordinary prompt'));
+ assert.match(unavailable.systemMessage,/manual knowledge-context/);
+ await assert.rejects(f.query(next.reference,'changes'),/pinned/);
+});
