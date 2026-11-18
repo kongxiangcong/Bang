@@ -27,6 +27,16 @@ const schemas={
 const excluded=new Set(['context_bridges','context_proofs','session_connectors','verified_sessions','session_proofs','takeover_previews','ingestion_backfills','ingestion_batches']);
 const digest=value=>createHash('sha256').update(value).digest('hex');
 const hashJSON=value=>digest(JSON.stringify(value));
+// Internal migration boundary: the normal closed-schema verifier and independent
+// restore publisher still validate every generated package.
+export function legacyBackup(topic,states){
+ const tables=Object.fromEntries(Object.keys(schemas).map(k=>[k,[]]));
+ const current=states.at(-1),state=JSON.stringify(current);
+ tables.topics=[{topic,revision:current.revision,state,hash:digest(JSON.stringify(current.canvas,null,2)+'\n')}];
+ tables.revisions=states.map(s=>({topic,revision:s.revision,state:JSON.stringify(s)}));
+ tables.topic_names=[{topic,name:'旧项目迁移'}];
+ const payload={tables,attachments:[]},backup={format:'bang-project-backup',version:1,payload,sha256:hashJSON(payload)};inspect(backup);return backup;
+}
 const limit=48*1024*1024;
 function resourcePath(value){
  const relative=safeResourcePath(value);
@@ -132,11 +142,12 @@ export async function exportProject(project){
  const payload={tables,attachments},backup={format:'bang-project-backup',version:1,payload,sha256:hashJSON(payload)};inspect(backup);return backup;
 }
 export function verifyProject(_project,_topic,input){return inspect(input?.backup);}
-export function restoreProject(project,_topic,input){
+export function restoreProject(project,_topic,input,allocationId){
  if(!input||Object.keys(input).some(k=>k!=='backup'))throw Error('Restore accepts a package only; arbitrary destination paths are forbidden');
  const backup=input.backup,report=inspect(backup),parent=path.join(project,'.bang','restored-projects');
  try{if(fs.lstatSync(parent).isSymbolicLink()||!fs.statSync(parent).isDirectory())throw Error('Unsafe restore directory');}catch(e){if(e.code!=='ENOENT')throw e;fs.mkdirSync(parent,{mode:0o700});}
- const id=randomUUID(),staging=path.join(parent,'.pending-'+id),destination=path.join(parent,id);
+ const id=allocationId??randomUUID();if(!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id))throw Error('Invalid restore allocation');
+ const staging=path.join(parent,'.pending-'+randomUUID()),destination=path.join(parent,id);
  fs.mkdirSync(staging,{mode:0o700});
  try{
   const data=path.join(staging,'.bang');fs.mkdirSync(data,{mode:0o700});
