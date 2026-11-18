@@ -23,9 +23,8 @@ node tests/performance-browser.mjs D:/path/to/t32 blocked
 ```
 
 The browser driver verifies the generation owner has stopped before copying its
-durable files into separate projects for each condition. Every measured sample
-therefore starts from the same 10,000-edit history plus that condition's preceding
-warmups and samples. Each sample issues a different explicit manual edit. The
+durable files into separate projects for each condition. Both conditions start from the same 10,000-edit history. Each condition then
+accumulates its own warmups and samples. Each sample issues a different explicit manual edit. The
 browser driver measures from the protected save request to its parsed commit
 receipt. It then clicks Refresh, checks the displayed revision, the changed native
 label and the complete 5,000-element Excalidraw scene, and waits through a painted
@@ -43,8 +42,8 @@ counts requests, and records the elapsed blocked time separately. Real inference
 time is zero. No user project, credentials or external provider are involved.
 Output includes the 110 rows, failures, memory samples and per-process peak
 working sets on Windows. Per-process peaks can occur at different times.
-The optional `pilot` argument is a wiring check on an independently generated
-ten-revision board. Its two samples never count toward acceptance.
+The optional `pilot` argument is a wiring check on an independently generated or copied partial
+history. Its two samples never count toward acceptance.
 
 ## Measurements during development
 
@@ -84,3 +83,15 @@ default and did not apply the planned change. The source was subsequently
 updated with UTF-8 and rebuilt. Sandbox denial for the local dependency junction
 was resolved with the scoped permission. Chrome uses its own fresh local profile;
 all runtime projects and raw reports stay outside tracked source.
+
+
+A first actual Chrome regression attempt missed the first textarea: its reported
+y coordinate was 1,767 in an 804-pixel viewport. History and edge-drag harnesses
+now scroll each real control into view and locate only card body textareas, as the
+page also contains unrelated textareas. The drawing test uses the actual canvas
+bounds after scrolling. The history edit/undo/reload and edge endpoint drag/draft
+recovery/save/reopen regressions both passed after repairing those observations.
+At 4,700 actual durable edits, the intermediate idle wiring check completed
+all three trials. Its cold save was 1.081 s; measured pilot saves were 0.810 and
+0.797 s, refresh 1.930 and 1.965 s, and history 1.221 and 1.167 s. This overlapped
+the independent generation job and is retained separately from acceptance.

@@ -87,7 +87,7 @@ try{
  process.env.BANG_ORGANIZER_ENDPOINT=url(model);
  assert.ok(!['BANG_ORGANIZER_NATIVE','BANG_ORGANIZER_CODEX','BANG_ORGANIZER_DSH'].some(k=>process.env[k]),'Expected isolated controlled executor configuration');
  const initial=await call('state'),start=initial.revision;
- report.startRevision=start;assert.equal(start,pilot?10:10000);
+ report.startRevision=start;if(pilot)assert.ok(start>=2&&start<=10000);else assert.equal(start,10000);
  assert.equal(initial.canvas.nodes.length,1000);assert.equal(initial.canvas.edges.length,3000);
  assert.equal((await call('history-capacity')).revisions,start+1);
  const status=await call('status');
@@ -132,7 +132,7 @@ try{
  report.measuredProjectSize=await treeBytes(path.join(project,'.bang'));
  // Verify the retained frozen head independently of the new sample revisions.
  const original=await call('history-preview',{revision:start});
- const lastEdit=start>=1000?start-999:1;
+ const lastEdit=1+1000*Math.floor((start-1)/1000);
  assert.equal(original.canvas.nodes[0].text,'Revision '+lastEdit+': condition remains unmeasured.');
  const historyRows=await call('history');
  assert.equal(historyRows.length,start+warmups+samples+1);
