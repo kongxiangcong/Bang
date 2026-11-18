@@ -8,9 +8,13 @@ const collection=(op:BoardOperation)=>op.type.endsWith('extra')?'extras':op.type
 export function edits(base:CommittedBoard,cards:Card[],overlay:Overlay,edges:Edge[]=base.canvas.edges,extras:EditorExtra[]=base.editorExtras??[]):BoardOperation[]{
  const operations:BoardOperation[]=[];
  for(const [kind,objects,oldObjects,fields] of [['card',cards,base.canvas.nodes,editableFields],['relation',edges,base.canvas.edges,relationFields]] as const){
-  for(const object of objects){const old=oldObjects.find(n=>n.id===object.id);if(!old)operations.push(kind==='card'?{type:'create-card',card:object as Card}:{type:'create-relation',edge:object as Edge});
+  if(objects===oldObjects)continue;
+  const previousById=new Map<string,Card|Edge>();
+  for(const old of oldObjects)previousById.set(old.id,old);
+  const present=new Set(objects.map(n=>n.id));
+  for(const object of objects){const old=previousById.get(object.id);if(!old)operations.push(kind==='card'?{type:'create-card',card:object as Card}:{type:'create-relation',edge:object as Edge});
    else {const changed=Object.fromEntries(fields.filter(k=>JSON.stringify((old as any)[k])!==JSON.stringify((object as any)[k])).map(k=>[k,(object as any)[k]]));if(Object.keys(changed).length)operations.push({type:`edit-${kind}`,id:object.id,...changed,fieldRevisions:overlay[object.id]} as BoardOperation);}}
-  for(const old of oldObjects)if(!objects.some(c=>c.id===old.id)){
+  for(const old of oldObjects)if(!present.has(old.id)){
    // A locally acknowledged relation carries newer field baselines than the
    // displayed board. Other incident edges remain guarded server-side cascades.
    if(kind==='relation'&&!overlay[old.id]&&(!cards.some(c=>c.id===(old as Edge).fromNode)||!cards.some(c=>c.id===(old as Edge).toNode)))continue;

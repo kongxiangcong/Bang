@@ -43,7 +43,7 @@ export function createCanvasMiddleware({project:rootProject}){
    if(action==='history-capacity'){res.end(JSON.stringify(await runtimeOperation(project,'history-capacity',topic)));return;}
    if(action==='legacy-history'){res.end(JSON.stringify(await runtimeOperation(project,'legacy-history',topic)));return;}
    if(action==='history'){res.end(JSON.stringify(await runtimeOperation(project,'history',topic)));return;}
-   if(action==='history-preview'||action==='history-diff'){const input=action==='history-preview'?{revision:Number(url.searchParams.get('revision'))}:{fromRevision:Number(url.searchParams.get('from')),toRevision:Number(url.searchParams.get('to'))};res.end(JSON.stringify(await runtimeOperation(project,action,topic,input)));return;}
+   if(action==='history-preview'||action==='history-diff'){const input=action==='history-preview'?{revision:Number(url.searchParams.get('revision')),details:url.searchParams.get('details')==='1'}:{fromRevision:Number(url.searchParams.get('from')),toRevision:Number(url.searchParams.get('to'))};res.end(JSON.stringify(await runtimeOperation(project,action,topic,input)));return;}
    if(action==='resources'){res.end(JSON.stringify(await runtimeOperation(project,'resource-status',topic,{id:url.searchParams.get('id')})));return;}
    if(action==='turns'){res.end(JSON.stringify(await runtimeOperation(project,'turn-status',undefined,{topicId:topic})));return;}
    if(action==='source'){res.end(JSON.stringify(await runtimeOperation(project,'turn-source',undefined,{topicId:topic,id:url.searchParams.get('id')})));return;}

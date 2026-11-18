@@ -48,14 +48,14 @@ function fault(project,phase){
 }
 function bounded(action){for(let attempt=0;;attempt++){try{return action();}catch(error){if(!['EBUSY','EPERM','EACCES','ENOSPC','EDQUOT'].includes(error.code))throw error;if(attempt===3)throw Object.assign(Error(`Save blocked (${error.code}); recovery required`),{code:'SAVE_BLOCKED',cause:error});Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,40);}}}
 function syncDirectory(directory){if(process.platform==='win32')return;const fd=fs.openSync(directory,'r');try{fs.fsyncSync(fd);}finally{fs.closeSync(fd);}}
-function confirm(db,topic,intent){
- const state=JSON.parse(intent.state),previous=db.prepare('SELECT state FROM topics WHERE topic=?').get(topic);
+function confirm(db,topic,intent,state){
+ const previous=db.prepare('SELECT state FROM topics WHERE topic=?').get(topic);
  const encoded=encodeRevision(db,topic,state,previous?JSON.parse(previous.state):null);db.exec('BEGIN IMMEDIATE');
  try{db.prepare('INSERT INTO topics VALUES(?,?,?,?) ON CONFLICT(topic) DO UPDATE SET revision=excluded.revision,state=excluded.state,hash=excluded.hash').run(topic,state.revision,intent.state,intent.hash);db.prepare('INSERT OR IGNORE INTO revisions VALUES(?,?,?)').run(topic,state.revision,encoded);db.prepare("UPDATE intents SET status='confirmed',state=? WHERE topic=? AND operation=?").run(JSON.stringify({encoding:'bang-revision-reference-v1',revision:state.revision}),topic,intent.operation);db.exec('COMMIT');}catch(error){db.exec('ROLLBACK');throw error;}
 }
 export function finishPublication(db,project,topic,file,intent,baseline){
- let content;
- try{const state=JSON.parse(intent.state);validateCanvas(state.canvas);if(!Number.isSafeInteger(state.revision)||state.revision<0||JSON.parse(intent.receipt).revision!==state.revision)throw Error('Invalid revision');content=bytes(state.canvas);if(hash(content)!==intent.hash)throw Error('Hash mismatch');}catch{throw recoveryError('Prepared recovery material invalid; recovery required');}
+ let content,state;
+ try{state=JSON.parse(intent.state);validateCanvas(state.canvas);if(!Number.isSafeInteger(state.revision)||state.revision<0||JSON.parse(intent.receipt).revision!==state.revision)throw Error('Invalid revision');content=bytes(state.canvas);if(hash(content)!==intent.hash)throw Error('Hash mismatch');}catch{throw recoveryError('Prepared recovery material invalid; recovery required');}
  const current=observed(file);
  if(current!==intent.hash){
   if(current!==baseline)throw recoveryError('Canvas externally changed; recovery required');
@@ -65,7 +65,7 @@ export function finishPublication(db,project,topic,file,intent,baseline){
   bounded(()=>{fault(project,'write');const fd=fs.openSync(temporary,'w',0o600);try{fs.writeFileSync(fd,content);fs.fsyncSync(fd);}finally{fs.closeSync(fd);}});
   bounded(()=>{fault(project,'replace');if(observed(file)!==baseline)throw recoveryError('Canvas changed during preparation; recovery required');fs.renameSync(temporary,file);});syncDirectory(path.dirname(file));
  }
- fault(project,'replaced');bounded(()=>{fault(project,'confirm');confirm(db,topic,intent);});fault(project,'confirmed');logPublication(project,JSON.parse(intent.receipt).revision);return JSON.parse(intent.receipt);
+ fault(project,'replaced');bounded(()=>{fault(project,'confirm');confirm(db,topic,intent,state);});fault(project,'confirmed');logPublication(project,JSON.parse(intent.receipt).revision);return JSON.parse(intent.receipt);
 }
 export function reconcile(db,project,topic,file){
  const pending=db.prepare("SELECT * FROM intents WHERE topic=? AND status='prepared'").get(topic);if(!pending)return;

@@ -17,4 +17,6 @@ export function validateRelationFields(e:Partial<Edge>){
  for(const k of ['fromSide','toSide'] as const)if(e[k]!==undefined&&!['top','right','bottom','left'].includes(e[k]!))throw Error('Invalid relation side');
 }
 // Labels are user data. Unknown terms (including apparent support) remain unclassified.
-export function semanticRelations(edges:Edge[],nodes:{id:string;type?:string}[]){return edges.filter(e=>[e.fromNode,e.toNode].every(id=>nodes.some(n=>n.id===id&&n.type!=='group'))).map(e=>({id:e.id,fromNode:e.fromNode,toNode:e.toNode,label:e.label??'',classification:e.kind&&e.kind!=='general'?e.kind:e.label?'unclassified':'related',direction:e.fromEnd==='arrow'?(e.toEnd!=='none'?'bidirectional':'reverse'):(e.toEnd==='none'?'undirected':'forward')}));}
+export function semanticRelations(edges:Edge[],nodes:{id:string;type?:string}[]){
+ const knowledgeIds=new Set(nodes.filter(node=>node.type!=='group').map(node=>node.id));
+ return edges.filter(e=>knowledgeIds.has(e.fromNode)&&knowledgeIds.has(e.toNode)).map(e=>({id:e.id,fromNode:e.fromNode,toNode:e.toNode,label:e.label??'',classification:e.kind&&e.kind!=='general'?e.kind:e.label?'unclassified':'related',direction:e.fromEnd==='arrow'?(e.toEnd!=='none'?'bidirectional':'reverse'):(e.toEnd==='none'?'undirected':'forward')}));}

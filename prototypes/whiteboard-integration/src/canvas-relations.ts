@@ -1,7 +1,9 @@
 import {convertToExcalidrawElements} from '@excalidraw/excalidraw';
 import type {Canvas,Edge} from '../../../runtime/canvas/contract';
-export function relationElements(board:Canvas){return board.edges.flatMap(e=>{
- const a=board.nodes.find(n=>n.id===e.fromNode),b=board.nodes.find(n=>n.id===e.toNode);if(!a||!b)return [];
+export function relationElements(board:Canvas){
+ const nodes=new Map(board.nodes.map(n=>[n.id,n]));
+ return board.edges.flatMap(e=>{
+ const a=nodes.get(e.fromNode),b=nodes.get(e.toNode);if(!a||!b)return [];
  const x=a.x+a.width+8,y=a.y+a.height/2,dx=b.x-8-x,dy=b.y+b.height/2-y;
  const result=convertToExcalidrawElements([{type:'arrow',id:e.id,x,y,width:Math.abs(dx),height:Math.abs(dy),points:[[0,0],[dx,dy]],roughness:0,startArrowhead:e.fromEnd==='arrow'?'arrow':null,endArrowhead:e.toEnd==='none'?null:'arrow',...(e.label?{label:{text:e.label,fontSize:14,fontFamily:2}}:{})}],{regenerateIds:false});
  return result.map(n=>n.id===e.id?{...n,boundElements:e.label?[{id:e.id+':label',type:'text'}]:[],startBinding:{elementId:e.fromNode,focus:0,gap:8},endBinding:{elementId:e.toNode,focus:0,gap:8},customData:{relationId:e.id}}:{...n,id:e.id+':label',containerId:e.id,customData:{relationId:e.id}});

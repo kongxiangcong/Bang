@@ -21,6 +21,10 @@ test('public history previews immutable revisions and compares content, endpoint
   assert.ok(diff.changes.some(c=>c.collection==='nodes'&&c.id==='a'&&c.field==='text'&&c.before==='a'&&c.after==='changed'));
   assert.ok(diff.changes.some(c=>c.field==='fromNode'&&c.before==='a'&&c.after==='b'));
   assert.ok(diff.changes.some(c=>c.field==='x'&&c.after===80));assert.ok(diff.changes.some(c=>c.collection==='metadata'));
+  const detail=ok(run(p,'history-preview',{revision:1,details:true}));
+  assert.deepEqual(detail.diff,diff);
+  assert.deepEqual(detail.snapshot,ok(run(p,'history-preview',{revision:1})));
+  assert.deepEqual(detail.restorePreview,ok(run(p,'restore-preview',{revision:1})));
   assert.equal(ok(run(p,'state')).revision,1);
  }finally{run(p,'stop');await fs.rm(p,{recursive:true,force:true});}
 });

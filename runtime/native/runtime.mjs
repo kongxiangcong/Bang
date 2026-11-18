@@ -19,11 +19,20 @@ import {listTopics,createTopic,registerConnector,connectSession,enableBinding,bi
 const here=fileURLToPath(import.meta.url);
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 function location(project){const root=fs.realpathSync(project);for(const dir of [path.join(root,'.bang'),path.join(root,'.bang','runtime')]){try{if(fs.lstatSync(dir).isSymbolicLink())throw Error('Runtime path must not be a symbolic link');}catch(error){if(error.code!=='ENOENT')throw error;}}return path.join(root,'.bang','runtime');}
+let windowsOwnerSid;
+function currentWindowsOwnerSid(){
+ if(!windowsOwnerSid){
+  const identity=spawnSync('whoami.exe',['/user','/fo','csv','/nh'],{encoding:'utf8',windowsHide:true});
+  const sid=identity.stdout?.match(/S-1-5-[0-9-]+/)?.[0];
+  if(!sid)throw Error('Cannot establish private runtime owner');
+  windowsOwnerSid=sid;
+ }
+ return windowsOwnerSid;
+}
 function privateDirectory(dir){
  fs.mkdirSync(dir,{recursive:true,mode:0o700});
  if(process.platform==='win32'){
-  const identity=spawnSync('whoami.exe',['/user','/fo','csv','/nh'],{encoding:'utf8',windowsHide:true});
-  const sid=identity.stdout?.match(/S-1-5-[0-9-]+/)?.[0];if(!sid)throw Error('Cannot establish private runtime owner');
+  const sid=currentWindowsOwnerSid();
   const acl=spawnSync('icacls.exe',[dir,'/inheritance:r','/grant:r',`*${sid}:(OI)(CI)F`],{encoding:'utf8',windowsHide:true});
   if(acl.status!==0)throw Error('Cannot secure runtime permissions');
  }else fs.chmodSync(dir,0o700);
