@@ -240,6 +240,12 @@
 !/tests/context-delivery.test.mjs
 !/tests/context-delivery-browser.mjs
 
+# Ticket 37 bounded legacy migration, review UI and public acceptance.
+!/runtime/canvas/legacy-migration.mjs
+!/runtime/canvas/MIGRATION.md
+!/prototypes/whiteboard-integration/src/LegacyMigration.tsx
+!/tests/legacy-migration.test.mjs
+!/tests/legacy-migration-browser.mjs
 # Ticket 28 reviewed DSH Organizer executor and bounded native acceptance.
 !/runtime/dsh/executor.mjs
 !/runtime/dsh/executor-config.mjs

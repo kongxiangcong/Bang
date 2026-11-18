@@ -58,7 +58,7 @@ function inspectPatch(db,topic,patch,row,project){
    const existed=db.prepare("SELECT 1 FROM revisions, json_each(revisions.state, '$.canvas.nodes') AS node WHERE topic=? AND json_extract(node.value,'$.id')=? LIMIT 1").get(topic,id);
    const edgeExisted=db.prepare("SELECT 1 FROM revisions, json_each(revisions.state, '$.canvas.edges') AS edge WHERE topic=? AND json_extract(edge.value,'$.id')=? LIMIT 1").get(topic,id);
    if(op.card?.derivedFrom&&!current.canvas.nodes.some(n=>n.id===op.card.derivedFrom))conflict('derivedFrom',null,null,op.card.derivedFrom,'Unknown derivation source');
-   if(existed||edgeExisted)conflict('id',null,now,op.card??op.edge,now?'Identity already exists':'Deleted identity cannot be reused');
+   if(existed||edgeExisted||(current.deletionIntents??[]).some(d=>d.id===id))conflict('id',null,now,op.card??op.edge,now?'Identity already exists':'Deleted identity cannot be reused');
    if(relation&&(current.deletionIntents??[]).some(d=>d.revision>patch.baseRevision&&d.object.fromNode===op.edge.fromNode&&d.object.toNode===op.edge.toNode))conflict('$deletion',null,null,op.edge,'Relation deletion intent is newer than baseline');
   }
   else if(!now)conflict('id',id,null,op.type==='delete-card'?null:op,'Card deleted');
