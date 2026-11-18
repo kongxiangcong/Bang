@@ -269,3 +269,4 @@
 
 # Ticket 27 actual pinned native Session acceptance with a controlled loopback model.
 !/tests/dsh-session-installed.mjs
+!/runtime/dsh/context-delivery.mjs
