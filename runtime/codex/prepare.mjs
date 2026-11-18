@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {generateKeyPairSync,randomUUID} from 'node:crypto';
-import {fileURLToPath} from 'node:url';
+import { codexHookFiles } from './hook-config.mjs';
 import {runtimeOperation} from '../native/runtime.mjs';
 import {CodexSessionConnector,CODEX_VERSION} from './connector.mjs';
 import {readCodexInstall} from './context-delivery.mjs';
@@ -26,11 +26,7 @@ if(install.bridge?.workspaceId!==workspaceId){
  finally{if(fs.existsSync(temporary))fs.unlinkSync(temporary);}
 }
 fs.mkdirSync(review,{recursive:true});
-const script=fileURLToPath(new URL('./hook.mjs',import.meta.url));
-const ps=value=>"'"+value.replaceAll("'","''")+"'";
-const sh=value=>"'"+value.replaceAll("'", "'\"'\"'")+"'";
-const invocation=`& ${[process.execPath,script,project].map(ps).join(' ')} --context-v1`;
-const command=process.platform==='win32'?`powershell.exe -NoProfile -NonInteractive -EncodedCommand ${Buffer.from(invocation,'utf16le').toString('base64')}`:[process.execPath,script,project].map(sh).join(' ')+' --context-v1';
-fs.writeFileSync(path.join(review,'command.txt'),process.platform==='win32'?invocation:command);
-fs.writeFileSync(path.join(review,'hooks.json'),JSON.stringify({hooks:{UserPromptSubmit:[{hooks:[{type:'command',command,timeout:30,additionalContextLimit:0}]}]}},null,2));
+const {command, hooks} = codexHookFiles(project);
+fs.writeFileSync(path.join(review,'command.txt'),command);
+fs.writeFileSync(path.join(review,'hooks.json'),hooks);
 console.log(JSON.stringify({status:'prepared-not-installed',review,hostTrust:'required',activationPrompt:'Bang: enable current session'}));

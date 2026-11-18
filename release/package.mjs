@@ -77,7 +77,7 @@ try {
       copyFile(path.join(runtimeSource, file), 'runtime/' + file, stage);
     }
   }
-  for (const file of ['bang.mjs', 'editor.mjs', 'resources.mjs']) {
+  for (const file of ['bang.mjs', 'codex-maintenance.mjs', 'editor.mjs', 'resources.mjs']) {
     copyFile(path.join(checkout, 'release', file), 'release/' + file, stage);
   }
   copyFile(node, 'node/' + platform.node, stage);
