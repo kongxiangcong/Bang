@@ -805,3 +805,34 @@ size warning). `node tests/canvas-reorganize-browser.mjs` passed in actual Chrom
 including reopen before adopting the persisted candidate, real protected HTTP,
 compiled geometry, durable receipt, manual refresh and committed reopen.
 `git diff --check` passed. No broad platform/service/quality claim is inferred.
+
+
+### Ticket 34 independent-review correction — directed roots
+
+The original revision-4 rule incorrectly chose the first relation endpoint as a
+root. Independent review reproduced animal → mammal → whale selecting mammal
+when that edge came first, flattening the actual hierarchy. That implementation
+is superseded by rule revision 5; the earlier completion claim was premature.
+
+Root inference now examines the whole directed component: classification/flow
+use a root that reaches every member, argument uses the reversed direction
+(a claim reachable from every reason). Equivalent candidates belong to the same
+cyclic source/sink component, where stable card order chooses the representative.
+Competing root components with no common directed root remain free rather than
+inventing a hierarchy. Scope order is also stable card order. All original edges,
+including cycles and general cross links, remain untouched. Existing committed
+structure is not migrated or retyped by this rule correction.
+
+Public Compiler RED/GREEN reproduced the reported hierarchy and the cycle-order
+failure before implementation. Tests cover classification/flow/argument chains,
+reversed edge/card order, all six edge permutations of three-node cycles and
+competing root components. One test initially assumed argument layers were vertical;
+it was corrected to the established reason-left/claim-right contract. An overly
+broad test filter also selected a native test in the sandbox, where spawn was
+blocked; final native evidence below uses the authorized execution environment.
+
+Final correction: 9 focused Compiler/public Runtime tests passed, including
+controlled automatic publication, selected preview/adoption/reopen, scope guards
+and existing argument/flow preservation. TypeScript check and diff-check passed.
+Latest integration remains b8fb8bc and is already merged. No new browser, real
+model, cross-platform or performance claims; original reviewed failures retained.

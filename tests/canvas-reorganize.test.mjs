@@ -16,9 +16,35 @@ test('mixed rules select separate typed regions, retain uncertain free cards and
  const edges=[{id:'c',fromNode:'category',toNode:'member',kind:'classification'},{id:'a',fromNode:'reason',toNode:'claim',kind:'support'},{id:'f',fromNode:'start',toNode:'end',kind:'precedence'},{id:'cross',fromNode:'claim',toNode:'start',kind:'general'}];
  const result=compileCanvas({cards,edges,autoStructure:true});
  assert.equal(result.nodes[0].structure?.kind,'classification');assert.equal(result.nodes[2].structure?.kind,'argument');assert.equal(result.nodes[4].structure?.kind,'flow');assert.equal(result.nodes[6].structure??null,null);
- assert.deepEqual(result.edges,edges);assert.ok(result.structureDecisions.every(d=>d.reason&&d.scope.length&&d.rulesRevision===4));
+ assert.deepEqual(result.edges,edges);assert.ok(result.structureDecisions.every(d=>d.reason&&d.scope.length&&d.rulesRevision===5));
  const again=compileCanvas({cards:[],previous:result,autoStructure:true});assert.deepEqual(again.nodes,result.nodes);
  const ambiguous=compileCanvas({cards:cards.slice(0,2),edges:[edges[0],{id:'other',fromNode:'member',toNode:'category',kind:'support'}],autoStructure:true});assert.ok(ambiguous.nodes.every(n=>!n.structure));
+});
+
+test('automatic directed roots follow the whole classification, flow and argument graph regardless of edge order',()=>{
+ for(const [kind,relation,ids,pairs] of [
+  ['classification','classification',['animal','mammal','whale'],[['mammal','whale'],['animal','mammal']]],
+  ['flow','precedence',['start','middle','end'],[['middle','end'],['start','middle']]],
+  ['argument','support',['claim','reason','premise'],[['premise','reason'],['reason','claim']]]
+ ]){
+  const cards=ids.map(id=>({id,text:id})),edges=pairs.map(([fromNode,toNode],i)=>({id:'e'+i,fromNode,toNode,kind:relation}));
+  const result=compileCanvas({cards,edges,autoStructure:true});
+  assert.ok(result.nodes.every(n=>n.structure?.rootId===ids[0]),`${kind} root is ${ids[0]}`);
+  const [root,middle,leaf]=result.nodes;assert.ok(kind==='classification'?root.x<middle.x&&middle.x<leaf.x:kind==='argument'?root.x>middle.x&&middle.x>leaf.x:root.y<middle.y&&middle.y<leaf.y,`${kind} retains three directed layers`);
+  const reversed=compileCanvas({cards,edges:[...edges].reverse(),autoStructure:true});
+  assert.deepEqual(reversed.nodes,result.nodes);assert.deepEqual(reversed.structureDecisions,result.structureDecisions);assert.deepEqual(result.edges,edges);assert.deepEqual(reversed.edges,[...edges].reverse());
+  assert.ok(compileCanvas({cards:[...cards].reverse(),edges,autoStructure:true}).nodes.every(n=>n.structure?.rootId===ids[0]),'unique directed root is independent of card order too');
+ }
+});
+
+test('cyclic automatic regions keep every edge and choose a stable representative; competing roots stay free',()=>{
+ for(const relation of ['classification','precedence','support']){
+  const cards=['b','a','c'].map(id=>({id,text:id})),edges=[['a','b'],['b','c'],['c','a']].map(([fromNode,toNode],i)=>({id:'e'+i,fromNode,toNode,kind:relation}));
+  const result=compileCanvas({cards,edges,autoStructure:true});assert.ok(result.nodes.every(n=>n.structure?.rootId==='b'));
+  for(const order of [[0,2,1],[1,0,2],[1,2,0],[2,0,1],[2,1,0]]){const permuted=order.map(i=>edges[i]),next=compileCanvas({cards,edges:permuted,autoStructure:true});assert.deepEqual(next.nodes,result.nodes);assert.deepEqual(next.structureDecisions,result.structureDecisions);assert.deepEqual(next.edges,permuted);}
+  const competing=(relation==='support'?[['c','a'],['c','b']]:[['a','c'],['b','c']]).map(([fromNode,toNode],i)=>({id:'fork'+i,fromNode,toNode,kind:relation}));
+  for(const ordered of [competing,[...competing].reverse()]){const uncertain=compileCanvas({cards,edges:ordered,autoStructure:true});assert.ok(uncertain.nodes.every(n=>!n.structure));assert.deepEqual(uncertain.edges,ordered);assert.match(uncertain.structureDecisions[0].reason,/root/);}
+ }
 });
 
 test('automatic Organizer publication uses mixed rules and the shared provider admits only scoped reorganization fields',async()=>{
