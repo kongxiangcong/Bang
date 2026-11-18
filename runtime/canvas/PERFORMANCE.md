@@ -153,3 +153,15 @@ on every connection and checks the same project path, epoch and capability. The
 4,700-revision blocked pilot completed with one controlled model request and no
 external calls. It is a wiring check, not a fair speedup comparison: the inspector
 build and concurrent load also changed between development runs.
+
+## Integration verification after measurement
+
+Ticket 26 integration `5fe6358` is merged at `c8e9518`. It changes the shared
+native routing and context-preview UI. The combined production build passed
+(Vite 21.89 s). All 11 focused public history and Codex-context tests passed.
+Actual Chrome verified controlled signed context delivery, hook output, unsynced
+and manual fallback behavior and reopen. A fresh copy of the 10,000-edit dataset
+also passed three full blocked-condition save/refresh/history smoke trials,
+including the complete frozen geometry, text, relation and ordered receipt
+checks. Its separate raw report is `39-frozen/blocked-pMkLwG/report.json`.
+The 220 formal measurements above retain their original source identity.
