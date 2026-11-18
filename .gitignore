@@ -298,3 +298,8 @@
 !/release/resources.mjs
 !/tests/installed-bang.test.mjs
 !/tests/installed-bang-smoke.mjs
+
+# Frozen quality evaluation and its isolated Codex CLI boundary.
+!/tests/whiteboard-quality.mjs
+!/tests/whiteboard-quality-codex.mjs
+!/baselines/whiteboard-v1/quality-evaluation.md
