@@ -94,7 +94,16 @@ async function click(x,y){await cmd('Input.dispatchMouseEvent',{type:'mousePress
  await type('卡片正文 3','人工改写');await button('保存');await until(()=>evaluate('document.body.innerText.includes("已保存 · 修订 2")'));
  await button('删除卡片 3');await button('保存');await until(()=>evaluate('document.body.innerText.includes("已保存 · 修订 3")'));
  await cmd('Page.reload');await until(()=>evaluate(`document.querySelectorAll('textarea[aria-label^="卡片正文 "]').length===2`));
- state=await (await canvasRequest(url+'/api/canvas/demo/state')).json();assert.equal(state.revision,3);assert.equal(state.canvas.nodes.length,2); const shot=await cmd('Page.captureScreenshot',{format:'png'});await fs.writeFile(process.env.BANG_BROWSER_SCREENSHOT??path.join(root,'canvas-save-browser.png'),Buffer.from(shot.data,'base64'));
+ state=await (await canvasRequest(url+'/api/canvas/demo/state')).json();assert.equal(state.revision,3);assert.equal(state.canvas.nodes.length,2);
+ await cmd('Page.bringToFront');
+ await until(()=>evaluate('window.canvasBoard?.snapshot().length===2'));
+ await evaluate(`(async () => {
+  document.querySelector('main')?.scrollIntoView({block:'start'});
+  await document.fonts.ready;
+  await new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(done)));
+ })()`);
+ const shot=await cmd('Page.captureScreenshot',{format:'png'});
+ await fs.writeFile(process.env.BANG_BROWSER_SCREENSHOT??path.join(root,'canvas-save-browser.png'),Buffer.from(shot.data,'base64'));
  console.log(JSON.stringify({pass:true,packaged:Boolean(installed),evidence:'real Chrome, real mouse/text create, explicit save, reopen, edit, delete -> HTTP -> disk'}));
  }finally{ws?.close();chrome?.kill();if(server)await new Promise(r=>server.close(r));packaged?.kill();await delay(500);spawnSync(node,[launcher,'stop','--project',temp],{encoding:'utf8'});await fs.rm(temp,{recursive:true,force:true,maxRetries:5,retryDelay:200});}
 
