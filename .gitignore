@@ -297,5 +297,7 @@
 !/release/editor.mjs
 !/release/package.mjs
 !/release/resources.mjs
+!/release/SECURITY-VALIDATION.md
 !/tests/installed-bang.test.mjs
 !/tests/installed-bang-smoke.mjs
+!/tests/installed-security.mjs
