@@ -286,3 +286,15 @@
 !/runtime/canvas/PERFORMANCE.md
 !/runtime/dsh/context-delivery.mjs
 !/runtime/canvas/T32-SAMPLES.json
+
+# Packaged Windows Bang and native installation acceptance.
+!/release/
+/release/*
+!/release/Bang.cmd
+!/release/README.md
+!/release/bang.mjs
+!/release/editor.mjs
+!/release/package.mjs
+!/release/resources.mjs
+!/tests/installed-bang.test.mjs
+!/tests/installed-bang-smoke.mjs
