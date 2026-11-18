@@ -96,7 +96,7 @@ async function click(x,y){await cmd('Input.dispatchMouseEvent',{type:'mousePress
  await cmd('Page.reload');await until(()=>evaluate(`document.querySelectorAll('textarea[aria-label^="卡片正文 "]').length===2`));
  state=await (await canvasRequest(url+'/api/canvas/demo/state')).json();assert.equal(state.revision,3);assert.equal(state.canvas.nodes.length,2);
  await cmd('Page.bringToFront');
- await until(()=>evaluate('window.canvasBoard?.snapshot().length===2'));
+ await until(()=>evaluate('!!window.canvasBoard?.snapshot().length'));
  await evaluate(`(async () => {
   document.querySelector('main')?.scrollIntoView({block:'start'});
   await document.fonts.ready;
