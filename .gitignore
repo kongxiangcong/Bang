@@ -300,6 +300,11 @@
 !/tests/installed-bang.test.mjs
 !/tests/installed-bang-smoke.mjs
 
+# Packaged Codex maintenance and public installation lifecycle acceptance.
+!/release/codex-maintenance.mjs
+!/runtime/codex/hook-config.mjs
+!/tests/installed-lifecycle.test.mjs
+
 # Frozen quality evaluation and its isolated Codex CLI boundary.
 !/tests/whiteboard-quality.mjs
 !/tests/whiteboard-quality-codex.mjs
