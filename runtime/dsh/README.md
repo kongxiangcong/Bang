@@ -144,3 +144,85 @@ on Windows and 22/22 on native Linux**, zero failures/skips, including both
 checkpoint regressions. The six imported ingestion tests execute twice as noted
 above. No frontend implementation changed; no new build is needed for these
 Node-only adapter/tests/documentation changes. `git diff --check` is clean.
+
+## Next-turn context delivery — ticket 29
+
+Run the project-local prepare command again when upgrading from ticket 27. It
+retains the connector identity and provisions a distinct Ed25519 ContextBridge
+key. A successful root `bang_enable` stores the topic locator for this exact
+Session under the Runtime private directory. After process restart the owner
+checks the signed current workspace, binding, topic, host instance and Session
+on each context call. A stale locator cannot authorize another topic. Loading
+the adapter does not authorize an unbound root, child Agent or other cwd.
+
+On DSH 0.2.1-rc.2 the scoped `turn/start` event submits the committed-state cut.
+The first `agent/pre-step` containing real user input adds that cut as a sourced
+user message to the accepted host decision. Tool continuations do not inject it
+again. Only seeing the exact message ID, source and content in the root Session
+satisfies the delivery receipt. Acknowledgement persists through the existing
+signed owner operation. Model-use status remains unknown. DSH retains earlier
+messages in the transcript, so the envelope identifies the current revision and
+states that it supersedes earlier whiteboard data. The automatic message is
+excluded from completed user input.
+
+The model-visible read-only tool `bang_context_query` retrieves bounded item,
+change, withdrawal and source pages from this turn. It never exposes the turn
+token or signing key. The native envelope budget is 16 KiB. Delivery has a
+1500 ms deadline with up to another 200 ms for recording failure. On timeout
+the conversation proceeds with an unsynced notice and manual knowledge-context
+fallback. The editor's context status and explicit current-board read are the
+user-visible recovery paths. A pre-step that the host rejects cannot produce a
+successful delivery receipt. Conversation reception and Organizer configuration
+remain separate.
+
+### Native acceptance, 2026-11-18
+
+`node tests/dsh-session-installed.mjs` uses the ticket 27 isolated launchers
+and disables credential stores. Both actual Windows 11 and Ubuntu 24.04.4
+WSL2 Linux x64 (ext4, uid65534) ran the pinned DSH with a deterministic local
+provider. Each run checked 25 model requests, including the ticket 27 recovery
+cases, and eight received turns before the final Organizer scenario.
+
+- An ordinary “What should we use?” after an explicit save sent Option B and the
+  deletion of the obsolete premise in the model request. The actual DSH final
+  text was “Use Option B.” and the persisted receipt recorded revision 2.
+- A synthetic host middleware saved a new value after utterance start, before
+  step assembly completed. An 18,013-character card exceeded the envelope
+  budget. The real model tool round trip read the earlier PINNED_DETAIL value.
+  The newer RACED_DETAIL never appeared in the scoped query result.
+- A 1.8 s pre-step delay exceeded the delivery deadline. The provider saw the
+  unsynced notice, conversation continued, and the owner retained unsynced.
+- A controlled Organizer produced a source-linked conclusion. An explicit
+  manual premise edit then invalidated it. The next ordinary question sent
+  the conclusion ID as withdrawn, omitted it from usable cards, and the actual
+  DSH final text returned “Current decision: Option D.”
+- Retained Windows project: `C:/Users/72449/AppData/Local/Temp/bang-dsh-session-native-aJYy80/project`.
+  Linux: `/tmp/bang-dsh-session-native-Ftitgs/project`, staged in
+  `/var/tmp/bang-ticket29-native-p42H7m`.
+
+The provider derives its bounded answer deterministically from the observed
+request. This establishes the native transport, tool and response path. It
+does not establish the behavior of the external DeepSeek model. No existing
+accounts, credentials or external inference were used. Formal model-quality
+and Windows 10 acceptance remain open.
+
+The first actual Windows regression failed because the provider received no
+board at all. The first WSL staging command expanded a nested shell variable
+incorrectly. Both misplaced staging copies were verified by creation time and
+recursive file comparison, then relocated intact under
+`/var/tmp/bang-ticket29-first-stage-lC88qx`. A script with LF encoding and
+an explicit ext4 temp directory completed the native run. Direct WSL launch
+as nobody selected the nologin shell, and a PATH-only runuser invocation could
+not resolve the executable. An absolute /usr/sbin/runuser invocation corrected
+the regression-suite launcher.
+
+Joint public regressions on Windows and Linux both passed 27/27 with zero
+skips, using `node --test --test-force-exit tests/dsh-session-connector.test.mjs
+tests/context-delivery.test.mjs`. These include foreign scope/replay rejection,
+restart, source replacement and independent-key checks.
+
+The final build defers reading the independent bridge key until a bound
+root turn so a missing bridge key can degrade without taking down reception.
+Both native 25-request matrices passed again after this change. Final retained
+projects: Windows `C:/Users/72449/AppData/Local/Temp/bang-dsh-session-native-aSIUfz/project`,
+Linux `/tmp/bang-dsh-session-native-qhX8SS/project`.
