@@ -9,13 +9,35 @@ const digest=v=>hash(JSON.stringify(v));
 function database(project){const db=openBindingDatabase(project);db.exec(`CREATE TABLE IF NOT EXISTS context_bridges(id TEXT PRIMARY KEY,registration TEXT NOT NULL); CREATE TABLE IF NOT EXISTS context_proofs(bridge TEXT NOT NULL,nonce TEXT NOT NULL,PRIMARY KEY(bridge,nonce)); CREATE TABLE IF NOT EXISTS context_turns(id TEXT PRIMARY KEY,topic TEXT NOT NULL,body TEXT NOT NULL);`);return db;}
 // Provisioning is owner-only. A binding browser capability does not register bridges.
 export function registerContextBridge(project,input){const db=database(project);try{if(!/^[-\w]+$/.test(input?.id))throw Error('Invalid bridge identity');let registration;if(input.publicKey){if(createPublicKey(input.publicKey).asymmetricKeyType!=='ed25519'||typeof input.host!=='string'||!input.host||!Array.isArray(input.versions)||!input.versions.length||input.versions.some(v=>typeof v!=='string'||!v))throw Error('Explicit Ed25519 ContextBridge registration required');registration={host:input.host,versions:input.versions,publicKey:input.publicKey};}else{const row=db.prepare('SELECT registration FROM session_connectors WHERE id=?').get(input.connectorId??'');if(!row)throw Error('Trusted connector registration required');registration=JSON.parse(row.registration);}db.prepare('INSERT INTO context_bridges VALUES(?,?)').run(input.id,JSON.stringify(registration));return {id:input.id};}finally{db.close();}}
-function authenticate(db,workspaceId,command,input){const {proof,...data}=input??{};if(typeof proof?.payload!=='string')throw Error('Context bridge proof required');const claims=JSON.parse(Buffer.from(proof.payload,'base64url').toString('utf8')),row=db.prepare('SELECT registration FROM context_bridges WHERE id=?').get(claims.bridgeId??'');if(!row)throw Error('Trusted ContextBridge required');const c=new SignedSessionConnector(JSON.parse(row.registration)).verifyProof(proof,workspaceId,command);if(claims.requestHash!==digest(data)||c.turnId!==data.turnId||(!c.scope.includes('*')&&!c.scope.includes(data.topicId)))throw Error('Context request scope rejected');const binding=db.prepare('SELECT * FROM binding_sources WHERE topic=? AND active=1').get(data.topicId??''),m=binding&&JSON.parse(binding.metadata);if(!m||['host','version','instanceId','sessionId'].some(k=>m[k]!==c[k]))throw Error('Context bound session scope rejected');if(db.prepare('SELECT 1 FROM context_proofs WHERE bridge=? AND nonce=?').get(claims.bridgeId,c.nonce))throw Error('Context proof replay rejected');db.prepare('INSERT INTO context_proofs VALUES(?,?)').run(claims.bridgeId,c.nonce);return {data,bridgeId:claims.bridgeId,bindingId:binding.id,key:digest([workspaceId,claims.bridgeId,binding.id,c.turnId])};}
+function authenticate(db,workspaceId,command,input){const {proof,...data}=input??{};if(typeof proof?.payload!=='string')throw Error('Context bridge proof required');const claims=JSON.parse(Buffer.from(proof.payload,'base64url').toString('utf8')),row=db.prepare('SELECT registration FROM context_bridges WHERE id=?').get(claims.bridgeId??'');if(!row)throw Error('Trusted ContextBridge required');const c=new SignedSessionConnector(JSON.parse(row.registration)).verifyProof(proof,workspaceId,command);if(claims.requestHash!==digest(data)||c.turnId!==data.turnId||(!c.scope.includes('*')&&!c.scope.includes(data.topicId)))throw Error('Context request scope rejected');const binding=db.prepare('SELECT * FROM binding_sources WHERE topic=? AND active=1').get(data.topicId??''),m=binding&&JSON.parse(binding.metadata);if(!m||(data.bindingId!==undefined&&data.bindingId!==binding.id)||['host','version','instanceId','sessionId'].some(k=>m[k]!==c[k]))throw Error('Context bound session scope rejected');if(db.prepare('SELECT 1 FROM context_proofs WHERE bridge=? AND nonce=?').get(claims.bridgeId,c.nonce))throw Error('Context proof replay rejected');db.prepare('INSERT INTO context_proofs VALUES(?,?)').run(claims.bridgeId,c.nonce);return {data,bridgeId:claims.bridgeId,bindingId:binding.id,key:digest([workspaceId,claims.bridgeId,binding.id,c.turnId])};}
 function snapshot(db,state,auth,budgetBytes){
- const projection=knowledgeContext(state),previous=db.prepare('SELECT body FROM context_turns WHERE topic=? ORDER BY rowid DESC').all(auth.data.topicId).map(r=>JSON.parse(r.body)).find(r=>r.bindingId===auth.bindingId&&r.status==='delivered'),fromRevision=previous?.revision??null;
- const prior=previous&&db.prepare('SELECT state FROM revisions WHERE topic=? AND revision=?').get(auth.data.topicId,fromRevision),old=prior?revisionState(db,auth.data.topicId,fromRevision):{canvas:{nodes:[],edges:[]},metadata:{}};
- const objects=[...state.canvas.nodes.filter(n=>n.type!=='group'),...(state.relations??[])],oldObjects=[...old.canvas.nodes.filter(n=>n.type!=='group'),...(old.relations??[])];
- const changes=[];for(const item of objects){const before=oldObjects.find(n=>n.id===item.id),metadata=state.metadata[item.id];if(!before||digest(before)!==digest(item)||digest(old.metadata[item.id]??{})!==digest(metadata??{}))changes.push({id:item.id,kind:'fromNode' in item?'relation':'card',change:before?'modified':'added',manual:metadata?.source?.kind==='manual',validity:metadata?.basis?.status??'available'});}
- for(const oldItem of oldObjects)if(!objects.some(n=>n.id===oldItem.id))changes.push({id:oldItem.id,kind:'fromNode' in oldItem?'relation':'card',change:'deleted',validity:'withdrawn'});
+ const projection=knowledgeContext(state);
+ const priorTurn=db.prepare(`SELECT json_extract(body,'$.revision') AS revision FROM context_turns
+  WHERE topic=? AND json_extract(body,'$.bindingId')=? AND json_extract(body,'$.status')=?
+  ORDER BY rowid DESC LIMIT 1`);
+ const fromRevision=priorTurn.get(auth.data.topicId,auth.bindingId,'delivered')?.revision??null;
+ const offeredRevision=priorTurn.get(auth.data.topicId,auth.bindingId,'offered')?.revision;
+ const objectsOf=board=>[...board.canvas.nodes.filter(n=>n.type!=='group'),...(board.relations??[])];
+ function reference(revision){
+  if(revision==null||!db.prepare('SELECT 1 FROM revisions WHERE topic=? AND revision=?').get(auth.data.topicId,revision))return {items:new Map(),metadata:{}};
+  const board=revisionState(db,auth.data.topicId,revision);
+  return {items:new Map(objectsOf(board).map(item=>[item.id,item])),metadata:board.metadata};
+ }
+ // Retain confirmed-delivery coverage while marking withdrawals from the last
+ // offered snapshot too, since the host may have consumed it.
+ const references=[reference(fromRevision)];
+ if(offeredRevision!==undefined&&offeredRevision!==fromRevision)references.push(reference(offeredRevision));
+ const objects=objectsOf(state),currentIds=new Set(objects.map(item=>item.id)),changes=[];
+ for(const item of objects){
+  const metadata=state.metadata[item.id];
+  if(references.some(old=>!old.items.has(item.id)||digest(old.items.get(item.id))!==digest(item)||digest(old.metadata[item.id]??{})!==digest(metadata??{}))){
+   changes.push({id:item.id,kind:'fromNode' in item?'relation':'card',change:references.some(old=>old.items.has(item.id))?'modified':'added',manual:metadata?.source?.kind==='manual',validity:metadata?.basis?.status??'available'});
+  }
+ }
+ const deleted=new Set();
+ for(const old of references)for(const item of old.items.values())if(!currentIds.has(item.id)&&!deleted.has(item.id)){
+  deleted.add(item.id);changes.push({id:item.id,kind:'fromNode' in item?'relation':'card',change:'deleted',validity:'withdrawn'});
+ }
  const sources=Object.create(null);if(db.prepare("SELECT 1 FROM sqlite_master WHERE name='completed_sources'").get())for(const metadata of Object.values(projection.metadata))for(const id of metadata.knowledge?.sources??[]){const row=db.prepare('SELECT body FROM completed_sources WHERE id=? AND topic=?').get(id,auth.data.topicId);if(row)sources[id]=JSON.parse(row.body);}
  const envelope={version:1,kind:'sourced-state-data',instructionAuthority:'none',revision:state.revision,fromRevision,cards:[],relations:[],metadata:Object.create(null),withdrawn:[],criticalChanges:{total:changes.length,items:[],omitted:changes.length},omittedCards:projection.knowledgeCards.length,omittedRelations:projection.semanticRelations.length,omittedWithdrawals:projection.withdrawn.length,query:{operation:'context-query',kinds:['changes','item','withdrawn','source'],revision:state.revision,requiresCapability:true},modelUse:'unknown'};
  const size=()=>Buffer.byteLength(JSON.stringify(envelope));
@@ -39,8 +61,8 @@ export async function contextOperation(project,workspaceId,command,input){const 
  throw Error('Unknown read-only context query');
  }
  if(command==='context-ack'){
- if(!['delivered','unsynced'].includes(data.outcome)||data.envelopeHash!==digest(record.envelope))throw Error('Exact context envelope acknowledgement required');
- if(record.status==='pending'){record.status=data.outcome==='delivered'&&Date.now()<=record.deadline?'delivered':'unsynced';record.error=record.status==='unsynced'?'DELIVERY_NOT_CONFIRMED':null;record.acknowledgedAt=Date.now();db.prepare('UPDATE context_turns SET body=? WHERE id=?').run(JSON.stringify(record),key);}
+ if(!['delivered','offered','unsynced'].includes(data.outcome)||data.envelopeHash!==digest(record.envelope))throw Error('Exact context envelope acknowledgement required');
+ if(record.status==='pending'){record.status=Date.now()<=record.deadline?data.outcome:'unsynced';record.error=record.status==='unsynced'?'DELIVERY_NOT_CONFIRMED':null;record.acknowledgedAt=Date.now();db.prepare('UPDATE context_turns SET body=? WHERE id=?').run(JSON.stringify(record),key);}
  return summary(record);
  }
  throw Error('Unknown context operation');

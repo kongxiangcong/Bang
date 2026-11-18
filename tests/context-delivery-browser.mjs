@@ -40,6 +40,9 @@ try{
  const firstContext=await bridge('context-start');
  await bridge('context-ack',{token:firstContext.token,outcome:'delivered',envelopeHash:hash(firstContext.envelope)});
  await until(()=>evaluate(`document.querySelector('[aria-label="上下文递交"]')?.textContent.includes('已递交 · 修订 0')`));
+ const offered=await bridge('context-start',{},'offered-turn');
+ await bridge('context-ack',{token:offered.token,outcome:'offered',envelopeHash:hash(offered.envelope)},'offered-turn');
+ await until(()=>evaluate(`document.querySelector('[aria-label="上下文递交"]')?.textContent.includes('Hook 已输出 · 宿主接收待确认 · 修订 0')`));
  const pendingContext=await bridge('context-start',{},'failed-turn');
  await bridge('context-ack',{token:pendingContext.token,outcome:'unsynced',envelopeHash:hash(pendingContext.envelope)},'failed-turn');
  await until(()=>evaluate(`document.querySelector('[aria-label="上下文递交"]')?.textContent.includes('未同步 · 修订 0')`));
@@ -48,5 +51,5 @@ try{
  await cmd('Page.reload');
  await until(()=>evaluate(`document.querySelector('[aria-label="上下文递交"]')?.textContent.includes('未同步 · 修订 0')`));
  assert.equal(await evaluate(`document.querySelector('[aria-label="上下文递交"]')?.textContent.includes('模型实际使用：未知')`),true);
- console.log('PASS real Chrome controlled signed delivery/unsynced, manual read fallback and reopen');
+ console.log('PASS real Chrome controlled signed delivery, Hook output, unsynced, manual read fallback and reopen');
 }catch(error){console.log(await evaluate('document.body.innerText'));console.log(await evaluate(`[...document.querySelectorAll('textarea')].map(e=>({label:e.ariaLabel,value:e.value}))`));throw error;}finally{if(ws)ws.close();chrome.kill();model.closeAllConnections();await new Promise(r=>model.close(r));delete process.env.BANG_ORGANIZER_ENDPOINT;server.closeAllConnections();await new Promise(r=>server.close(r));await call('stop');await delay(800);await fs.rm(temp,{recursive:true,force:true,maxRetries:5,retryDelay:200});}
