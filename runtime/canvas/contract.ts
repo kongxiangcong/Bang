@@ -1,4 +1,5 @@
 import {parseStructure,layoutStructures,validateStructureGroups,type StructureIntent} from './structures.ts';
+import {selectMixedStructures,type StructureDecision} from './mixed-structures.ts';
 import {layoutCards,type Bounds,type LayoutWarning} from './layout.ts';
 import {parseEdge,relationFields,validateRelationFields,semanticRelations,type Edge,type RelationOperation} from './relations.ts';
 export type {Edge} from './relations.ts';
@@ -13,7 +14,7 @@ export type Card = {structure?:StructureIntent|null;id:string;derivedFrom?:strin
 export type KnowledgeCard = Card & {type?:'text'|'file'|'link'};
 export function knowledgeCards(canvas:Canvas):KnowledgeCard[]{return canvas.nodes.filter((node):node is KnowledgeCard=>node.type!=='group');}
 export function visualRegions(canvas:Canvas){return canvas.nodes.filter(node=>node.type==='group');}
-export type Canvas = {nodes:Card[];edges:Edge[];layoutWarnings?:LayoutWarning[]};
+export type Canvas = {nodes:Card[];edges:Edge[];layoutWarnings?:LayoutWarning[];structureDecisions?:StructureDecision[]};
 export function safeResourceURL(value:unknown):string {
  const raw=string(value);let u:URL;try{u=new URL(raw);}catch{throw Error('Invalid resource URL');}
  if(!['https:','http:'].includes(u.protocol)||u.username||u.password||/[\u0000-\u0020]/.test(raw))throw Error('Unsafe resource URL');
@@ -55,12 +56,13 @@ export function validateCanvasCandidate(value:unknown):Canvas {
 }
 export function compileCanvas(input:unknown):Canvas {
  if(!input||typeof input!=='object'||!Array.isArray((input as {cards?:unknown}).cards))throw Error('Expected cards array');
- const v=input as {cards:Partial<Card>[];edges?:Edge[];previous?:Canvas;relayoutIds?:string[];bounds?:Bounds};
+ const v=input as {cards:Partial<Card>[];edges?:Edge[];previous?:Canvas;relayoutIds?:string[];bounds?:Bounds;autoStructure?:boolean};
  // Legacy group disagreement may be repaired; only the final candidate must agree.
  if(v.previous)validateCanvas(v.previous);
- const result=layoutCards(v.cards,v.previous?.nodes,v.relayoutIds,v.bounds);
- layoutStructures(result,v.cards,v.edges??v.previous?.edges??[],v.previous?.nodes??[],v.relayoutIds??[],v.bounds);
- return validateCanvasCandidate({nodes:result.nodes.map(parseCard),edges:(v.edges??v.previous?.edges??[]).map(parseEdge),...(result.warnings.length?{layoutWarnings:result.warnings}:{})});
+ const mixed=v.autoStructure?selectMixedStructures(v.cards,v.edges??v.previous?.edges??[],v.previous?.nodes):{cards:v.cards,decisions:[]};
+ const result=layoutCards(mixed.cards,v.previous?.nodes,v.relayoutIds,v.bounds);
+ layoutStructures(result,mixed.cards,v.edges??v.previous?.edges??[],v.previous?.nodes??[],v.relayoutIds??[],v.bounds);
+ return validateCanvasCandidate({nodes:result.nodes.map(parseCard),edges:(v.edges??v.previous?.edges??[]).map(parseEdge),...(mixed.decisions.length?{structureDecisions:mixed.decisions}:{}),...(result.warnings.length?{layoutWarnings:result.warnings}:{})});
 }
 
 export const layoutFields=['structure','x','y','width','height','regionId','fixed','zIndex'] as const;
