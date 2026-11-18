@@ -33,6 +33,9 @@ if (installed) {
  assert.equal(crossOrigin.status,403);
  assert.equal((await fetch(url+'/package-manifest.json')).status,404);
  assert.equal((await fetch(url+'/elk-worker.min.js')).status,200);
+ const font=await fetch(url+'/fonts/Virgil/Virgil-Regular.woff2');
+ assert.equal(font.status,200);
+ assert.equal(font.headers.get('content-type'),'font/woff2');
  const css=(await (await fetch(url+'/canvas.html')).text()).match(/href="([^"]+\.css)"/)?.[1];
  assert.ok(css);
  assert.match((await fetch(url+css)).headers.get('content-type'),/^text\/css/);
@@ -57,17 +60,40 @@ async function click(x,y){await cmd('Input.dispatchMouseEvent',{type:'mousePress
  ws.onmessage=event=>{const m=JSON.parse(event.data);if(m.id){const p=pending.get(m.id);pending.delete(m.id);m.error?p.reject(Error(m.error.message)):p.resolve(m.result)}};
  await cmd('Page.enable');await cmd('Page.navigate',{url:url+'/canvas.html?topic=demo'});
  await until(()=>evaluate('!!window.canvasBoard?.snapshot().length'));
- async function button(text){const pos=await evaluate(`(()=>{const e=[...document.querySelectorAll('button')].find(e=>e.textContent===${JSON.stringify(text)});if(!e)throw Error('Missing button');const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);await click(pos.x,pos.y);}
- async function type(label,text){const pos=await evaluate(`(()=>{const e=document.querySelector('[aria-label="${label}"]');const r=e.getBoundingClientRect();return {x:r.x+10,y:r.y+10}})()`);await click(pos.x,pos.y);await cmd('Input.dispatchKeyEvent',{type:'keyDown',key:'a',code:'KeyA',modifiers:2,windowsVirtualKeyCode:65,commands:['selectAll']});await cmd('Input.dispatchKeyEvent',{type:'keyUp',key:'a',code:'KeyA',modifiers:2});await cmd('Input.insertText',{text});}
+ async function button(text) {
+  const pos=await evaluate(`(() => {
+   const element=[...document.querySelectorAll('button')].find(button=>button.textContent===${JSON.stringify(text)});
+   if (!element) throw Error('Missing button');
+   element.scrollIntoView({block:'nearest',inline:'nearest'});
+   const bounds=element.getBoundingClientRect();
+   return {x:bounds.x+bounds.width/2,y:bounds.y+bounds.height/2};
+  })()`);
+  await click(pos.x,pos.y);
+ }
+ async function type(label,text) {
+  const pos=await evaluate(`(() => {
+   const element=document.querySelector('[aria-label="${label}"]');
+   if (!element) throw Error('Missing card input');
+   element.scrollIntoView({block:'nearest',inline:'nearest'});
+   const bounds=element.getBoundingClientRect();
+   return {x:bounds.x+10,y:bounds.y+10};
+  })()`);
+  await click(pos.x,pos.y);
+  assert.equal(await evaluate('document.activeElement?.getAttribute("aria-label")'),label);
+  await cmd('Input.dispatchKeyEvent',{type:'keyDown',key:'a',code:'KeyA',modifiers:2,windowsVirtualKeyCode:65,commands:['selectAll']});
+  await cmd('Input.dispatchKeyEvent',{type:'keyUp',key:'a',code:'KeyA',modifiers:2,windowsVirtualKeyCode:65});
+  await cmd('Input.insertText',{text});
+  assert.equal(await evaluate('document.activeElement.value'),text);
+ }
  await button('新增知识卡片');await type('卡片正文 3','无聊天来源的人工知识');
  assert.equal((await (await canvasRequest(url+'/api/canvas/demo/state')).json()).revision,0);
  await button('保存');await until(()=>evaluate('document.body.innerText.includes("已保存 · 修订 1")'));
  let state=await (await canvasRequest(url+'/api/canvas/demo/state')).json();const manualId=state.canvas.nodes[2].id;assert.equal(state.metadata[manualId].source.kind,'manual');assert.equal(state.canvas.nodes[2].text,'无聊天来源的人工知识');
- await cmd('Page.reload');await until(()=>evaluate('document.querySelectorAll("textarea").length===3'));
- assert.equal(await evaluate('document.querySelectorAll("textarea")[2].value'),'无聊天来源的人工知识');
+ await cmd('Page.reload');await until(()=>evaluate(`document.querySelectorAll('textarea[aria-label^="卡片正文 "]').length===3`));
+ assert.equal(await evaluate(`document.querySelectorAll('textarea[aria-label^="卡片正文 "]')[2].value`),'无聊天来源的人工知识');
  await type('卡片正文 3','人工改写');await button('保存');await until(()=>evaluate('document.body.innerText.includes("已保存 · 修订 2")'));
  await button('删除卡片 3');await button('保存');await until(()=>evaluate('document.body.innerText.includes("已保存 · 修订 3")'));
- await cmd('Page.reload');await until(()=>evaluate('document.querySelectorAll("textarea").length===2'));
+ await cmd('Page.reload');await until(()=>evaluate(`document.querySelectorAll('textarea[aria-label^="卡片正文 "]').length===2`));
  state=await (await canvasRequest(url+'/api/canvas/demo/state')).json();assert.equal(state.revision,3);assert.equal(state.canvas.nodes.length,2); const shot=await cmd('Page.captureScreenshot',{format:'png'});await fs.writeFile(process.env.BANG_BROWSER_SCREENSHOT??path.join(root,'canvas-save-browser.png'),Buffer.from(shot.data,'base64'));
  console.log(JSON.stringify({pass:true,packaged:Boolean(installed),evidence:'real Chrome, real mouse/text create, explicit save, reopen, edit, delete -> HTTP -> disk'}));
  }finally{ws?.close();chrome?.kill();if(server)await new Promise(r=>server.close(r));packaged?.kill();await delay(500);spawnSync(node,[launcher,'stop','--project',temp],{encoding:'utf8'});await fs.rm(temp,{recursive:true,force:true,maxRetries:5,retryDelay:200});}

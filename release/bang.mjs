@@ -104,7 +104,14 @@ function explicitPreparation(project, executable, shouldInstall) {
   if (describe(project).hooks !== 'absent') throw Error('Existing project hooks preserved; merge the reviewed candidate manually');
   fs.mkdirSync(path.dirname(destination), { recursive: true });
   if (!fs.lstatSync(path.dirname(destination)).isDirectory()) throw Error('Codex hook directory must be a real directory');
-  fs.copyFileSync(path.join(review, 'hooks.json'), destination, fs.constants.COPYFILE_EXCL);
+  const temporaryHook = path.join(path.dirname(destination), '.bang-hooks-' + randomUUID() + '.tmp');
+  fs.copyFileSync(path.join(review, 'hooks.json'), temporaryHook, fs.constants.COPYFILE_EXCL);
+  try {
+    // Publish the complete file only when the destination is still absent.
+    fs.linkSync(temporaryHook, destination);
+  } finally {
+    fs.unlinkSync(temporaryHook);
+  }
   return { ...receipt, status: 'installed-needs-trust', hookFile: destination };
 }
 

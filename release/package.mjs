@@ -48,7 +48,7 @@ try {
   const nodeExtraction = path.join(work, 'node-distribution');
   const extractedTar = path.join(work, 'source.tar');
   const delivery = path.join(work, 'delivery');
-  const packageName = 'bang-codex-' + (platformId === 'win32-x64' ? 'windows-x64' : platformId);
+  const packageName = 'bang-codex-' + platform.name;
   const stage = path.join(delivery, packageName);
   for (const dir of [checkout, nodeExtraction, stage]) fs.mkdirSync(dir, { recursive: true });
 
@@ -72,7 +72,7 @@ try {
   }
   for (const file of inventory(runtimeSource)) {
     if (file.startsWith('dsh/') && file !== 'dsh/executor-config.mjs') continue;
-    if (/\.(mjs|ts|json)$/.test(file) && file !== 'native/build.mjs' ||
+    if ((/\.(mjs|ts|json)$/.test(file) && file !== 'native/build.mjs') ||
         file === 'companion/organizer.md' || file === 'companion/start.ps1') {
       copyFile(path.join(runtimeSource, file), 'runtime/' + file, stage);
     }
@@ -83,7 +83,8 @@ try {
   copyFile(node, 'node/' + platform.node, stage);
   if (process.platform !== 'win32') fs.chmodSync(path.join(stage, 'node', platform.node), 0o755);
   copyFile(path.join(distribution, 'LICENSE'), 'licenses/Node-LICENSE', stage);
-  copyFile(path.join(checkout, 'release', 'Bang.cmd'), 'Bang.cmd', stage);
+  copyFile(path.join(checkout, 'release', platform.launcher), platform.launcher, stage);
+  if (process.platform !== 'win32') fs.chmodSync(path.join(stage, platform.launcher), 0o755);
   copyFile(path.join(checkout, 'release', 'README.md'), 'README.md', stage);
 
   const editor = path.join(checkout, 'prototypes', 'whiteboard-integration');
@@ -109,9 +110,9 @@ try {
     nodeArchive: platform.archive, nodeArchiveSha256: platform.archiveSha256,
     packageUse: 'local-validation', files,
   }, null, 2) + '\n');
-  const zip = packageName + '.zip';
-  run('tar', ['-caf', path.join(delivery, zip), '-C', delivery, packageName]);
-  fs.writeFileSync(path.join(delivery, zip + '.sha256'), sha256(path.join(delivery, zip)) + '  ' + zip + '\n');
+  const artifact = packageName + platform.packageExtension;
+  run('tar', ['-caf', path.join(delivery, artifact), '-C', delivery, packageName]);
+  fs.writeFileSync(path.join(delivery, artifact + '.sha256'), sha256(path.join(delivery, artifact)) + '  ' + artifact + '\n');
   fs.renameSync(delivery, output);
   console.log(JSON.stringify({ output, sourceCommit, platform: platformId, files: Object.keys(files).length }));
 } finally {

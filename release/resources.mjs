@@ -5,6 +5,9 @@ import path from 'node:path';
 export const nodeVersion = '25.8.1';
 export const platforms = {
   'win32-x64': {
+    name: 'windows-x64',
+    launcher: 'Bang.cmd',
+    packageExtension: '.zip',
     archive: 'node-v25.8.1-win-x64.zip',
     archiveSha256: '09a5a0dbb2f4cefa800880012810e2dfaac0016a62e75f064c4ab7f3606b2d78',
     archiveRoot: 'node-v25.8.1-win-x64',

@@ -35,7 +35,7 @@ function successful(result) {
 const quote = value => "'" + value.replaceAll("'", "''") + "'";
 const launcher = path.join(install, 'Bang.cmd');
 function bang(command, ...args) {
-  const invocation = '& ' + [launcher, command, '--project', project, ...args].map(quote).join(' ') +
+  const invocation = '[Console]::OutputEncoding = [Text.UTF8Encoding]::new(); & ' + [launcher, command, '--project', project, ...args].map(quote).join(' ') +
     '; exit $LASTEXITCODE';
   const base64 = Buffer.from(invocation, 'utf16le').toString('base64');
   return execute(path.join(system32, 'WindowsPowerShell/v1.0/powershell.exe'),
@@ -52,8 +52,8 @@ try {
   fs.renameSync(path.join(extract, 'bang-codex-windows-x64'), install);
   sid = successful(execute('whoami.exe', ['/user', '/fo', 'csv', '/nh'])).match(/S-1-5-[0-9-]+/)[0];
   successful(execute('icacls.exe', [install, '/deny', '*' + sid + ':(OI)(CI)(WD,AD,WEA,WA)']));
-  assert.throws(() => fs.writeFileSync(path.join(install, 'write-probe'), 'denied'), { code: 'EACCES' });
-  assert.throws(() => fs.appendFileSync(path.join(install, 'README.md'), 'denied'), { code: 'EACCES' });
+  assert.throws(() => fs.writeFileSync(path.join(install, 'write-probe'), 'denied'), error => ['EACCES', 'EPERM'].includes(error.code));
+  assert.throws(() => fs.appendFileSync(path.join(install, 'README.md'), 'denied'), error => ['EACCES', 'EPERM'].includes(error.code));
 
   const health = JSON.parse(successful(bang('check', '--codex', codex)));
   assert.equal(health.package, 'verified');
