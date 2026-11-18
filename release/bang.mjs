@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
@@ -36,9 +37,20 @@ function codexCheck(candidate) {
   let executable;
   try { executable = fs.realpathSync(candidate); } catch { return { status: 'unavailable' }; }
   if (!executable || !regularFile(executable)) return { status: 'unavailable' };
-  const result = spawnSync(executable, ['--version'], {
-    encoding: 'utf8', windowsHide: true, timeout: 10000, maxBuffer: 65536,
-  });
+  const probeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'bang-codex-version-'));
+  let result;
+  try {
+    result = spawnSync(executable, ['--version'], {
+      cwd: probeHome, encoding: 'utf8', windowsHide: true, timeout: 10000, maxBuffer: 65536,
+      env: {
+        SystemRoot: process.env.SystemRoot, WINDIR: process.env.WINDIR,
+        PATH: process.env.PATH, CODEX_HOME: probeHome,
+        HOME: probeHome, USERPROFILE: probeHome, TMP: probeHome, TEMP: probeHome,
+      },
+    });
+  } finally {
+    fs.rmSync(probeHome, { recursive: true, force: true, maxRetries: 4, retryDelay: 100 });
+  }
   if (result.status !== 0) return { status: 'unavailable' };
   const version = result.stdout.trim().match(/^codex-cli ([\w.-]+)$/)?.[1];
   return version === CODEX_VERSION

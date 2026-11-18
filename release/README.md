@@ -11,7 +11,7 @@
     .\Bang.cmd prepare-codex --project "D:\项目 工作区" --codex "C:\工具\Codex\codex.exe"
     .\Bang.cmd serve --project "D:\项目 工作区"
 
-plan 显示项目级入口的状态。check 验证包内资源、Node、SQLite 和 Codex 0.169.0-alpha.11.1 的原生版本。两条命令均为只读。版本检测以本地原生可执行文件的 --version 为准。check 的零退出码表示资源验证和版本检测通过。
+plan 显示项目级入口的状态。check 验证包内资源、Node、SQLite 和 Codex 0.169.0-alpha.11.1 的原生版本。两条命令均以只读方式访问项目和安装资源；版本检查使用独立临时目录。版本检测以本地原生可执行文件的 --version 为准。check 的零退出码表示资源验证和版本检测通过。
 
 prepare-codex 在项目的私有 Runtime 目录创建供审阅的 hooks.json 和可读 command.txt。项目已有 hooks 时，在阅读候选配置后，手动将对应事件合并到项目的 .codex/hooks.json。项目没有 hooks 时，可显式运行以下命令创建项目入口。
 
