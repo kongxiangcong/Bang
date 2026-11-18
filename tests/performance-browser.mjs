@@ -146,7 +146,12 @@ try{
  report.modelRequests=modelRequests;report.modelBoundaryWaitMs=began?performance.now()-began:0;
  if(!pilot){
   report.p95=Object.fromEntries(['save','refresh','history'].map(key=>[key,report.rows.slice(warmups).map(r=>r[key]).sort((a,b)=>a-b)[Math.ceil(samples*.95)-1]]));
-  report.metTargets=Object.entries(report.p95).every(([key,value])=>value<=settings.targetsMs[key+'P95']);
+  for(const [key,value] of Object.entries(report.p95)){
+   const limit=settings.targetsMs[key+'P95'];
+   if(value>limit)report.failures.push(key+' p95 '+value+' ms exceeds '+limit+' ms');
+  }
+  report.metTargets=report.failures.length===0;
+  if(!report.metTargets)process.exitCode=1;
  }
  report.complete=true;
 }catch(error){report.failures.push(error.stack);process.exitCode=1;}

@@ -95,3 +95,11 @@ At 4,700 actual durable edits, the intermediate idle wiring check completed
 all three trials. Its cold save was 1.081 s; measured pilot saves were 0.810 and
 0.797 s, refresh 1.930 and 1.965 s, and history 1.221 and 1.167 s. This overlapped
 the independent generation job and is retained separately from acceptance.
+
+On the Windows reference machine, 20 direct `whoami.exe /user` invocations averaged
+53.41 ms before returning the same process owner identity. The native client now
+looks up that SID once per process. It still applies the original directory ACL
+on every connection and checks the same project path, epoch and capability. The
+4,700-revision blocked pilot completed with one controlled model request and no
+external calls. It is a wiring check, not a fair speedup comparison: the inspector
+build and concurrent load also changed between development runs.
