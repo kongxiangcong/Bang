@@ -8,6 +8,7 @@ import {spawn,spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {createCanvasMiddleware} from '../runtime/canvas/http.mjs';
 import {runtimeOperation} from '../runtime/native/runtime.mjs';
+import {performanceDataset} from '../baselines/whiteboard-v1/performance-dataset.mjs';
 
 const settings=JSON.parse(await fs.readFile(new URL('../baselines/whiteboard-v1/performance.json',import.meta.url)));
 const [directory,condition,mode]=process.argv.slice(2);
@@ -88,7 +89,15 @@ try{
  assert.ok(!['BANG_ORGANIZER_NATIVE','BANG_ORGANIZER_CODEX','BANG_ORGANIZER_DSH'].some(k=>process.env[k]),'Expected isolated controlled executor configuration');
  const initial=await call('state'),start=initial.revision;
  report.startRevision=start;if(pilot)assert.ok(start>=2&&start<=10000);else assert.equal(start,10000);
- assert.equal(initial.canvas.nodes.length,1000);assert.equal(initial.canvas.edges.length,3000);
+ const frozen=performanceDataset();
+ const expected=structuredClone(frozen.nodes);
+ for(const edit of frozen.revisions.slice(0,start))expected[(edit.revision-1)%expected.length].text=edit.text;
+ assert.deepEqual(initial.canvas.nodes,expected);
+ assert.deepEqual(initial.canvas.edges,frozen.edges);
+ assert.equal(initial.relations.length,frozen.edges.length);
+ const initialHistory=await call('history');
+ assert.deepEqual(initialHistory.slice(1).map(row=>row.operationId),frozen.revisions.slice(0,start).map(edit=>'frozen-'+edit.revision));
+ report.frozenWorkload={nodes:expected.length,relations:initial.relations.length,edits:start,bootstrapRows:1,attachmentBytes:0};
  assert.equal((await call('history-capacity')).revisions,start+1);
  const status=await call('status');
  if(condition==='blocked'){

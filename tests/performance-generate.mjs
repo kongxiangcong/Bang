@@ -33,7 +33,7 @@ try{
  }
  const compileStart=performance.now(),compiled=compileCanvas({cards:nodes,edges});
  const compileMs=performance.now()-compileStart;
- assert.deepEqual(compiled.edges,edges);
+ assert.deepEqual(compiled.nodes,nodes);assert.deepEqual(compiled.edges,edges);
  await record({limit,compileMs,hashes});
  const file=path.join(project,'.bang/topics/t32/current.canvas');
  if(!await fs.stat(file).catch(error=>{if(error.code!=='ENOENT')throw error;})){
