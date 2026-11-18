@@ -10,7 +10,11 @@ export function orderOperations(operations:BoardOperation[]):BoardOperation[]{
 // Pure application: no input mutation, validation, I/O or collaboration bookkeeping.
 // Draft merging may already have lost a deleted object to a remote cascade.
 export function applyOperation<T extends {canvas:Canvas;editorExtras?:EditorExtra[]}>(input:T,op:BoardOperation|CanvasImportOperation):T{
- const board=structuredClone(input);
+ return applyToOwnedBoard(structuredClone(input),op);
+}
+// The caller owns this mutable draft exclusively. Undo, merge and replay callers
+// that retain their source board continue to use the copying entry above.
+export function applyToOwnedBoard<T extends {canvas:Canvas;editorExtras?:EditorExtra[]}>(board:T,op:BoardOperation|CanvasImportOperation):T{
  if(op.type==='replace-canvas'){board.canvas=structuredClone(op.canvas);return board;}
  const id=operationIdentity(op),extra=op.type.endsWith('extra'),relation=op.type.endsWith('relation');
  const objects:any[]=extra?(board.editorExtras??=[]):relation?board.canvas.edges:board.canvas.nodes;

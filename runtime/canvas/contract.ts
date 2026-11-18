@@ -48,7 +48,8 @@ export function validateCanvas(value:unknown):Canvas {
  if(!Array.isArray(v.nodes)||!Array.isArray(v.edges))throw Error('Expected nodes and edges');
  const ids=new Set<string>();
  for(const node of v.nodes){const card=parseCard(node);if(ids.has(card.id))throw Error('Duplicate identity');ids.add(card.id);}
- for(const edge of v.edges){const e=parseEdge(edge);if(ids.has(e.id))throw Error('Duplicate identity');if(!v.nodes.some((n:any)=>n.id===e.fromNode)||!v.nodes.some((n:any)=>n.id===e.toNode))throw Error('Dangling relation');ids.add(e.id);}
+ const endpoints=new Set(ids);
+ for(const edge of v.edges){const e=parseEdge(edge);if(ids.has(e.id))throw Error('Duplicate identity');if(!endpoints.has(e.fromNode)||!endpoints.has(e.toNode))throw Error('Dangling relation');ids.add(e.id);}
  return value as Canvas;
 }
 export function validateCanvasCandidate(value:unknown):Canvas {

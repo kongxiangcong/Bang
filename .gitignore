@@ -278,3 +278,9 @@
 
 # Ticket 27 actual pinned native Session acceptance with a controlled loopback model.
 !/tests/dsh-session-installed.mjs
+
+# Frozen T32 end-to-end workload and bounded inspector rendering.
+!/tests/performance-browser.mjs
+!/tests/performance-generate.mjs
+!/prototypes/whiteboard-integration/src/InspectorPage.tsx
+!/runtime/canvas/PERFORMANCE.md
