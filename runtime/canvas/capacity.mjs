@@ -22,7 +22,10 @@ export function logPublication(project,revision){
 }
 function temporaryFiles(project,db){
  // Only publisher-owned scratch with no pending publication can be discarded.
- return db.prepare('SELECT topic FROM topics').all().filter(({topic})=>!db.prepare("SELECT 1 FROM intents WHERE topic=? AND status='prepared'").get(topic)).flatMap(({topic})=>['publish.tmp','preserve.tmp'].map(name=>path.join('.bang','topics',topic,name))).filter(relative=>{try{return fs.lstatSync(path.join(project,relative)).isFile()&&!fs.lstatSync(path.join(project,relative)).isSymbolicLink();}catch{return false;}}).map(relative=>({path:relative,bytes:fs.statSync(path.join(project,relative)).size}));
+ const ownedDirectory=topic=>{
+  try{return ['.bang',path.join('.bang','topics'),path.join('.bang','topics',topic)].every(relative=>{const stat=fs.lstatSync(path.join(project,relative));return stat.isDirectory()&&!stat.isSymbolicLink();});}catch{return false;}
+ };
+ return db.prepare('SELECT topic FROM topics').all().filter(({topic})=>ownedDirectory(topic)&&!db.prepare("SELECT 1 FROM intents WHERE topic=? AND status='prepared'").get(topic)).flatMap(({topic})=>['publish.tmp','preserve.tmp'].map(name=>path.join('.bang','topics',topic,name))).filter(relative=>{try{return fs.lstatSync(path.join(project,relative)).isFile()&&!fs.lstatSync(path.join(project,relative)).isSymbolicLink();}catch{return false;}}).map(relative=>({path:relative,bytes:fs.statSync(path.join(project,relative)).size}));
 }
 export async function historyCapacity(project,topic){
  await readCommitted(project,topic);const db=new DatabaseSync(database(project),{readOnly:true});

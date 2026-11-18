@@ -179,3 +179,15 @@ This establishes the stated Windows synthetic batched capacity scenario, not
 10,000 model calls, 10,000 publication revisions, real model quality, both real
 host integrations, arbitrary attachment growth, cross-platform behavior, full
 power-loss behavior, screen-reader/zoom coverage, or unbounded archival capacity.
+
+
+Latest integration `53ac589` (ticket 27) is merged at `ef5b9c7`. Actual Chrome
+capacity/preview/cancel/confirm/archive-download/verify/history/reload passed again,
+and the completed stress project reopened with head 102, expected revision-64
+content and all 10,000 organized sources. Final cleanup review added a public
+junction regression: a replaced topic directory initially exposed an external
+`publish.tmp` as eligible scratch. Cleanup now checks every project-relative
+parent directory and excludes directory links/junctions as well as file symlinks,
+then repeats that eligibility check at confirmation. The five capacity regressions
+pass, including actual disk reclamation and preservation of external/user files.
+This last path guard does not change the history codec or CompletedTurn pipeline.

@@ -36,6 +36,18 @@ test('capacity reports retained history and compact revisions remain inspectable
  }finally{await call('stop');await fs.rm(project,{recursive:true,force:true});}
 });
 
+test('cleanup never follows a replaced topic directory into external files',async()=>{
+ const project=await fs.mkdtemp(path.join(os.tmpdir(),'bang-cleanup-links-')),outside=await fs.mkdtemp(path.join(os.tmpdir(),'bang-cleanup-outside-'));
+ const call=(command,input)=>runtimeOperation(project,command,'demo',input),topicDir=path.join(project,'.bang/topics/demo'),externalDir=path.join(outside,'demo');let linked=false;
+ try{
+  await call('generate',{cards:[]});await fs.rename(topicDir,externalDir);await fs.symlink(externalDir,topicDir,process.platform==='win32'?'junction':'dir');linked=true;
+  await fs.writeFile(path.join(externalDir,'publish.tmp'),'external file must remain');
+  const preview=await call('maintenance-preview',{action:'compact'});assert.equal(preview.temporaryFiles.length,0);
+  await call('maintenance-confirm',{...preview,confirm:true});
+  assert.equal(await fs.readFile(path.join(externalDir,'publish.tmp'),'utf8'),'external file must remain');
+ }finally{await call('stop');if(linked)await fs.unlink(topicDir);await fs.rm(project,{recursive:true,force:true});await fs.rm(outside,{recursive:true,force:true});}
+});
+
 test('legacy JSON property ordering remains exact across restored history checkpoints',async()=>{
  const project=await fs.mkdtemp(path.join(os.tmpdir(),'bang-history-order-'));let destination;
  const call=(command,input)=>runtimeOperation(project,command,'demo',input);
