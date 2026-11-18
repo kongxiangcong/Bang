@@ -279,3 +279,15 @@
 # Ticket 27 actual pinned native Session acceptance with a controlled loopback model.
 !/tests/dsh-session-installed.mjs
 !/runtime/dsh/context-delivery.mjs
+
+# Packaged Windows Bang and native installation acceptance.
+!/release/
+/release/*
+!/release/Bang.cmd
+!/release/README.md
+!/release/bang.mjs
+!/release/editor.mjs
+!/release/package.mjs
+!/release/resources.mjs
+!/tests/installed-bang.test.mjs
+!/tests/installed-bang-smoke.mjs
