@@ -3,24 +3,34 @@ import path from 'node:path';
 import {generateKeyPairSync,randomUUID} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {runtimeOperation} from '../native/runtime.mjs';
-import {CodexSessionConnector} from './connector.mjs';
+import {CodexSessionConnector,CODEX_VERSION} from './connector.mjs';
+import {readCodexInstall} from './context-delivery.mjs';
 
 const project=fs.realpathSync(process.argv[2]),review=path.resolve(process.argv[3]??path.join(project,'.scratch','codex-hook-review'));
 const executable=process.env.CODEX_APP_RUNTIME_CLI_PATH;
 if(!executable||!path.isAbsolute(executable))throw Error('Pinned Codex executable required');
-await runtimeOperation(project,'start');
+const {workspaceId}=await runtimeOperation(project,'start');
 const manifest=path.join(project,'.bang','runtime','codex-install.json');
 if(!fs.existsSync(manifest)){
-const {privateKey}=generateKeyPairSync('ed25519'),instanceId=randomUUID(),connectorId='codex-'+randomUUID();
-await new CodexSessionConnector({project,transport:null,connectorId,instanceId,privateKey}).register();
-fs.writeFileSync(manifest,JSON.stringify({executable,connectorId,instanceId,privateKey:privateKey.export({format:'pem',type:'pkcs8'})}),{mode:0o600,flag:'wx'});
+ const {privateKey}=generateKeyPairSync('ed25519'),instanceId=randomUUID(),connectorId='codex-'+randomUUID();
+ await new CodexSessionConnector({project,transport:null,connectorId,instanceId,privateKey}).register();
+ fs.writeFileSync(manifest,JSON.stringify({executable,connectorId,instanceId,privateKey:privateKey.export({format:'pem',type:'pkcs8'})}),{mode:0o600,flag:'wx'});
+}
+const install=readCodexInstall(project);
+if(install.bridge?.workspaceId!==workspaceId){
+ const {publicKey,privateKey}=generateKeyPairSync('ed25519'),id='codex-context-'+randomUUID();
+ await runtimeOperation(project,'context-register',undefined,{id,host:'codex',versions:[CODEX_VERSION],publicKey:publicKey.export({type:'spki',format:'pem'})});
+ const bridge={id,workspaceId,privateKey:privateKey.export({type:'pkcs8',format:'pem'})},temporary=manifest+'.'+randomUUID();
+ fs.writeFileSync(temporary,JSON.stringify({...install,bridge}),{flag:'wx',mode:0o600});
+ try{fs.renameSync(temporary,manifest);}
+ finally{if(fs.existsSync(temporary))fs.unlinkSync(temporary);}
 }
 fs.mkdirSync(review,{recursive:true});
 const script=fileURLToPath(new URL('./hook.mjs',import.meta.url));
 const ps=value=>"'"+value.replaceAll("'","''")+"'";
 const sh=value=>"'"+value.replaceAll("'", "'\"'\"'")+"'";
-const invocation=`& ${[process.execPath,script,project].map(ps).join(' ')}`;
-const command=process.platform==='win32'?`powershell.exe -NoProfile -NonInteractive -EncodedCommand ${Buffer.from(invocation,'utf16le').toString('base64')}`:[process.execPath,script,project].map(sh).join(' ');
+const invocation=`& ${[process.execPath,script,project].map(ps).join(' ')} --context-v1`;
+const command=process.platform==='win32'?`powershell.exe -NoProfile -NonInteractive -EncodedCommand ${Buffer.from(invocation,'utf16le').toString('base64')}`:[process.execPath,script,project].map(sh).join(' ')+' --context-v1';
 fs.writeFileSync(path.join(review,'command.txt'),process.platform==='win32'?invocation:command);
-fs.writeFileSync(path.join(review,'hooks.json'),JSON.stringify({hooks:{UserPromptSubmit:[{hooks:[{type:'command',command,timeout:30}]}]}},null,2));
+fs.writeFileSync(path.join(review,'hooks.json'),JSON.stringify({hooks:{UserPromptSubmit:[{hooks:[{type:'command',command,timeout:30,additionalContextLimit:0}]}]}},null,2));
 console.log(JSON.stringify({status:'prepared-not-installed',review,hostTrust:'required',activationPrompt:'Bang: enable current session'}));
