@@ -100,6 +100,13 @@ test('protected maintenance requires an exact explicit preview and preserves his
   await save(2);
   assert.equal((await post('maintenance-confirm',{...preview,confirm:true})).status,409);
   await fs.writeFile(scratch,Buffer.alloc(32768,7));
+  const firstReview=(await post('maintenance-preview',{action:'compact'})).body;
+  const laterScratch=path.join(path.dirname(scratch),'preserve.tmp');
+  await fs.writeFile(laterScratch,'appeared after preview');
+  assert.equal((await post('maintenance-confirm',{...firstReview,confirm:true})).status,409);
+  assert.equal(await fs.readFile(laterScratch,'utf8'),'appeared after preview');
+  const archiveReview=(await post('maintenance-preview',{action:'archive'})).body;
+  assert.equal((await post('maintenance-confirm',{...archiveReview,action:'compact',confirm:true})).status,409);
   const current=(await post('maintenance-preview',{action:'compact'})).body;
   assert.equal(current.temporaryFiles[0].bytes,32768);
   assert.equal((await post('maintenance-confirm',{...current,confirm:true})).status,200);

@@ -14,7 +14,8 @@ export const logLimit=8192;
 export function logPublication(project,revision){
  try{
   const dir=path.join(project,'.bang','runtime'),file=path.join(dir,'events.jsonl'),old=path.join(dir,'events.previous.jsonl');
-  for(const reserved of [file,old])if(fs.existsSync(reserved)&&fs.lstatSync(reserved).isSymbolicLink())return;
+  if([path.dirname(dir),dir].some(parent=>fs.lstatSync(parent).isSymbolicLink()))return;
+  for(const reserved of [file,old])if(fs.lstatSync(reserved,{throwIfNoEntry:false})?.isSymbolicLink())return;
   const line=JSON.stringify({at:new Date().toISOString(),event:'publication-confirmed',revision})+'\n';
   if(fs.existsSync(file)&&fs.statSync(file).size+Buffer.byteLength(line)>logLimit){if(fs.existsSync(old))fs.unlinkSync(old);fs.renameSync(file,old);}
   fs.appendFileSync(file,line,{mode:0o600});
@@ -25,7 +26,10 @@ function temporaryFiles(project,db){
  const ownedDirectory=topic=>{
   try{return ['.bang',path.join('.bang','topics'),path.join('.bang','topics',topic)].every(relative=>{const stat=fs.lstatSync(path.join(project,relative));return stat.isDirectory()&&!stat.isSymbolicLink();});}catch{return false;}
  };
- return db.prepare('SELECT topic FROM topics').all().filter(({topic})=>ownedDirectory(topic)&&!db.prepare("SELECT 1 FROM intents WHERE topic=? AND status='prepared'").get(topic)).flatMap(({topic})=>['publish.tmp','preserve.tmp'].map(name=>path.join('.bang','topics',topic,name))).filter(relative=>{try{return fs.lstatSync(path.join(project,relative)).isFile()&&!fs.lstatSync(path.join(project,relative)).isSymbolicLink();}catch{return false;}}).map(relative=>({path:relative,bytes:fs.statSync(path.join(project,relative)).size}));
+ return db.prepare('SELECT topic FROM topics').all().filter(({topic})=>ownedDirectory(topic)&&!db.prepare("SELECT 1 FROM intents WHERE topic=? AND status='prepared'").get(topic)).flatMap(({topic})=>['publish.tmp','preserve.tmp'].map(name=>path.join('.bang','topics',topic,name))).filter(relative=>{try{return fs.lstatSync(path.join(project,relative)).isFile()&&!fs.lstatSync(path.join(project,relative)).isSymbolicLink();}catch{return false;}}).map(relative=>{
+  const stat=fs.lstatSync(path.join(project,relative),{bigint:true});
+  return {path:relative,bytes:Number(stat.size),identity:[stat.dev,stat.ino,stat.ctimeNs].join(':')};
+ });
 }
 export async function historyCapacity(project,topic){
  await readCommitted(project,topic);const db=new DatabaseSync(database(project),{readOnly:true});
@@ -37,12 +41,12 @@ export async function historyCapacity(project,topic){
   return {...historyStatistics(db,topic),databaseBytes:bytes,reclaimableBytes:pageSize*freePages,warningBytes,warning:bytes>=warningBytes?'capacity-warning':'within-limit',temporaryFiles:temporaryFiles(project,db),logs:{files:2,maxBytesEach:logLimit},modelUsage:{attempts:attempts.length,reportedAttempts:reported.length,inputTokens:reported.reduce((n,a)=>n+(a.usage.inputTokens??0),0),outputTokens:reported.reduce((n,a)=>n+(a.usage.outputTokens??0),0),unreportedAttempts:attempts.length-reported.length}};
  }finally{db.close();}
 }
-const fingerprint=project=>createHash('sha256').update(fs.readFileSync(database(project))).digest('hex');
+const fingerprint=(project,topic,action,files)=>createHash('sha256').update(fs.readFileSync(database(project))).update(JSON.stringify([topic,action,files])).digest('hex');
 export async function maintenancePreview(project,topic,input){
  if(!['compact','archive'].includes(input?.action))throw Error('Select archive or compact explicitly');
  const capacity=await historyCapacity(project,topic);
  const backup=input.action==='archive'?await exportProject(project):null;
- return {action:input.action,topic,fingerprint:fingerprint(project),...(backup?{archiveSha256:backup.sha256,archiveBytes:Buffer.byteLength(JSON.stringify(backup)),archiveLimitBytes:48*1024*1024}:{}),revisionsRetained:capacity.revisions,historyDeleted:0,sourcesDeleted:0,temporaryFiles:input.action==='compact'?capacity.temporaryFiles:[],reclaimableBytes:capacity.reclaimableBytes,scope:input.action==='archive'?'complete-project-copy':'lossless-project-compaction',warning:'All history and sources retained. Archive copies require explicit download; compaction removes only reserved scratch and unused database pages.'};
+ return {action:input.action,topic,fingerprint:fingerprint(project,topic,input.action,input.action==='compact'?capacity.temporaryFiles:[]),...(backup?{archiveSha256:backup.sha256,archiveBytes:Buffer.byteLength(JSON.stringify(backup)),archiveLimitBytes:48*1024*1024}:{}),revisionsRetained:capacity.revisions,historyDeleted:0,sourcesDeleted:0,temporaryFiles:input.action==='compact'?capacity.temporaryFiles:[],reclaimableBytes:capacity.reclaimableBytes,scope:input.action==='archive'?'complete-project-copy':'lossless-project-compaction',warning:'All history and sources retained. Archive copies require explicit download; compaction removes only reserved scratch and unused database pages.'};
 }
 export async function maintenanceConfirm(project,topic,input){
  if(input?.confirm!==true)throw Error('Explicit maintenance confirmation required');
@@ -68,7 +72,8 @@ export async function maintenanceConfirm(project,topic,input){
    for(const row of db.prepare("SELECT topic,operation,receipt FROM intents WHERE status='confirmed'").all())db.prepare('UPDATE intents SET state=? WHERE topic=? AND operation=?').run(JSON.stringify({encoding:'bang-revision-reference-v1',revision:JSON.parse(row.receipt).revision}),row.topic,row.operation);
    db.exec('COMMIT');
   }catch(error){db.exec('ROLLBACK');throw error;}
-  for(const file of temporaryFiles(project,db))fs.unlinkSync(path.join(project,file.path));
+  const reviewed=new Map(preview.temporaryFiles.map(file=>[file.path,file.identity]));
+  for(const file of temporaryFiles(project,db))if(reviewed.get(file.path)===file.identity)fs.unlinkSync(path.join(project,file.path));
   db.exec('VACUUM');
  }finally{db.close();}
  return {status:'compacted',historyDeleted:0,sourcesDeleted:0,capacity:await historyCapacity(project,topic)};

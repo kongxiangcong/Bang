@@ -191,3 +191,5 @@ parent directory and excludes directory links/junctions as well as file symlinks
 then repeats that eligibility check at confirmation. The five capacity regressions
 pass, including actual disk reclamation and preservation of external/user files.
 This last path guard does not change the history codec or CompletedTurn pipeline.
+
+Final merge review bound each maintenance fingerprint to the reviewed topic and action. Compact also binds the eligible scratch manifest and rechecks file identity before removing each entry. Protected HTTP regressions reject newly appeared scratch and an archive preview submitted as compact. Log rotation also checks its parent directories and skips dangling file links.
