@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import {AsyncLocalStorage} from 'node:async_hooks';
 import {createHash,randomUUID,sign} from 'node:crypto';
 import {runtimeOperation} from '../native/runtime.mjs';
 const hash=x=>createHash('sha256').update(x).digest('hex');
@@ -7,7 +8,7 @@ const cursor=n=>`dsh:${n}`;
 function offset(value){if(!/^dsh:\d+$/.test(value))throw Error('Unsupported DSH cursor');return Number(value.slice(4));}
 // Public in-host adapter: all host reads use SessionQuery, never synchronous log readers.
 export function createDshConnector(ctx,config){
- const project=fs.realpathSync(config.project),starts=new WeakMap();let active,flight,closed=false;
+ const project=fs.realpathSync(config.project),starts=new WeakMap(),ownFlush=new AsyncLocalStorage();let active,flight,closed=false;
  const call=(command,input)=>runtimeOperation(project,command,undefined,input);
  function observe(session,event){if(event.type==='turn/start')starts.set(session,{turnId:String(event.data.turn),cursor:cursor(event.seq)});}
  function proof(identity,extra={}){const now=Date.now();const payload=Buffer.from(JSON.stringify({...identity,host:'dsh',version:'0.2.1-rc.2',instanceId:config.instanceId,role:'primary',scope:config.scope,issuedAt:now,expiresAt:now+300000,nonce:randomUUID(),...extra})).toString('base64url');return {connectorId:config.connectorId,payload,signature:sign(null,Buffer.from(payload),config.privateKey).toString('base64url')};}
@@ -22,20 +23,24 @@ export function createDshConnector(ctx,config){
   if(result.status==='bound')active={agent,session,identity,capability,sourceId:result.source.id,topicId:result.topic.id};
   return result;
  }
- async function receive(){
+ async function flush(session,checkpoint){
+  if(checkpoint){await ctx.sessionPersistence.flush();return;} // supported durable service barrier, without recursive session/flush
+  if(await ownFlush.run(true,()=>ctx.sessions.flush(session))!==true)throw Error('DSH durability listener unavailable');
+ }
+ async function receive(checkpoint=false){
   if(!active||closed)return;
   const a=active;if(ctx.agents.get(a.agent.id)!==a.agent)throw Error('DSH initiating Agent no longer live');
   const bound=await call('binding-status',a.capability);if(bound.status!=='bound'||bound.source.id!==a.sourceId)return;
   if(bound.source.receptionStopped){
    if(!bound.source.resumeRequested)return;
-   const cut=a.session.seq;if(await ctx.sessions.flush(a.session)!==true)throw Error('DSH durability listener unavailable');
+   const cut=a.session.seq;await flush(a.session,checkpoint);
    const turnId=starts.get(a.session)?.turnId;if(!turnId)throw Error('DSH current boundary unavailable');
    const batch={sourceId:a.sourceId,previousCursor:bound.source.discardCursor??bound.source.receivedCursor??bound.source.startCursor,events:[{kind:'reception-boundary',cursor:cursor(cut),turnId}]};
    await call('turn-ingest',{batch,proof:proof(a.identity,{purpose:'completed-turn-ingestion',sourceId:a.sourceId,batchHash:hash(JSON.stringify(batch))})});return;
   }
   const previousCursor=bound.source.receivedCursor??bound.source.startCursor;
   // Capture the cut BEFORE flush: later appends may not be part of this receipt.
-  const cut=a.session.seq;if(await ctx.sessions.flush(a.session)!==true)throw Error('DSH durability listener unavailable');
+  const cut=a.session.seq;await flush(a.session,checkpoint);
   let turn,events=[];
   for(let seq=offset(previousCursor);seq<cut;seq++){
    const read=await ctx.sessionQuery.readEvent({sessionId:a.session.id,seq,before:0,after:0});
@@ -49,7 +54,7 @@ export function createDshConnector(ctx,config){
     if(String(e.data.turn)!==turn.id)throw Error('DSH turn identity mismatch');
     const kind=e.data.reason?.kind,user=turn.users.join('\n\n'),assistant=turn.assistant;
     if(kind==='completed'&&user&&assistant)events.push({kind:'turn',role:'primary',status:'completed',turnId:turn.id,versionId:`end:${seq}`,cursor:cursor(seq+1),user:{role:'user',content:user},assistant:{role:'assistant',channel:'final',content:assistant},sourceHash:hash(JSON.stringify([user,assistant]))});
-    else if(kind!=='completed')events.push({kind:'turn',role:'primary',status:kind==='aborted'?'interrupted':'error',turnId:turn.id,cursor:cursor(seq+1)});
+    else if(kind!=='completed')events.push({kind:'turn',role:'primary',status:['aborted','interrupted'].includes(kind)?'interrupted':'error',turnId:turn.id,cursor:cursor(seq+1)});
     else events.push({kind:'gap',turnId:turn.id,cursor:cursor(seq+1),reason:'missing-record'});
     turn=undefined;
     // Yield at the public batch bound; the durable cursor resumes remaining work.
@@ -57,7 +62,14 @@ export function createDshConnector(ctx,config){
    }
   }
   if(events.length){const batch={sourceId:a.sourceId,previousCursor,events};await call('turn-ingest',{batch,proof:proof(a.identity,{purpose:'completed-turn-ingestion',sourceId:a.sourceId,batchHash:hash(JSON.stringify(batch))})});}
+  return events.length;
  }
  function poll(){if(!flight)flight=receive().finally(()=>flight=undefined);return flight;}
- return {observe,enable,poll,close(){closed=true;},async drain(){await flight;}};
+ async function checkpoint(session){
+  if(ownFlush.getStore()||!active||active.session!==session||closed)return;
+  // A host checkpoint must include its own cut even if an older timer poll is pending.
+  while(flight)await flight;
+  flight=(async()=>{while(await receive(true)===100){/* bounded batches, one durable host checkpoint */}})().finally(()=>flight=undefined);await flight;
+ }
+ return {observe,enable,poll,checkpoint,close(){closed=true;},async drain(){await flight;}};
 }
