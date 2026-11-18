@@ -83,8 +83,9 @@ if (mode === 'real') {
   }
   realExecutable = process.env.BANG_QUALITY_REAL_BINARY;
   realAuthHome = process.env.BANG_QUALITY_AUTH_HOME;
-  assert.ok(realExecutable && path.isAbsolute(realExecutable) && (await fs.stat(realExecutable)).isFile(),
-    'Real mode requires an explicit absolute BANG_QUALITY_REAL_BINARY');
+  assert.ok(realExecutable && path.isAbsolute(realExecutable)
+    && !/\.(cmd|bat|ps1)$/i.test(realExecutable) && (await fs.stat(realExecutable)).isFile(),
+    'Real mode requires an explicit absolute BANG_QUALITY_REAL_BINARY for the Codex executable');
   assert.ok(realAuthHome && path.isAbsolute(realAuthHome) && (await fs.stat(realAuthHome)).isDirectory(),
     'Real mode requires an explicit absolute BANG_QUALITY_AUTH_HOME');
 }

@@ -2,11 +2,28 @@ import {spawn} from 'node:child_process';
 import {createHash, randomUUID} from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import {isDeepStrictEqual} from 'node:util';
+import {CODEX_VERSION, restrictedArguments} from '../runtime/codex/executor-config.mjs';
 
 // Keep the production adapter's argv and stdout protocol intact. Record only
 // the synthetic test prompt, final candidate messages and terminal metadata.
 const [mode, executable, evidence, caseId, ...args] = process.argv.slice(2);
 const modelCall = args[0] === 'exec';
+const model = 'gpt-6.1-sol';
+const catalog = path.resolve('models.json');
+const schema = path.resolve('result.schema.json');
+const productionArgs = [
+  ['--version'], ['login', 'status'], ['debug', 'models', '--bundled'],
+  restrictedArguments({model}, catalog, schema)
+];
+if (mode === 'real' && (
+  process.env.BANG_EXECUTOR_POLICY !== 'no-tools' || process.env.BANG_EXECUTOR_PROTOCOL !== '1'
+  || !path.isAbsolute(process.env.CODEX_HOME ?? '')
+  || !path.isAbsolute(executable ?? '') || /\.(cmd|bat|ps1)$/i.test(executable)
+  || !productionArgs.some(expected => isDeepStrictEqual(args, expected))
+)) {
+  throw Error('Real quality capture requires the native Codex executor and its production arguments');
+}
 const hashFile = file => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 const emit = event => console.log(JSON.stringify(event));
 let input = '';
@@ -29,7 +46,13 @@ if (modelCall) {
 }
 
 if (mode === 'real') {
-  const child = spawn(executable, args, {stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true});
+  // The supervisor has already selected the proxy variables, when authorized.
+  const keys = [
+    'CODEX_HOME', 'HOME', 'USERPROFILE', 'TMPDIR', 'TEMP', 'TMP', 'SystemRoot', 'WINDIR', 'LANG', 'LC_ALL',
+    'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'all_proxy', 'no_proxy'
+  ];
+  const env = Object.fromEntries(keys.filter(key => process.env[key] !== undefined).map(key => [key, process.env[key]]));
+  const child = spawn(executable, args, {env, shell: false, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true});
   child.stdin.on('error', () => {});
   child.stdin.end(modelCall ? input : undefined);
   child.stderr.pipe(process.stderr);
@@ -60,9 +83,9 @@ if (mode === 'real') {
     process.exitCode = code ?? 1;
   });
 } else {
-  if (args[0] === '--version') console.log('codex-cli 0.169.0-alpha.11.1');
+  if (args[0] === '--version') console.log(`codex-cli ${CODEX_VERSION}`);
   else if (args[0] === 'login') console.error('Logged in using controlled fixture');
-  else if (args[0] === 'debug') emit({models: [{slug: 'gpt-6.1-sol'}]});
+  else if (args[0] === 'debug') emit({models: [{slug: model}]});
   else if (modelCall) {
     const {completedTurns: [turn]} = JSON.parse(input.slice(input.lastIndexOf('\n') + 1));
     const common = {conditions: [], uncertainty: '受控结果，仅验证运行路径', sources: [turn.id]};

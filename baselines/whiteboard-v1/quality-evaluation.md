@@ -24,6 +24,8 @@ node tests/whiteboard-quality.mjs controlled-failure .scratch/q43-invalid-source
 
 先运行 `plan`，让评审者仅根据冻结输入填写 `applicability.json`，逐例逐维标注是否适用并说明不适用理由。真实模式只接收完整的预登记文件，固定执行 60 个槽位，保留该文件及哈希。真实服务运行需要获准的 Codex 可执行文件、认证目录和请求预算。将可执行文件与认证目录的绝对路径分别通过 `BANG_QUALITY_REAL_BINARY` 和 `BANG_QUALITY_AUTH_HOME` 传入。启动器使用生产适配器固定的版本和模型 `codex-cli 0.169.0-alpha.11.1` / `gpt-6.1-sol`，保留生产沙箱和禁用工具参数。需要已有代理时，显式设置 `BANG_QUALITY_INHERIT_PROXY=1`。这些值仅用于当前执行进程。
 
+真实证据采集器只转发生产适配器的版本、登录状态、内置模型目录和受限整理命令。认证目录通过本机 `CODEX_HOME` 环境交给已获准的 Codex 可执行文件。整理输入由冻结合成来源和独立临时白板组成。
+
 ```powershell
 node tests/whiteboard-quality.mjs real .scratch/q43-real .scratch/q43-plan/applicability.json
 ```
