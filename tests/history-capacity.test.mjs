@@ -23,6 +23,15 @@ test('capacity reports retained history and compact revisions remain inspectable
   assert.equal((await call('history-preview',{revision:1})).canvas.nodes[0].x,1);
   assert.equal((await call('history-preview',{revision:64})).canvas.nodes[0].x,64);
   const backup=await call('backup-export');assert.equal((await call('backup-verify',{backup})).revisions,71);
+  const restored=(await call('backup-restore',{backup})).projectPath;
+  const restoredCall=(command,input)=>runtimeOperation(restored,command,'demo',input);
+  try{
+   const before=await restoredCall('history-capacity'),preview=await restoredCall('maintenance-preview',{action:'compact'});
+   const cleaned=await restoredCall('maintenance-confirm',{...preview,confirm:true});
+   assert.ok(cleaned.capacity.databaseBytes<before.databaseBytes,'lossless compaction must actually reclaim expanded legacy snapshot storage');
+   assert.equal((await restoredCall('history-preview',{revision:64})).canvas.nodes[0].x,64);
+   assert.equal((await restoredCall('history')).length,71);
+  }finally{await restoredCall('stop');}
  }finally{await call('stop');await fs.rm(project,{recursive:true,force:true});}
 });
 
@@ -58,7 +67,9 @@ test('protected maintenance requires an exact explicit preview and preserves his
   assert.equal((await post('maintenance-confirm',{...preview})).status,400);
   await save(2);
   assert.equal((await post('maintenance-confirm',{...preview,confirm:true})).status,409);
+  await fs.writeFile(scratch,Buffer.alloc(32768,7));
   const current=(await post('maintenance-preview',{action:'compact'})).body;
+  assert.equal(current.temporaryFiles[0].bytes,32768);
   assert.equal((await post('maintenance-confirm',{...current,confirm:true})).status,200);
   await assert.rejects(fs.stat(scratch),{code:'ENOENT'});assert.equal(await fs.readFile(userFile,'utf8'),'retain user content');
   const archive=(await post('maintenance-preview',{action:'archive'})).body;
