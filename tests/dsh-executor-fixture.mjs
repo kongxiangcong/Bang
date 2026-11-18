@@ -6,13 +6,14 @@ if(['auth','budget'].includes(mode)){console.log(JSON.stringify({type:'error',me
 if(mode==='error-completed')console.log(JSON.stringify({type:'error',message:'PRIVATE_ERROR'}));
 if(mode==='mixed')console.log(JSON.stringify({type:'status',phase:'turn_end',turn:'t1',reason:{kind:'error'}}));
 if(mode==='tool')console.log(JSON.stringify({type:'tool_call',tool:'PRIVATE_TOOL'}));console.log(JSON.stringify({type:'thinking',text:'PRIVATE_REASONING'}));
-const task=JSON.parse(input.slice(input.indexOf('\n')+1));
+const task=JSON.parse(input.slice(input.lastIndexOf('\n')+1));
+if(mode==='selection'&&!input.startsWith('Selected reorganization mode:'))throw Error('Missing trusted selection policy');
 console.log(JSON.stringify({type:'session',sessionId:'controlled'}));
 console.log(JSON.stringify({type:'status',phase:'turn_start',turn:'t1'}));
 if(mode==='usage')console.log(JSON.stringify({type:'status',phase:'step_end',turn:'t1',usage:{inputTokens:10,outputTokens:3}}));
 console.log(JSON.stringify({type:'status',phase:'step_end',turn:'t1',usage:{inputTokens:42,outputTokens:17}}));
 if(mode!=='no-terminal')console.log(JSON.stringify({type:'status',phase:'turn_end',turn:mode==='wrong-turn'?'other':'t1',reason:{kind:'completed'}}));
-console.log(JSON.stringify({type:'final',text:JSON.stringify({version:1,...(mode==='forged-usage'?{usage:{inputTokens:1,outputTokens:1}}:{}),changes:[{type:'create-card',id:'dsh-card',text:mode==='invalid'?123:task.completedTurns[0].assistant.content,conditions:[],uncertainty:'controlled external CLI',sources:[task.completedTurns[0].id]}]})}));
+console.log(JSON.stringify({type:'final',text:JSON.stringify({version:1,...(mode==='forged-usage'?{usage:{inputTokens:1,outputTokens:1}}:{}),changes:mode==='selection'?task.selection.ids.map(id=>({type:'reorganize-card',id,structure:null,reason:'No explicit structural relations; remain free'})):[{type:'create-card',id:'dsh-card',text:mode==='invalid'?123:task.completedTurns[0].assistant.content,conditions:[],uncertainty:'controlled external CLI',sources:[task.completedTurns[0].id]}]})}));
 
 
 
