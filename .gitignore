@@ -280,10 +280,11 @@
 !/tests/dsh-session-installed.mjs
 !/runtime/dsh/context-delivery.mjs
 
-# Packaged Windows Bang and native installation acceptance.
+# Packaged Bang and native installation acceptance.
 !/release/
 /release/*
 !/release/Bang.cmd
+!/release/bang
 !/release/README.md
 !/release/bang.mjs
 !/release/editor.mjs
