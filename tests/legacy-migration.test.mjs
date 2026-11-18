@@ -17,7 +17,7 @@ async function relationFixture(){
 }
 test('saved native relationship label overrides generated label and retains original identity on reopen',async()=>{
  const f=await relationFixture();let destination;try{
-  const report=await op(f.p,'legacy-preflight',undefined,{kind:'session'});assert.equal(report.replay.at(-1).canvas.edges[0].label,'Human');
+  const report=await op(f.p,'legacy-preflight',undefined,{kind:'session'});assert.equal(report.replay.at(-1).canvas.edges[0].label,'Human');assert.equal(report.counts.annotations,0);
   destination=(await op(f.p,'legacy-migrate',undefined,{kind:'session',fingerprint:report.fingerprint,confirmOffline:true,confirmReplay:true,confirmUncertainties:true})).projectPath;
   await op(destination,'stop');const saved=await op(destination,'state','legacy');assert.equal(saved.canvas.edges[0].label,'Human');assert.equal(saved.editorExtras.find(e=>e.id==='native-label').element.customData.relationId,'edge');
  }finally{if(destination)await op(destination,'stop');await op(f.p,'stop');await fs.rm(f.p,{recursive:true,force:true,maxRetries:5});}
