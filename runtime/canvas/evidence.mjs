@@ -3,7 +3,8 @@ import {isDeepStrictEqual} from 'node:util';
 const semantic=object=>object&&Object.fromEntries(Object.entries(object).filter(([k])=>!['x','y','width','height','regionId','fixed','zIndex','color','fromSide','toSide'].includes(k)));
 const objects=state=>[...state.canvas.nodes,...state.canvas.edges];
 export function invalidateBasis(before,after,retainedSources=new Set()){
- const changed=new Set(objects(before).filter(old=>!isDeepStrictEqual(semantic(old),semantic(objects(after).find(n=>n.id===old.id)))).map(n=>n.id));
+ const byId=new Map(objects(after).map(object=>[object.id,object]));
+ const changed=new Set(objects(before).filter(old=>!isDeepStrictEqual(semantic(old),semantic(byId.get(old.id)))).map(n=>n.id));
  for(const id of changed)if(after.metadata[id])after.metadata[id].semanticRevision=after.revision;
  for(const [id,m] of Object.entries(after.metadata))if(m.basis?.status==='needs-review'&&basisUsable(before.metadata[id]))changed.add(id);
  const mark=(id,causes)=>{const m=after.metadata[id];if(!m)return;const previous=m.basis;m.basis={status:'needs-review',revision:after.revision,changedIds:[...new Set([...(previous?.changedIds??[]),...causes])],...(previous?.history?{history:previous.history}:{})};};

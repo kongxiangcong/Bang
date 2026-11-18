@@ -35,9 +35,12 @@ export function reconcileRestoredEvidence(db,topic,state){
  for(const m of Object.values(revised.metadata))if(m.basis?.revision>state.revision)m.basis.revision=state.revision;
  return revised;
 }
+export function restoreFingerprint(topic,current,state){
+ return {topic,revision:state.revision,baseRevision:current.revision,previewKey:hash(JSON.stringify([topic,current,state]))};
+}
 export async function previewRestore(project,topic,input){
  const current=await readCommitted(project,topic),db=openBindingDatabase(project);
- try{const state=revisionState(db,topic,input?.revision);return {topic,revision:state.revision,baseRevision:current.revision,previewKey:hash(JSON.stringify([topic,current,state]))};}finally{db.close();}
+ try{const state=revisionState(db,topic,input?.revision);return restoreFingerprint(topic,current,state);}finally{db.close();}
 }
 export async function restoreVersion(project,topic,input){
  if(input?.intent!=='restore-version'||input.topic!==topic||input.author?.kind!=='manual'||typeof input.author.id!=='string'||!input.author.id||typeof input.operationId!=='string'||!input.operationId||input.operationId.startsWith('$'))throw Error('Explicit manual restore and preview required');
@@ -49,7 +52,7 @@ export async function restoreVersion(project,topic,input){
  const row=db.prepare('SELECT * FROM topics WHERE topic=?').get(topic);if(!row)throw Error('Unknown topic');
  if(observed(file)!==row.hash)throw recoveryError('Canvas externally changed; recovery required');
  const current=JSON.parse(row.state),historical=revisionState(db,topic,input.revision);
- if(input.baseRevision!==current.revision||input.previewKey!==hash(JSON.stringify([topic,current,historical])))throw Error('Restore baseline changed; preview again');
+ if(input.baseRevision!==current.revision||input.previewKey!==restoreFingerprint(topic,current,historical).previewKey)throw Error('Restore baseline changed; preview again');
  let next=structuredClone(historical);next.revision=current.revision+1;
  next.restoration={fromRevision:input.revision,previousRevision:current.revision,operationId:input.operationId};
  next.deletionIntents=[...new Map([...(historical.deletionIntents??[]),...(current.deletionIntents??[])].map(d=>[JSON.stringify(d),d])).values()];

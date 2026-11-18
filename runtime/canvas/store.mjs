@@ -1,9 +1,9 @@
 import {identityExists} from './history-storage.mjs';
-import {reconcileRestoredEvidence} from './restore.mjs';
+import {reconcileRestoredEvidence,restoreFingerprint} from './restore.mjs';
 import {invalidateBasis,parseBasisReview,applyBasisReview,knowledgeContext} from './evidence.mjs';
 import {isDeepStrictEqual} from 'node:util';
 import {standardCanvas,parseImport,importChanges,exchangeDegradation} from './exchange.mjs';
-import {applyOperation as applyParsedOperation,orderOperations,operationIdentity} from './operations.ts';
+import {applyOperation as applyParsedOperation,applyToOwnedBoard,orderOperations,operationIdentity} from './operations.ts';
 import {recoveryStatus,recoverUnknown,reconcile,publish,observed,recoveryError,hash} from './publication.mjs';
 import {revisionState,revisionList,boardDiff,parseUndo,compensate,compensateRestorationMetadata} from './history.mjs';
 import {parseEdge,relationFields,semanticRelations} from './relations.ts';
@@ -19,7 +19,7 @@ export function topicPath(project,topic){
 function open(project,readonly=false){
  const database=path.join(path.resolve(project),'.bang','board.sqlite'),fresh=!fs.existsSync(database);
  const db=new DatabaseSync(database,{readOnly:readonly});if(fresh&&process.platform!=='win32')fs.chmodSync(database,0o600);
- if(!readonly){db.exec(`PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS topics(topic TEXT PRIMARY KEY, revision INTEGER NOT NULL, state TEXT NOT NULL, hash TEXT NOT NULL); CREATE TABLE IF NOT EXISTS revisions(topic TEXT, revision INTEGER, state TEXT NOT NULL, PRIMARY KEY(topic,revision)); CREATE TABLE IF NOT EXISTS intents(topic TEXT, operation TEXT, request TEXT NOT NULL, state TEXT NOT NULL, hash TEXT NOT NULL, receipt TEXT NOT NULL, status TEXT NOT NULL, PRIMARY KEY(topic,operation));`);}
+ if(!readonly){db.exec(`PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS topics(topic TEXT PRIMARY KEY, revision INTEGER NOT NULL, state TEXT NOT NULL, hash TEXT NOT NULL); CREATE TABLE IF NOT EXISTS revisions(topic TEXT, revision INTEGER, state TEXT NOT NULL, PRIMARY KEY(topic,revision)); CREATE TABLE IF NOT EXISTS intents(topic TEXT, operation TEXT, request TEXT NOT NULL, state TEXT NOT NULL, hash TEXT NOT NULL, receipt TEXT NOT NULL, status TEXT NOT NULL, PRIMARY KEY(topic,operation)); CREATE INDEX IF NOT EXISTS pending_publications ON intents(topic) WHERE status='prepared';`);}
  return db;
 }
 export async function readBoard(project,topic){return (await readCommitted(project,topic)).canvas;}
@@ -34,14 +34,15 @@ export async function generateBoard(project,topic,input){
 }
 // Persistence canonicalizes newly supplied objects; draft merging deliberately
 // permits incomplete resource strings until an explicit save validates them.
-function applyOperation(board,op){
+function applyOwnedOperation(board,op){
  const parsed=op.type==='create-card'?{...op,card:parseCard(op.card)}:op.type==='create-relation'?{...op,edge:parseEdge(op.edge)}:op;
- return applyParsedOperation(board,parsed);
+ return applyToOwnedBoard(board,parsed);
 }
 // All comparisons use persisted historical fields, including local acknowledged overlays.
-function inspectPatch(db,topic,patch,row,project){
- const snapshots=new Map(),current=JSON.parse(row.state),conflicts=[],legalOperations=[],touched=new Set();
+function inspectPatch(db,topic,patch,row,project,current=JSON.parse(row.state)){
+ const snapshots=new Map(),conflicts=[],legalOperations=[],touched=new Set();
  const baseline=revision=>{if(revision>row.revision)throw Error('Unknown baseline');if(!snapshots.has(revision)){snapshots.set(revision,revisionState(db,topic,revision));}return snapshots.get(revision);};
+ snapshots.set(row.revision,current);
  const original=baseline(patch.baseRevision);
  const dependencyConflict=patch.readDependencies.some(id=>{const old=[...original.canvas.nodes,...original.canvas.edges].find(n=>n.id===id),now=[...current.canvas.nodes,...current.canvas.edges].find(n=>n.id===id);return !old||JSON.stringify(old)!==JSON.stringify(now);});
  for(const [operationIndex,op] of patch.operations.entries()){
@@ -94,9 +95,9 @@ function inspectPatch(db,topic,patch,row,project){
  for(const group of new Set(groups)){
   const reject=(reason)=>{for(const operationIndex of group)if(!conflicts.some(c=>c.operationIndex===operationIndex))conflicts.push({operationIndex,id:operationIdentity(patch.operations[operationIndex]),field:'$constraints',base:null,current:null,proposed:null,reason});};
   if(conflicts.some(c=>group.has(c.operationIndex))){reject('Dependent operation conflicts; structural intent retained');continue;}
-  const operations=orderOperations([...group].map(i=>patch.operations[i]));let candidate=current;
+  const operations=orderOperations([...group].map(i=>patch.operations[i]));let candidate=structuredClone({canvas:current.canvas,editorExtras:current.editorExtras});
   try{
-   for(const accepted of orderOperations(legalOperations))candidate=applyOperation(candidate,accepted);
+   for(const accepted of orderOperations(legalOperations))candidate=applyOwnedOperation(candidate,accepted);
    for(const op of operations){
     if(op.type==='delete-card'){
      const oldEdges=baseline(op.fieldRevisions?.id??patch.baseRevision).canvas.edges;
@@ -108,7 +109,7 @@ function inspectPatch(db,topic,patch,row,project){
       }
      }
     }
-    candidate=applyOperation(candidate,op);
+    candidate=applyOwnedOperation(candidate,op);
    }
    if(conflicts.some(c=>group.has(c.operationIndex))){reject('Dependent operation conflicts; structural intent retained');continue;}
    if(operations.some(op=>(op.type==='create-relation'||op.type==='edit-relation')&&!candidate.canvas.edges.some(edge=>edge.id===operationIdentity(op))))throw Error('Explicit relation intent would be removed by endpoint deletion');
@@ -141,22 +142,23 @@ async function publishPatch(project,topic,value,undo,organizer,review){
   if(db.prepare("SELECT 1 FROM intents WHERE topic=? AND status='prepared'").get(topic))throw Error('Prepared publication requires recovery');
   const row=db.prepare('SELECT * FROM topics WHERE topic=?').get(topic);if(!row)throw Error('Unknown topic');
   if(observed(file)!==row.hash)throw recoveryError('Canvas externally changed; recovery required');
+  const before=JSON.parse(row.state);
   let next;
   if(review)next=applyBasisReview(JSON.parse(row.state),patch);
   else if(undo)next=compensate(db,topic,patch,JSON.parse(row.state));
   else {
-  const preview=inspectPatch(db,topic,patch,row,project);
+  const preview=inspectPatch(db,topic,patch,row,project,before);
   if(preview.conflicts.length)throw Object.assign(Error('Baseline conflict; full draft retained'),{preview});
   next=JSON.parse(row.state);next.revision++;
   for(const dependency of patch.readDependencies)if(![...next.canvas.nodes,...next.canvas.edges].some(n=>n.id===dependency))throw Error('Missing read dependency');
   const touched=new Set();
   for(const op of orderOperations(patch.operations)){
-   if(op.type.endsWith('extra')){next=applyOperation(next,op);continue;}
+   if(op.type.endsWith('extra')){next=applyOwnedOperation(next,op);continue;}
    const identity=op.type==='create-card'?op.card.id:op.type==='create-relation'?op.edge.id:op.id;
    if(touched.has(identity))throw Error('Repeated object operation');touched.add(identity);
    const deleted=op.type==='delete-card'?[...next.canvas.edges.filter(e=>e.fromNode===identity||e.toNode===identity),next.canvas.nodes.find(n=>n.id===identity)]:op.type==='delete-relation'?[next.canvas.edges.find(e=>e.id===identity)]:[];
    for(const object of deleted){(next.deletionIntents??=[]).push({id:object.id,object,revision:next.revision,authorId:patch.author.id,operationId:patch.operationId});delete next.metadata[object.id];}
-   next=applyOperation(next,op);
+   next=applyOwnedOperation(next,op);
    if(op.type.startsWith('delete-'))delete next.metadata[identity];
    else {
     const previous=next.metadata[identity]??{},changed=op.type==='create-card'?Object.keys(op.card):op.type==='create-relation'?Object.keys(op.edge):(op.type==='edit-relation'?relationFields:editableFields).filter(k=>op[k]!==undefined);
@@ -166,7 +168,7 @@ async function publishPatch(project,topic,value,undo,organizer,review){
    }
   }
   }
-  invalidateBasis(JSON.parse(row.state),next);
+  invalidateBasis(before,next);
   if(undo&&compensateRestorationMetadata(db,topic,patch,next))next=reconcileRestoredEvidence(db,topic,next);
   next.relations=semanticRelations(next.canvas.edges,next.canvas.nodes);
   validateCanvas(next.canvas);validateResources(project,next.canvas);
@@ -183,7 +185,15 @@ export async function readResourceStatus(project,topic,id){
 }
 
 export async function readHistory(project,topic){await readCommitted(project,topic);const db=open(project,true);try{return revisionList(db,topic);}finally{db.close();}}
-export async function previewHistory(project,topic,input){await readCommitted(project,topic);const db=open(project,true);try{return revisionState(db,topic,input?.revision);}finally{db.close();}}
+export async function previewHistory(project,topic,input){
+ const current=await readCommitted(project,topic),db=open(project,true);
+ try{
+  const snapshot=revisionState(db,topic,input?.revision);
+  if(input?.details!==true)return snapshot;
+  const before=snapshot.revision?revisionState(db,topic,snapshot.revision-1):snapshot;
+  return {snapshot,diff:boardDiff(before,snapshot),restorePreview:restoreFingerprint(topic,current,snapshot)};
+ }finally{db.close();}
+}
 export async function diffHistory(project,topic,input){await readCommitted(project,topic);const db=open(project,true);try{return boardDiff(revisionState(db,topic,input?.fromRevision),revisionState(db,topic,input?.toRevision));}finally{db.close();}}
 
 

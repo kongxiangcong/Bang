@@ -20,15 +20,15 @@ export function revisionText(db,topic,revision){
   parts.push(entry);cursor--;
  }
  if(text===undefined)throw Error('History checkpoint missing');
+ if(!parts.length)return text;
+ const state=JSON.parse(text);
  for(const entry of parts.reverse()){
-  const state=JSON.parse(text);
   for(const [keys,value,remove] of JSON.parse(unpack(entry.data))){
    let target=state;for(const key of keys.slice(0,-1)){if(!Object.hasOwn(target,key))throw Error('Invalid history path');target=target[key];}
    const key=keys.at(-1);if(remove)delete target[key];else Object.defineProperty(target,key,{value,enumerable:true,writable:true,configurable:true});
   }
-  text=JSON.stringify(state);
  }
- return text;
+ return JSON.stringify(state);
 }
 export function encodeRevision(db,topic,state,previous){
  const text=JSON.stringify(state),ids=[...state.canvas.nodes,...state.canvas.edges].map(n=>n.id),priorIds=new Set(previous?[...previous.canvas.nodes,...previous.canvas.edges].map(n=>n.id):[]);
@@ -36,14 +36,26 @@ export function encodeRevision(db,topic,state,previous){
  if(state.revision%checkpointInterval&&previous){
   const changes=[];
   const visit=(before,after,keys)=>{
-   if(JSON.stringify(before)===JSON.stringify(after))return;
-   if(before&&after&&typeof before==='object'&&typeof after==='object'&&Array.isArray(before)===Array.isArray(after)&&JSON.stringify([...Object.keys(before).filter(k=>Object.hasOwn(after,k)),...Object.keys(after).filter(k=>!Object.hasOwn(before,k))])===JSON.stringify(Object.keys(after))&&(!Array.isArray(before)||before.length===after.length)){
-    for(const key of new Set([...Object.keys(before),...Object.keys(after)])){
-     if(!Object.hasOwn(after,key))changes.push([[...keys,key],null,true]);
-     else if(!Object.hasOwn(before,key))changes.push([[...keys,key],after[key]]);
-     else visit(before[key],after[key],[...keys,key]);
+   if(before===after)return;
+   if(!before||!after||typeof before!=='object'||typeof after!=='object'||Array.isArray(before)!==Array.isArray(after)){
+    changes.push([[...keys],after]);return;
+   }
+   const oldKeys=Object.keys(before),newKeys=Object.keys(after);
+   // A delta may append keys and delete old ones; it cannot reorder surviving
+   // keys. Replace the subtree when JSON property order cannot be reproduced.
+   const identicalKeys=oldKeys.length===newKeys.length&&oldKeys.every((key,i)=>key===newKeys[i]);
+   if(!identicalKeys){
+    const replayOrder=[...oldKeys.filter(k=>Object.hasOwn(after,k)),...newKeys.filter(k=>!Object.hasOwn(before,k))];
+    if(Array.isArray(before)||!replayOrder.every((key,i)=>key===newKeys[i])){
+     changes.push([[...keys],after]);return;
     }
-   }else changes.push([keys,after]);
+    for(const key of oldKeys)if(!Object.hasOwn(after,key))changes.push([[...keys,key],null,true]);
+   }
+   for(const key of newKeys){
+    if(!identicalKeys&&!Object.hasOwn(before,key)){changes.push([[...keys,key],after[key]]);continue;}
+    if(before[key]===after[key])continue;
+    keys.push(key);visit(before[key],after[key],keys);keys.pop();
+   }
   };
   visit(previous,state,[]);
   const delta={...entry,kind:'delta',base:state.revision-1,data:pack(JSON.stringify(changes))};

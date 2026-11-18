@@ -34,13 +34,15 @@ try{
  ws.onmessage=event=>{const m=JSON.parse(event.data);if(m.id){const p=pending.get(m.id);pending.delete(m.id);m.error?p.reject(Error(m.error.message)):p.resolve(m.result)}};
  await cmd('Page.enable');await cmd('Page.navigate',{url:url+'/canvas.html?topic=demo'});
  await until(()=>evaluate('!!window.canvasBoard?.snapshot().length'));
- async function button(text){const pos=await evaluate(`(()=>{const e=[...document.querySelectorAll('button')].find(e=>e.textContent===${JSON.stringify(text)});if(!e)throw Error('Missing button');const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);await click(pos.x,pos.y);}
- async function type(label,text){const pos=await evaluate(`(()=>{const e=document.querySelector('[aria-label="${label}"]');const r=e.getBoundingClientRect();return {x:r.x+10,y:r.y+10}})()`);await click(pos.x,pos.y);await cmd('Input.dispatchKeyEvent',{type:'keyDown',key:'a',code:'KeyA',modifiers:2,windowsVirtualKeyCode:65,commands:['selectAll']});await cmd('Input.dispatchKeyEvent',{type:'keyUp',key:'a',code:'KeyA',modifiers:2});await cmd('Input.insertText',{text});}
+ async function button(text){const pos=await evaluate(`(()=>{const e=[...document.querySelectorAll('button')].find(e=>e.textContent===${JSON.stringify(text)});if(!e)throw Error('Missing button');e.scrollIntoView({block:'center',inline:'nearest'});const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);await click(pos.x,pos.y);}
+ async function type(label,text){const pos=await evaluate(`(()=>{const e=document.querySelector('[aria-label="${label}"]');e.scrollIntoView({block:'center',inline:'nearest'});const r=e.getBoundingClientRect();return {x:r.x+10,y:r.y+10}})()`);await click(pos.x,pos.y);await cmd('Input.dispatchKeyEvent',{type:'keyDown',key:'a',code:'KeyA',modifiers:2,windowsVirtualKeyCode:65,commands:['selectAll']});await cmd('Input.dispatchKeyEvent',{type:'keyUp',key:'a',code:'KeyA',modifiers:2});await cmd('Input.insertText',{text});}
  await button('新增关系');await button('保存');await until(()=>evaluate('document.body.innerText.includes("已保存 · 修订 1")'));
  let state=await (await canvasRequest(url+'/api/canvas/demo/state')).json();const relationId=state.canvas.edges[0].id;
  assert.equal(state.canvas.edges[0].toNode,'b');
  // Read-only scene inspection locates real pointer targets; no scene injection.
- const points=await evaluate(`(()=>{const es=window.canvasBoard.snapshot(),v=window.canvasBoard.viewport(),a=es.find(e=>e.id===${JSON.stringify(relationId)}),c=es.find(e=>e.id==='c');const xy=(x,y)=>({x:(x+v.scrollX)*v.zoom.value+v.offsetLeft,y:(y+v.scrollY)*v.zoom.value+v.offsetTop});return {mid:xy(a.x+a.points.at(-1)[0]/2,a.y+a.points.at(-1)[1]/2),end:xy(a.x+a.points.at(-1)[0],a.y+a.points.at(-1)[1]),target:xy(c.x-8,c.y+c.height/2)}})()`);
+ await evaluate("document.querySelector('.excalidraw').scrollIntoView({block:'center'})");
+ await evaluate("new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))");
+ const points=await evaluate(`(()=>{const es=window.canvasBoard.snapshot(),v=window.canvasBoard.viewport(),a=es.find(e=>e.id===${JSON.stringify(relationId)}),c=es.find(e=>e.id==='c');const bounds=document.querySelector('.excalidraw').getBoundingClientRect();const xy=(x,y)=>({x:(x+v.scrollX)*v.zoom.value+bounds.x,y:(y+v.scrollY)*v.zoom.value+bounds.y});return {mid:xy(a.x+a.points.at(-1)[0]/2,a.y+a.points.at(-1)[1]/2),end:xy(a.x+a.points.at(-1)[0],a.y+a.points.at(-1)[1]),target:xy(c.x-8,c.y+c.height/2)}})()`);
  await click(points.mid.x,points.mid.y);await delay(150);
  await cmd('Input.dispatchMouseEvent',{type:'mousePressed',x:points.end.x,y:points.end.y,button:'left',clickCount:1});
  for(let i=1;i<=20;i++)await cmd('Input.dispatchMouseEvent',{type:'mouseMoved',x:points.end.x+(points.target.x-points.end.x)*i/20,y:points.end.y+(points.target.y-points.end.y)*i/20,button:'left',buttons:1});
@@ -58,9 +60,11 @@ try{
  await type('关系标签 1','保留自定义关系');await button('反转关系 1');await button('保存');await until(()=>evaluate('document.body.innerText.includes("已保存 · 修订 3")'));
  state=await (await canvasRequest(url+'/api/canvas/demo/state')).json();assert.equal(state.relations[0].fromNode,'c');assert.equal(state.relations[0].toNode,'a');assert.equal(state.relations[0].classification,'unclassified');assert.equal(state.relations[0].label,'保留自定义关系');
  await button('删除关系 1');await button('保存');await until(()=>evaluate('document.body.innerText.includes("已保存 · 修订 4")'));
- await cmd('Page.reload');await until(()=>evaluate('document.querySelectorAll("textarea").length===3'));
+ await cmd('Page.reload');await until(()=>evaluate(`document.querySelectorAll('textarea[aria-label^="卡片正文 "]').length===3`));
  state=await (await canvasRequest(url+'/api/canvas/demo/state')).json();assert.equal(state.relations.length,0);assert.equal(state.deletionIntents[0].id,relationId);
  // An unbound arrow is annotation only, with no semantic save operation.
+ await evaluate("document.querySelector('.excalidraw').scrollIntoView({block:'center'})");
+ await evaluate("new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))");
  await until(()=>evaluate('!!window.canvasBoard?.snapshot().length'));
  await cmd('Input.dispatchKeyEvent',{type:'keyDown',key:'a',code:'KeyA',windowsVirtualKeyCode:65});await cmd('Input.dispatchKeyEvent',{type:'keyUp',key:'a',code:'KeyA',windowsVirtualKeyCode:65});
  const blank=await evaluate(`(()=>{const v=window.canvasBoard.viewport();return {x:v.offsetLeft+100,y:v.offsetTop+v.height-70}})()`);

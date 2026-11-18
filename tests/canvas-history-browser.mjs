@@ -34,8 +34,8 @@ try{
  ws.onmessage=event=>{const m=JSON.parse(event.data);if(m.id){const p=pending.get(m.id);pending.delete(m.id);m.error?p.reject(Error(m.error.message)):p.resolve(m.result)}};
  await cmd('Page.enable');await cmd('Page.navigate',{url:url+'/canvas.html?topic=demo'});
  await until(()=>evaluate('!!window.canvasBoard?.snapshot().length'));
- async function button(text){const pos=await evaluate(`(()=>{const e=[...document.querySelectorAll('button')].find(e=>e.textContent===${JSON.stringify(text)});if(!e)throw Error('Missing button');const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);await click(pos.x,pos.y);}
- async function type(label,text){const pos=await evaluate(`(()=>{const e=document.querySelector('[aria-label="${label}"]');const r=e.getBoundingClientRect();return {x:r.x+10,y:r.y+10}})()`);await click(pos.x,pos.y);await cmd('Input.dispatchKeyEvent',{type:'keyDown',key:'a',code:'KeyA',modifiers:2,windowsVirtualKeyCode:65,commands:['selectAll']});await cmd('Input.dispatchKeyEvent',{type:'keyUp',key:'a',code:'KeyA',modifiers:2});await cmd('Input.insertText',{text});}
+ async function button(text){const pos=await evaluate(`(()=>{const e=[...document.querySelectorAll('button')].find(e=>e.textContent===${JSON.stringify(text)});if(!e)throw Error('Missing button');e.scrollIntoView({block:'center',inline:'nearest'});const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);await click(pos.x,pos.y);}
+ async function type(label,text){const pos=await evaluate(`(()=>{const e=document.querySelector('[aria-label="${label}"]');e.scrollIntoView({block:'center',inline:'nearest'});const r=e.getBoundingClientRect();return {x:r.x+10,y:r.y+10}})()`);await click(pos.x,pos.y);await cmd('Input.dispatchKeyEvent',{type:'keyDown',key:'a',code:'KeyA',modifiers:2,windowsVirtualKeyCode:65,commands:['selectAll']});await cmd('Input.dispatchKeyEvent',{type:'keyUp',key:'a',code:'KeyA',modifiers:2});await cmd('Input.insertText',{text});}
 
 
  await type('卡片正文 1','history edited content');await button('保存');await until(()=>evaluate(`document.body.innerText.includes("已保存 · 修订 1")`));
@@ -52,7 +52,7 @@ try{
  await until(()=>evaluate(`document.querySelector('[aria-label="历史版本预览"]')?.textContent.includes("history edited content")`));
  await button('关闭历史');await button('删除卡片 1');await button('保存');await until(()=>evaluate(`document.body.innerText.includes("已保存 · 修订 3")`));
  await button('查看历史');await until(()=>evaluate(`document.body.innerText.includes("撤销修订 3")`));await button('撤销修订 3');await until(()=>evaluate(`document.body.innerText.includes("新修订 4")`));
- await button('关闭历史');await cmd('Page.reload');await until(()=>evaluate(`document.querySelectorAll("textarea").length===3`));
+ await button('关闭历史');await cmd('Page.reload');await until(()=>evaluate(`document.querySelectorAll('textarea[aria-label^="卡片正文 "]').length===3`));
  const state=await (await canvasRequest(url+'/api/canvas/demo/state')).json();assert.equal(state.revision,4);assert.equal(state.canvas.nodes[0].id,'a');assert.equal(state.canvas.nodes[0].text,'A');
  await type('卡片正文 1','local typing only');
  await cmd('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});await cmd('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',modifiers:2});
