@@ -297,8 +297,10 @@
 !/release/editor.mjs
 !/release/package.mjs
 !/release/resources.mjs
+!/release/SECURITY-VALIDATION.md
 !/tests/installed-bang.test.mjs
 !/tests/installed-bang-smoke.mjs
+!/tests/installed-security.mjs
 
 # Packaged Codex maintenance and public installation lifecycle acceptance.
 !/release/codex-maintenance.mjs
