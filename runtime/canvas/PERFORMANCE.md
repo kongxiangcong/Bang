@@ -10,6 +10,56 @@ an interrupted generation. The JSONL progress records and free-space checks run
 every 50 revisions. Creating a file named `pause-generation` beside the progress
 log requests a graceful pause. Remove that marker before resuming.
 
+## Completed Windows reference measurement
+
+All six nearest-rank p95 targets passed on source `260e2e2`, which includes
+integration `113d7bb`. Each condition used ten discarded warmups and 100 retained
+samples. Times below are in milliseconds. The raw observations and recorded
+source hashes are committed in [T32-SAMPLES.json](T32-SAMPLES.json).
+
+| Condition | Save p95 (≤ 1,000) | Refresh p95 (≤ 3,000) | History preview p95 (≤ 3,000) | Sample maxima, same order |
+|---|---:|---:|---:|---|
+| Idle Organizer | 523.6 | 1,165.8 | 816.0 | 1,621.8 / 1,686.0 / 921.0 |
+| One Organizer awaiting model | 454.1 | 1,132.2 | 890.2 | 599.8 / 1,244.5 / 1,130.5 |
+
+One idle save took 1,621.8 ms and exceeded one second. All requests succeeded.
+Each condition reopened the same stopped 10,000-edit project and checked every
+card's frozen ID, geometry, type and final text, every edge, all 3,000 semantic
+relations and the 10,000 public operation IDs in revision order. Each ended at
+revision 10,110 after its separate measurement saves. The frozen source's
+published database occupied 40,665,088 bytes. Its project data occupied
+41,117,785 bytes across seven files. After measurement the idle copy used
+41,208,881 bytes and the blocked copy used 43,379,761 bytes.
+
+**Reference conditions.** Windows 11 Home China, AMD Ryzen 7 7840H (16 logical
+CPUs), 29,734,326,272 bytes RAM, Node v25.8.1, headless Chrome 157.0.8103.52
+at 1440×960 with hardware acceleration disabled. The Windows Balanced power
+plan was active (381b4222-f694-41f0-9685-ff5bb260df2e). CPU time across the
+whole shared system averaged 34.58% busy during the idle run and 28.00% during
+the blocked run. Other development activity was possible. This difference in
+machine load prevents treating the two conditions as a speedup comparison.
+
+**Peak working sets.** The native Runtime peaked at 253,607,936 bytes idle and
+365,383,680 bytes blocked. The largest Chrome process peaked at 2,525,208,576
+and 2,535,739,392 bytes respectively. The driver and middleware process peaked
+at 139,911,168 and 178,216,960 bytes. These are OS lifetime peaks per process;
+a synchronized whole-process-tree memory peak was not measured.
+
+**Compilation and model time.** The headless compiler took 19.54 ms in the last
+separate compile observation. Generating and durably publishing revision zero
+through the original fresh native owner took 1,014.35 ms. The frontend production
+Vite phase reported 22.91 s on the final build used for these samples. The idle
+run issued zero model requests. The blocked run held exactly one controlled
+loopback model request for 262.09 s, checked its continued connection after
+every trial, and issued zero external calls. Real inference time was zero.
+The two official runs followed dataset generation with disjoint fresh Chrome
+profiles and no concurrent seed generator.
+
+The full local logs are `.scratch/collaborative-whiteboard/39-frozen/generation.jsonl`,
+`idle-55zmgS/report.json`, and `blocked-F4eeB0/report.json` under that run directory.
+Windows is the measured reference. These timings do not establish Linux or other
+hardware performance, real-model latency, arbitrary attachment behavior or a
+per-request guarantee.
 ## Reproduce
 
 Build the production frontend in `prototypes/whiteboard-integration` with
