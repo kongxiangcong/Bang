@@ -59,5 +59,5 @@ export async function serveEditor(root, project, port, resourceFiles) {
     server.once('error', reject);
     server.listen(port, '127.0.0.1', resolve);
   });
-  return { url: 'http://127.0.0.1:' + server.address().port + '/canvas.html' };
+  return { url: 'http://127.0.0.1:' + server.address().port + '/canvas.html', close: () => server.close() };
 }

@@ -11,7 +11,7 @@ const digest=v=>createHash('sha256').update(JSON.stringify(v)).digest('hex');
 function rows(project,topic){const db=openBindingDatabase(project);try{return db.prepare('SELECT body FROM organizer_tasks WHERE topic=? ORDER BY rowid').all(topic).map(r=>JSON.parse(r.body));}finally{db.close();}}
 function save(project,task){const db=openBindingDatabase(project);try{db.prepare('INSERT INTO organizer_tasks VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body').run(task.id,task.topic,task.sourceId,JSON.stringify(task));}finally{db.close();}}
 export async function requestReorganization(project,topic,input){
- if(!process.env.BANG_ORGANIZER_ENDPOINT&&!nativeConfiguration())throw Error('Organizer executor unavailable');
+ if(!process.env.BANG_ORGANIZER_ENDPOINT&&!nativeConfiguration(project))throw Error('Organizer executor unavailable');
  const state=await readCommitted(project,topic),ids=input?.ids;
  if(input?.intent!=='reorganize-selection'||input.baseRevision!==state.revision||!Array.isArray(ids)||!ids.length||ids.length>100||new Set(ids).size!==ids.length||ids.some(id=>!state.canvas.nodes.some(n=>n.id===id&&n.type!=='group')))throw Error('Explicit current selection required (1–100 knowledge cards)');
  const usable=knowledgeContext(state);if(ids.some(id=>!usable.knowledgeCards.some(n=>n.id===id)))throw Error('Selected knowledge needs basis review before reorganization');

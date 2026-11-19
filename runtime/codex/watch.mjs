@@ -3,6 +3,7 @@ import path from 'node:path';
 import {createPrivateKey} from 'node:crypto';
 import {CodexSessionConnector} from './connector.mjs';
 import {openCodexStoredTransport} from './transport.mjs';
+import {openCodexTranscriptTransport} from './transcript-transport.mjs';
 
 const statuses=new Map();
 export function codexWatchStatus(project){return statuses.get(project)??{status:'idle'};}
@@ -13,7 +14,15 @@ export function configureCodexWatch(project,input){
  if(typeof input?.topicId!=='string'||typeof input.sourceId!=='string')throw Error('Codex exact binding required');
  read(project,'codex-install.json');
  let state={sources:[]};try{state=read(project,'codex-watch.json');}catch(e){if(e.code!=='ENOENT')throw e;}
- if(!state.sources.some(x=>x.sourceId===input.sourceId))state.sources.push({topicId:input.topicId,sourceId:input.sourceId});
+ const current=state.sources.find(x=>x.sourceId===input.sourceId);
+ if(input.transcript!==undefined){
+  if(!path.isAbsolute(input.transcript)||fs.realpathSync(input.transcript)!==input.transcript)throw Error('Exact Codex transcript required');
+  if(current?.transcript&&current.transcript!==input.transcript)throw Error('Existing Codex transcript path changed');
+ }
+ if(!current||input.transcript){
+  state.sources=state.sources.filter(x=>x.topicId!==input.topicId);
+  state.sources.push({topicId:input.topicId,sourceId:input.sourceId,transcript:input.transcript});
+ }
  if(state.sources.length>100)throw Error('Codex watch capacity reached');save(project,state);return {status:'watching'};
 }
 export function startCodexWatch(project,runtimeCall){
@@ -29,7 +38,9 @@ export function startCodexWatch(project,runtimeCall){
     if(!source?.active||source.instanceId!==install.instanceId)continue;
     if(source.receptionStopped&&!source.resumeRequested){statuses.set(project,{status:'reception-stopped',sourceId:entry.sourceId});continue;}
     try{
-     transport=await openCodexStoredTransport({executable:install.executable,threadId:source.sessionId});
+     transport=entry.transcript
+      ?await openCodexTranscriptTransport({threadId:source.sessionId,transcript:entry.transcript})
+      :await openCodexStoredTransport({executable:install.executable,threadId:source.sessionId});
      if(stopped){transport.close();break;}
      const connector=new CodexSessionConnector({project,transport,connectorId:install.connectorId,privateKey:createPrivateKey(install.privateKey),instanceId:install.instanceId,runtimeCall});
      const result=await connector.poll(entry.topicId,entry.sourceId);statuses.set(project,{...result,topicId:entry.topicId,sourceId:entry.sourceId});

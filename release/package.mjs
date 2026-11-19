@@ -54,7 +54,7 @@ try {
 
   run('git', [
     'archive', '--format=tar', '--output=' + extractedTar, sourceCommit,
-    'runtime', 'release', 'prototypes/whiteboard-integration',
+    'runtime', 'release', 'skills/bang-bundle/SKILL.md', 'prototypes/whiteboard-integration',
   ]);
   run('tar', ['-xf', extractedTar, '-C', checkout]);
   run('tar', ['-xf', archive, '-C', nodeExtraction]);
@@ -77,7 +77,7 @@ try {
       copyFile(path.join(runtimeSource, file), 'runtime/' + file, stage);
     }
   }
-  for (const file of ['bang.mjs', 'codex-maintenance.mjs', 'editor.mjs', 'resources.mjs']) {
+  for (const file of ['bang.mjs', 'bundle.mjs', 'codex-maintenance.mjs', 'editor.mjs', 'resources.mjs']) {
     copyFile(path.join(checkout, 'release', file), 'release/' + file, stage);
   }
   copyFile(node, 'node/' + platform.node, stage);
@@ -86,6 +86,7 @@ try {
   copyFile(path.join(checkout, 'release', platform.launcher), platform.launcher, stage);
   if (process.platform !== 'win32') fs.chmodSync(path.join(stage, platform.launcher), 0o755);
   copyFile(path.join(checkout, 'release', 'README.md'), 'README.md', stage);
+  copyFile(path.join(checkout,'skills','bang-bundle','SKILL.md'),'skills/bang-bundle/SKILL.md',stage);
 
   const editor = path.join(checkout, 'prototypes', 'whiteboard-integration');
   const npm = path.join(distribution, platform.npm);

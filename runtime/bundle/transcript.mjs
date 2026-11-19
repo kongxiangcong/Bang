@@ -26,7 +26,7 @@ export async function inspect(binding) {return parse(await fs.readFile(binding.t
 async function matchingFiles(dir,id,out=[]) {
  for(const entry of await fs.readdir(dir,{withFileTypes:true})){const file=path.join(dir,entry.name);if(entry.isDirectory())await matchingFiles(file,id,out);else if(entry.isFile()&&entry.name.endsWith('.jsonl')&&entry.name.includes(id))out.push(file);}return out;
 }
-export async function discover({chatId,transcript,turnId}={},env=process.env) {
+export async function locateTranscript({chatId,transcript}={},env=process.env) {
  chatId??=env.CODEX_THREAD_ID??env.CODEX_SESSION_ID;
  if(!chatId||!/^[a-zA-Z0-9_-]+$/.test(chatId))throw Error('缺少可验证的当前会话 ID（CODEX_THREAD_ID / CODEX_SESSION_ID）');
  if(env.CODEX_THREAD_ID&&chatId!==env.CODEX_THREAD_ID)throw Error('显式聊天 ID 与宿主当前会话不一致');
@@ -35,7 +35,10 @@ export async function discover({chatId,transcript,turnId}={},env=process.env) {
   try{matches=await matchingFiles(sessions,chatId)}catch(e){if(e.code==='ENOENT')throw Error('宿主未提供当前 transcript 路径，且本地 sessions 目录不存在；无法准确绑定');throw e}
   if(matches.length!==1)throw Error(`当前 ID 对应 ${matches.length} 个 transcript；需要宿主提供唯一准确路径`);transcript=matches[0];
  }
- const binding={chatId,transcript:await fs.realpath(transcript)};const info=await inspect(binding);
+ return {chatId,transcript:await fs.realpath(transcript)};
+}
+export async function discover({chatId,transcript,turnId}={},env=process.env) {
+ const binding=await locateTranscript({chatId,transcript},env);const info=await inspect(binding);
  turnId??=env.CODEX_TURN_ID??info.activeTurnId;
  if(!turnId||turnId!==info.activeTurnId)throw Error('无法核对调用技能的当前活动轮；不会从历史完成轮猜测接收起点');
  return {...binding,startTurnId:turnId,ignored:info.completed.map(r=>r.id),boundAt:new Date().toISOString()};

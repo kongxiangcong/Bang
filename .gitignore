@@ -210,10 +210,13 @@
 /runtime/codex/*
 !/runtime/codex/executor.mjs
 !/runtime/codex/executor-config.mjs
+!/runtime/codex/bundle-install.mjs
+!/runtime/codex/transcript-transport.mjs
 !/runtime/codex/result-schema.mjs
 !/runtime/codex/EXECUTOR.md
 !/tests/codex-executor-fixture.mjs
 !/tests/codex-executor.test.mjs
+!/tests/codex-transcript-transport.test.mjs
 !/tests/codex-executor-auth.test.mjs
 !/tests/codex-capability-audit.mjs
 !/tests/codex-executor-real.mjs
@@ -294,6 +297,7 @@
 !/release/bang
 !/release/README.md
 !/release/bang.mjs
+!/release/bundle.mjs
 !/release/editor.mjs
 !/release/package.mjs
 !/release/resources.mjs

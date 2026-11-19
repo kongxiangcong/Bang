@@ -9,7 +9,7 @@ const here=path.dirname(fileURLToPath(import.meta.url));
 const at=process.argv.indexOf('--skills-dir');
 const base=at<0?path.join(os.homedir(),'.agents','skills'):path.resolve(process.argv[at+1]);
 const destination=path.join(base,'bang-bundle');
-const template=await fs.readFile(path.resolve(here,'../../skills/bang-bundle/SKILL.md'),'utf8');
+const template=await fs.readFile(path.join(here,'legacy-skill.md'),'utf8');
 const text=template.replaceAll('@BUNDLE@',JSON.stringify(path.join(here,'bang-bundle.mjs')));
 await fs.mkdir(destination,{recursive:true});
 const file=path.join(destination,'SKILL.md');

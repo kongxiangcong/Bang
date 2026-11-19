@@ -50,6 +50,13 @@ function codexCheck(candidate) {
     : { status: 'version-mismatch', version: version ?? null };
 }
 
+function hostCodex(candidate) {
+  if (candidate || process.env.CODEX_APP_RUNTIME_CLI_PATH) return candidate ?? process.env.CODEX_APP_RUNTIME_CLI_PATH;
+  const basename = process.platform === 'win32' ? 'codex.exe' : 'codex';
+  return (process.env.PATH ?? '').split(path.delimiter).filter(path.isAbsolute)
+    .map(directory => path.join(directory, basename)).find(regularFile);
+}
+
 function packageFiles() {
   const manifestName = 'package-manifest.json';
   if (!regularFile(manifestPath)) throw Error('Bang package manifest is missing');
@@ -135,9 +142,11 @@ async function projectPlan(project, release, values = {}) {
   return plan;
 }
 
-try {
+async function main() {
   const [command, ...args] = process.argv.slice(2);
   const options = {
+    'install-skill': { 'skills-dir': { type: 'string' } },
+    up: { ...projectOption, ...codexOption, model: { type: 'string', default: 'gpt-6.1-sol' }, topic: { type: 'string' } },
     plan: { ...projectOption, ...legacyOptions },
     status: projectOption,
     check: { ...projectOption, ...codexOption },
@@ -151,9 +160,15 @@ try {
     stop: projectOption,
   };
   if (!Object.hasOwn(options, command)) {
-    throw Error('Usage: Bang plan | status | check | prepare-codex | install-codex | repair-codex | upgrade-codex | rollback-codex | uninstall-codex | serve | stop --project DIR');
+    throw Error('Usage: Bang install-skill | up | plan | status | check | prepare-codex | install-codex | repair-codex | upgrade-codex | rollback-codex | uninstall-codex | serve | stop');
   }
   const { values } = parseArgs({ args, options: options[command] });
+  if (command === 'install-skill') {
+    packageFiles();
+    const { installSkill } = await import('./bundle.mjs');
+    console.log(JSON.stringify(await installSkill(root, values['skills-dir'] && path.resolve(values['skills-dir']))));
+    return;
+  }
   if (!values.project) throw Error('Specify an existing project directory with --project');
   const project = fs.realpathSync(values.project);
   if (!fs.statSync(project).isDirectory()) throw Error('Project must be a directory');
@@ -173,7 +188,13 @@ try {
     console.log(JSON.stringify(await runtimeOperation(project, 'stop')));
   } else {
     const { manifest, release } = packageFiles();
-    if (Object.hasOwn(operations, command)) {
+    if (command === 'up') {
+      const codex = codexCheck(hostCodex(values.codex));
+      if (codex.status !== 'compatible') throw Error('Pinned native Codex required: ' + codex.status);
+      const { startBundle } = await import('./bundle.mjs');
+      const result = await startBundle(project,{executable:codex.executable,model:values.model,topicId:values.topic});
+      console.log(JSON.stringify(result));
+    } else if (Object.hasOwn(operations, command)) {
       console.log(JSON.stringify(maintain(project, operations[command], release)));
     } else if (command === 'serve') {
       if (!/^\d{1,5}$/.test(values.port) || Number(values.port) > 65535) throw Error('Invalid loopback port');
@@ -209,7 +230,9 @@ try {
       }
     }
   }
-} catch (error) {
+}
+
+try { await main(); } catch (error) {
   console.error(error.message);
   process.exitCode = 1;
 }

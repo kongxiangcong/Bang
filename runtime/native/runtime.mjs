@@ -14,6 +14,7 @@ import {spawn,spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import * as store from '../canvas/store.mjs';
 import {configureCodexWatch,startCodexWatch,codexWatchStatus} from '../codex/watch.mjs';
+import {prepareBundle} from '../codex/bundle-install.mjs';
 import {ingestTurns,turnStatus,turnSource,authorizeBackfill} from '../canvas/ingestion.mjs';
 import {listTopics,createTopic,registerConnector,connectSession,enableBinding,bindingStatus,bindingSources} from '../canvas/binding.mjs';
 const here=fileURLToPath(import.meta.url);
@@ -104,7 +105,7 @@ async function daemon(project){
  const connection={workspaceId:identity.workspaceId,instanceId:randomUUID(),epoch:String(identity.epoch),pid:process.pid,token:randomBytes(32).toString('hex')};
  const status=()=>({status:'running',ownership:'os-handle',workspaceId:connection.workspaceId,instanceId:connection.instanceId,epoch:connection.epoch,pid:process.pid,supervisorPid:process.ppid,url:connection.url});
  const methods={'legacy-archive':archiveLegacy,'legacy-stop':stopLegacy,'legacy-preflight':preflightLegacy,'legacy-migrate':migrateLegacy,'legacy-history':legacyHistory,'history-capacity':historyCapacity,'maintenance-preview':maintenancePreview,'maintenance-confirm':maintenanceConfirm,'restore-preview':previewRestore,'restore-version':restoreVersion,'context-status':contextStatus,'knowledge-context':store.readKnowledgeContext,'basis-review':store.reviewBasis,'backup-export':exportProject,'backup-verify':verifyProject,'backup-restore':restoreProject,'export-canvas':store.exportCanvas,'import-preview':store.previewImport,'import-canvas':store.importCanvas,'recovery-status':store.readRecoveryStatus,recover:store.recoverBoard,undo:store.undoBoard,history:store.readHistory,'history-preview':store.previewHistory,'history-diff':store.diffHistory,generate:store.generateBoard,read:store.readBoard,state:store.readCommitted,commit:store.commitBoard,preview:store.previewBoard,head:store.readHead,'resource-status':(project,topic,input)=>store.readResourceStatus(project,topic,input.id)};
- let stopping=false,operationQueue=Promise.resolve(),stopCodexWatch=()=>{};
+ let stopping=false,operationQueue=Promise.resolve(),stopCodexWatch=()=>{},bundleEditor;
  const enqueue=fn=>{const pending=operationQueue.then(fn);operationQueue=pending.catch(()=>{});return pending;};
  const running=new Set();
  const pump=async()=>{if(stopping)return;for(const topic of organizerTopics(project)){if(running.has(topic))continue;running.add(topic);try{const task=await enqueue(()=>prepareOrganizer(project,topic,connection.epoch));if(!task){running.delete(topic);continue;}executeOrganizer(task,project).then(result=>enqueue(()=>finishOrganizer(project,task,result,stopping?{code:"ATTEMPT_INTERRUPTED"}:null,connection.epoch)),error=>enqueue(()=>finishOrganizer(project,task,null,stopping?{code:"ATTEMPT_INTERRUPTED"}:error,connection.epoch))).finally(()=>running.delete(topic));}catch{running.delete(topic);}}};
@@ -124,7 +125,18 @@ async function daemon(project){
    const execute=async()=>{let result;
    if(stopping)throw Error('Runtime stopping');
    if(command==='status')result=status();
-   else if(command==='stop'){stopping=true;stopCodexWatch();result={status:'stopped'};}
+   else if(command==='stop'){stopping=true;stopCodexWatch();bundleEditor?.close();result={status:'stopped'};}
+   else if(command==='bundle-prepare')result=prepareBundle(project,input);
+   else if(command==='bundle-editor'){
+    if(!bundleEditor){
+     const root=fileURLToPath(new URL('../../',import.meta.url));
+     const manifest=JSON.parse(fs.readFileSync(path.join(root,'package-manifest.json'),'utf8'));
+     // Load the packaged editor only in the native owner, outside Vite's config graph.
+     const {serveEditor}=await import(new URL('../../release/editor.mjs',import.meta.url).href);
+     bundleEditor=await serveEditor(root,project,0,manifest.files);
+    }
+    result={url:bundleEditor.url};
+   }
    else if(command==='codex-watch-status')result=codexWatchStatus(project);
    else if(command==='codex-watch')result=configureCodexWatch(project,input);
    else if(command==='topics')result=listTopics(project);

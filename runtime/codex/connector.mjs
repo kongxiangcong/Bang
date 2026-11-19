@@ -43,10 +43,13 @@ export class CodexSessionConnector {
  async enable(hook,{scope,topicId,confirmation}={}){
   if(hook?.hook_event_name!=='UserPromptSubmit'||typeof hook.session_id!=='string'||typeof hook.turn_id!=='string'||!hook.turn_id)failure('trusted UserPromptSubmit identity required');
   if(fs.realpathSync(hook.cwd)!==this.project)failure('workspace mismatch');
-  const thread=await this.identity(hook.session_id);
-  if(thread.sessionId!==hook.session_id)failure('session tree identity mismatch');
+  return this.enableSession({sessionId:hook.session_id,turnId:hook.turn_id},{scope,topicId,confirmation});
+ }
+ async enableSession({sessionId,turnId},{scope,topicId,confirmation}){
+  const thread=await this.identity(sessionId);
+  if(thread.sessionId!==sessionId)failure('session tree identity mismatch');
   const {workspaceId}=await this.call('start');
-  const handshake=await this.call('session-connect',this.proof({workspaceId,sessionId:thread.id,turnId:hook.turn_id,cursor:cursor(hook.turn_id),scope}));
+  const handshake=await this.call('session-connect',this.proof({workspaceId,sessionId:thread.id,turnId,cursor:cursor(turnId),scope}));
   return this.call('binding-enable',{...handshake,topicId,confirmation});
  }
  async poll(topicId,sourceId){

@@ -1,14 +1,14 @@
 import {dshConfiguration} from '../dsh/executor-config.mjs';
-import {codexConfiguration} from '../codex/executor-config.mjs';
+import {codexConfiguration,projectCodexConfiguration} from '../codex/executor-config.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 const active=new Set();
 export const nativeActiveCount=()=>active.size;
-export function nativeConfiguration(){
+export function nativeConfiguration(project){
  if([process.env.BANG_ORGANIZER_NATIVE,process.env.BANG_ORGANIZER_CODEX,process.env.BANG_ORGANIZER_DSH].filter(Boolean).length>1)throw Object.assign(Error('Conflicting native executor configuration'),{code:'EXECUTOR_CONFIGURATION'});
- if(!process.env.BANG_ORGANIZER_NATIVE)return dshConfiguration()??codexConfiguration();
+ if(!process.env.BANG_ORGANIZER_NATIVE)return dshConfiguration()??codexConfiguration(process.env.BANG_ORGANIZER_CODEX??(process.env.BANG_ORGANIZER_ENDPOINT?null:projectCodexConfiguration(project)));
  try{const c=JSON.parse(process.env.BANG_ORGANIZER_NATIVE);
   if(c.version!==1||!path.isAbsolute(c.executable)||!fs.statSync(c.executable).isFile()||!Array.isArray(c.args)||c.args.some(a=>typeof a!=='string'||a.includes('\0'))||c.policy!=='no-tools'||!Number.isInteger(c.graceMs)||c.graceMs<10||c.graceMs>2000||Object.keys(c).some(k=>!['version','executable','args','policy','graceMs'].includes(k)))throw Error();
   if(/\.(cmd|bat|ps1)$/i.test(c.executable))throw Error();
@@ -16,7 +16,7 @@ export function nativeConfiguration(){
  }catch{throw Object.assign(Error('Invalid restricted native executor configuration'),{code:'EXECUTOR_CONFIGURATION'});}
 }
 export async function executeNative(task,project,signal){
- const config=nativeConfiguration(),directory=path.join(project,'.bang','runtime','workers',task.attemptId);
+ const config=nativeConfiguration(project),directory=path.join(project,'.bang','runtime','workers',task.attemptId);
  fs.mkdirSync(directory,{recursive:true,mode:0o700});
  const environment={BANG_EXECUTOR_POLICY:'no-tools',BANG_EXECUTOR_PROTOCOL:'1'};
  // Never inherit credentials, runtime capabilities, NODE_OPTIONS or tool paths.
