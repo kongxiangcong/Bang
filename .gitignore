@@ -56,6 +56,265 @@
 !/runtime/companion/README.md
 !/runtime/companion/whiteboard.mjs
 
+# Reviewed public regression tests and synthetic frozen baseline only.
+!/tests/
+/tests/*
+!/tests/legacy-runtime.test.mjs
+!/tests/legacy-http.test.mjs
+!/tests/legacy-browser.mjs
+!/baselines/
+/baselines/*
+!/baselines/whiteboard-v1/
+/baselines/whiteboard-v1/*
+!/baselines/whiteboard-v1/README.md
+!/baselines/whiteboard-v1/manifest.json
+!/baselines/whiteboard-v1/quality-cases.json
+!/baselines/whiteboard-v1/legacy-session.json
+!/baselines/whiteboard-v1/scoring.md
+!/baselines/whiteboard-v1/performance.json
+!/baselines/whiteboard-v1/performance-dataset.mjs
+!/.gitattributes
+
+# Reviewed ticket 02 headless text Canvas runtime, read-only adapter and tests.
+!/runtime/canvas/
+/runtime/canvas/*
+!/runtime/canvas/contract.ts
+!/runtime/canvas/store.mjs
+!/runtime/canvas/http.mjs
+!/runtime/canvas/bang.mjs
+!/runtime/canvas/README.md
+!/prototypes/whiteboard-integration/canvas.html
+!/prototypes/whiteboard-integration/src/canvas.tsx
+!/tests/canvas-runtime.test.mjs
+!/tests/canvas-browser.mjs
+
+# Reviewed ticket 03 explicit-save public regression tests.
+!/tests/canvas-save.test.mjs
+!/tests/canvas-save-browser.mjs
+# Reviewed ticket 11 resource safety and raw detail panel.
+!/runtime/canvas/resources.mjs
+!/prototypes/whiteboard-integration/src/ResourceDetails.tsx
+!/tests/canvas-resources.test.mjs
+!/tests/canvas-resources-browser.mjs
+
+# Reviewed ticket 06 browser-local recovery and end-of-interaction regression.
+!/prototypes/whiteboard-integration/src/drafts.ts
+!/tests/canvas-draft-browser.mjs
+
+# Reviewed ticket 04 native OS-lock runtime, prebuilt Windows helper and public tests.
+!/runtime/native/
+/runtime/native/*
+!/runtime/native/lock-host.c
+!/runtime/native/lock-host.exe
+!/runtime/native/build.mjs
+!/runtime/native/runtime.mjs
+!/runtime/native/README.md
+!/prototypes/whiteboard-integration/src/canvas-client.ts
+!/tests/native-runtime.test.mjs
+!/tests/canvas-request.mjs
+
+# Reviewed ticket 07 field baselines, conflict preview and manual refresh acceptance.
+!/prototypes/whiteboard-integration/src/canvas-edits.ts
+!/tests/canvas-conflicts.test.mjs
+!/tests/canvas-conflicts-browser.mjs
+
+# Ticket 09 deterministic local layout and acceptance.
+!/runtime/canvas/layout.ts
+!/tests/canvas-layout.test.mjs
+!/tests/canvas-layout-browser.mjs
+!/prototypes/whiteboard-integration/src/LayoutControls.tsx
+# Ticket 08 relation editing and persistence.
+!/runtime/canvas/relations.ts
+!/prototypes/whiteboard-integration/src/canvas-relations.ts
+!/tests/canvas-relations.test.mjs
+!/tests/canvas-relations-browser.mjs
+
+# Ticket 12 immutable history previews and committed compensation undo.
+!/runtime/canvas/history.mjs
+!/prototypes/whiteboard-integration/src/HistoryPanel.tsx
+!/tests/canvas-history.test.mjs
+!/tests/canvas-history-browser.mjs
+# Ticket 10 annotations and native copy acceptance.
+!/tests/canvas-annotations.test.mjs
+!/tests/canvas-annotations-browser.mjs
+!/prototypes/whiteboard-integration/src/canvas-annotations.ts
+
+# Ticket 13 trusted session binding and topic selection.
+!/runtime/native/session-connector.mjs
+!/runtime/canvas/binding.mjs
+!/prototypes/whiteboard-integration/src/TopicPicker.tsx
+!/tests/topic-binding.test.mjs
+!/tests/topic-binding-browser.mjs
+
+# Core review shared transaction application and browser regression.
+!/runtime/canvas/operations.ts
+!/tests/canvas-transaction-browser.mjs
+
+# Ticket 36 complete project snapshot and isolated restore.
+!/runtime/canvas/backup.mjs
+!/prototypes/whiteboard-integration/src/ProjectBackup.tsx
+!/tests/canvas-backup.test.mjs
+!/tests/canvas-backup-browser.mjs
+# Ticket 15 restricted Organizer and public/browser acceptance.
+!/runtime/canvas/organizer.mjs
+!/runtime/canvas/ORGANIZER.md
+!/prototypes/whiteboard-integration/src/OrganizerPanel.tsx
+!/tests/organizer.test.mjs
+!/tests/organizer-browser.mjs
+
+# Ticket 19 human intent and reviewable proposals.
+!/runtime/canvas/human-intent.mjs
+!/runtime/canvas/proposals.mjs
+!/runtime/canvas/HUMAN-INTENT.md
+!/prototypes/whiteboard-integration/src/ProposalsPanel.tsx
+!/tests/human-intent.test.mjs
+!/tests/human-intent-browser.mjs
+# Ticket 16 lifecycle controls and bounded resource policy.
+!/tests/organizer-controls.test.mjs
+!/tests/organizer-controls-browser.mjs
+# Ticket 27 pinned DSH adapter and public Runtime tests.
+!/runtime/dsh/
+/runtime/dsh/*
+!/runtime/dsh/session-connector.mjs
+!/runtime/dsh/plugin.mjs
+!/runtime/dsh/prepare.mjs
+!/runtime/dsh/package.json
+!/runtime/dsh/README.md
+!/tests/dsh-session-connector.test.mjs
+
+# Ticket 17 reviewed native model process supervision and controlled OS fixtures.
+!/runtime/native/process-host.c
+!/runtime/native/process-host.exe
+!/runtime/native/process-host
+!/runtime/native/executor.mjs
+!/tests/native-organizer.test.mjs
+!/tests/native-worker-fixture.mjs
+# Ticket 31 reviewed versioned structure rules, deterministic compiler and public acceptance.
+!/runtime/canvas/structures.ts
+!/runtime/canvas/structure-rules.mjs
+!/tests/canvas-structures.test.mjs
+!/tests/canvas-structures-browser.mjs
+# Ticket 20 evidence validity, explicit review and public/browser acceptance.
+!/runtime/canvas/evidence.mjs
+!/runtime/canvas/EVIDENCE.md
+!/prototypes/whiteboard-integration/src/BasisReview.tsx
+!/tests/evidence-revalidation.test.mjs
+!/tests/evidence-revalidation-browser.mjs
+
+# Ticket 18 controlled namespace switching and backlog recovery.
+!/tests/source-switch.test.mjs
+
+
+# Ticket 25 reviewed Codex executor, bounded acceptance drivers and evidence.
+!/runtime/codex/
+/runtime/codex/*
+!/runtime/codex/executor.mjs
+!/runtime/codex/executor-config.mjs
+!/runtime/codex/bundle-install.mjs
+!/runtime/codex/transcript-transport.mjs
+!/runtime/codex/result-schema.mjs
+!/runtime/codex/EXECUTOR.md
+!/tests/codex-executor-fixture.mjs
+!/tests/codex-executor.test.mjs
+!/tests/codex-transcript-transport.test.mjs
+!/tests/codex-executor-auth.test.mjs
+!/tests/codex-capability-audit.mjs
+!/tests/codex-executor-real.mjs
+!/tests/codex-executor-real-browser.mjs
+# Ticket 21 source answer history and public/browser acceptance.
+!/tests/source-versions.test.mjs
+!/tests/source-versions-browser.mjs
+!/runtime/canvas/SOURCE-VERSIONS.md
+# Ticket 33 comparison and event timeline UI and public acceptance.
+!/prototypes/whiteboard-integration/src/ComparisonTimeline.tsx
+!/tests/canvas-comparison-timeline.test.mjs
+!/tests/canvas-comparison-timeline-browser.mjs
+
+# Ticket 23 previewed restore and durable old-work fences.
+!/runtime/canvas/restore.mjs
+!/tests/canvas-restore.test.mjs
+!/tests/canvas-restore-browser.mjs
+!/runtime/canvas/RESTORE.md
+# Ticket 22 authenticated bounded context delivery and public/browser acceptance.
+!/runtime/canvas/context.mjs
+!/runtime/canvas/CONTEXT.md
+!/runtime/native/context-bridge.mjs
+!/prototypes/whiteboard-integration/src/ContextDelivery.tsx
+!/tests/context-delivery.test.mjs
+!/tests/context-delivery-browser.mjs
+
+# Ticket 37 bounded legacy migration, review UI and public acceptance.
+!/runtime/canvas/legacy-migration.mjs
+!/runtime/canvas/MIGRATION.md
+!/prototypes/whiteboard-integration/src/LegacyMigration.tsx
+!/tests/legacy-migration.test.mjs
+!/tests/legacy-migration-browser.mjs
+# Ticket 28 reviewed DSH Organizer executor and bounded native acceptance.
+!/runtime/dsh/executor.mjs
+!/runtime/dsh/executor-config.mjs
+!/runtime/dsh/executor-guard.mjs
+!/runtime/dsh/EXECUTOR.md
+!/tests/dsh-executor-fixture.mjs
+!/tests/dsh-executor.test.mjs
+!/tests/dsh-executor-auth.test.mjs
+!/tests/dsh-capability-audit.mjs
+!/tests/dsh-executor-real.mjs
+# Ticket 32 argument and cyclic flow acceptance.
+!/tests/canvas-argument-flow.test.mjs
+!/tests/canvas-argument-flow-browser.mjs
+
+# Ticket 38 reviewed bounded history storage, capacity management and public acceptance.
+!/runtime/canvas/history-storage.mjs
+!/runtime/canvas/capacity.mjs
+!/runtime/canvas/CAPACITY.md
+!/prototypes/whiteboard-integration/src/HistoryCapacity.tsx
+!/tests/history-capacity.test.mjs
+!/tests/history-capacity-browser.mjs
+!/tests/history-stress.mjs
+!/tests/history-stress-worker.mjs
+# Ticket 34 mixed regions and explicit selected reorganization.
+!/runtime/canvas/reorganize.mjs
+!/runtime/canvas/mixed-structures.ts
+!/prototypes/whiteboard-integration/src/ReorganizeSelection.tsx
+!/tests/canvas-reorganize.test.mjs
+!/tests/canvas-reorganize-browser.mjs
+
+# Ticket 27 actual pinned native Session acceptance with a controlled loopback model.
+!/tests/dsh-session-installed.mjs
+
+# Frozen T32 end-to-end workload and bounded inspector rendering.
+!/tests/performance-browser.mjs
+!/tests/performance-generate.mjs
+!/prototypes/whiteboard-integration/src/InspectorPage.tsx
+!/runtime/canvas/PERFORMANCE.md
+!/runtime/dsh/context-delivery.mjs
+!/runtime/canvas/T32-SAMPLES.json
+
+# Packaged Bang and native installation acceptance.
+!/release/
+/release/*
+!/release/Bang.cmd
+!/release/bang
+!/release/README.md
+!/release/bang.mjs
+!/release/bundle.mjs
+!/release/editor.mjs
+!/release/package.mjs
+!/release/resources.mjs
+!/release/SECURITY-VALIDATION.md
+!/tests/installed-bang.test.mjs
+!/tests/installed-bang-smoke.mjs
+!/tests/installed-security.mjs
+
+# Packaged Codex maintenance and public installation lifecycle acceptance.
+!/release/codex-maintenance.mjs
+!/runtime/codex/hook-config.mjs
+!/tests/installed-lifecycle.test.mjs
+
+# Frozen quality evaluation and its isolated Codex CLI boundary.
+!/tests/whiteboard-quality.mjs
+!/tests/whiteboard-quality-codex.mjs
+!/baselines/whiteboard-v1/quality-evaluation.md
 # Bang bundle source and tests (generated workspaces remain ignored).
 !/runtime/bundle/
 /runtime/bundle/*
@@ -65,8 +324,9 @@
 !/skills/bang-bundle/
 /skills/bang-bundle/*
 !/skills/bang-bundle/SKILL.md
-!/tests/
-/tests/*
-!/tests/*.mjs
+!/tests/bundle-readonly.test.mjs
+!/tests/bundle-resources.test.mjs
+!/tests/bundle.test.mjs
+!/tests/frontend-install.test.mjs
 
 !/prototypes/whiteboard-integration/bundle-vite.mjs

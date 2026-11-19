@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "seed": 20261118,
+  "nodes": 1000,
+  "relations": 3000,
+  "revisions": 10000,
+  "attachmentsBytes": 0,
+  "warmups": 10,
+  "samples": 100,
+  "percentile": "nearest-rank ceil(0.95*N)",
+  "conditions": [
+    "idle",
+    "one background organizer blocked at model boundary"
+  ],
+  "timings": {
+    "save": "before public save request to acknowledged durable revision",
+    "refresh": "before GET to complete scene application and first rendered frame",
+    "history": "before preview request to complete history rendering"
+  },
+  "targetsMs": {
+    "saveP95": 1000,
+    "refreshP95": 3000,
+    "historyP95": 3000
+  },
+  "status": "not-run: legacy has no common revision/history contract"
+}

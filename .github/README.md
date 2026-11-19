@@ -4,9 +4,9 @@
 
 **白板和讨论属于项目，聊天是可切换的输入来源。** 在目标项目的 Codex 会话中调用 `$bang-bundle`，初始化后台整理与白板；新建会话后再次调用，接着同一专题讨论。
 
-当前为本地原型。Linux 一键入口已通过 17 项测试及 Chromium 模拟端到端验证，TypeScript 和生产构建通过；**真实新轮自动接收、真实跨会话接续及真实模型调用仍待验收**，详见 [验证记录](../runtime/bundle/VALIDATION.md)。
+Windows 与 Linux x64 验证包提供统一入口。在包目录首次安装技能（Windows：`.\Bang.cmd install-skill`，Linux：`./bang install-skill`），再在目标项目的 Codex 聊天中发送 `$bang-bundle`。之后正常聊天，独立整理器在完成轮后更新已提交白板。[安装与运行说明](../release/README.md)
 
-## 快速开始：Linux
+## 旧版 Linux 运行入口
 
 需要 Linux、Node.js 22+、npm、util-linux 的 `flock`，以及已有可用认证的兼容 Codex CLI。CLI 须支持 `exec --ephemeral --ignore-user-config --output-schema` 和 `shell_tool` 开关。
 

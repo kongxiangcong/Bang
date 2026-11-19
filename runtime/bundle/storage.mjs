@@ -9,6 +9,8 @@ export async function atomic(file, value) {
  const handle=await fs.open(tmp,'wx',0o600);
  try { await handle.writeFile(JSON.stringify(value,null,2));await handle.sync(); } finally { await handle.close(); }
  await fs.rename(tmp,file);
+ // Windows does not support fsync on an opened directory handle.
+ if (process.platform === 'win32') return;
  const dir=await fs.open(path.dirname(file),'r');try{await dir.sync()}finally{await dir.close()}
 }
 export async function identity(pid=process.pid) {
