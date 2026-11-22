@@ -1,0 +1,20 @@
+{
+  "name": "bang-workspace",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "bang": "node --experimental-strip-types packages/adapters/src/cli.ts",
+    "test": "node --test tests/v2",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "22.13.0",
+    "typescript": "5.9.3"
+  }
+}
