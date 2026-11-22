@@ -15,4 +15,4 @@ Status: ready-for-agent
 
 ## Comments
 
-整理引擎已合并至 `integration/bang-v2`（`66e0c13`）。通过受控的回环兼容 API，公开 CLI 分批录入 17 轮并验证两阶段提交、来源查询、重启回读与空增量。私有证据位于 `.scratch/bang-v2/validation/02-gdn/controlled-KGX3Mb/`，其中包含两个检查点的 inspect 输出和 Episode 引用。该端点使用预设模型输出，真实模型的 GDN 提炼与语义验收仍待执行。
+整理引擎已合并至 `integration/bang-v2`（`66e0c13`）。通过受控的回环兼容 API，公开 CLI 分批录入 17 轮并验证两阶段提交、来源查询、重启回读与空增量。私有证据位于 `.scratch/bang-v2/validation/02-gdn/controlled-ISYGVd/`，其中包含两个检查点的 inspect 输出和 Episode 引用。该端点使用预设模型输出，真实模型的 GDN 提炼与语义验收仍待执行。

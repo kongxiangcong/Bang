@@ -1,6 +1,7 @@
 # 01: 隔离 v1，打通专题与 Episode
 
-Status: resolved
+Status: ready-for-agent
+Resolution: resolved
 
 **What to build:** 让用户从干净的 v2 工作区启动本地项目，录入、修订并查回真实对话。
 
