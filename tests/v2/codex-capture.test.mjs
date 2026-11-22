@@ -90,15 +90,21 @@ test('纯 Bang 操作只推进游标，混合轮只保留可独立识别的专�
       type: 'function_call_output', output: '无需用户授权的内部操作回执',
     }),
     finish('mixed', '已同步 Bang 白板。\n\n门控逐元素调制信号。'),
+    start('named-topic', '请查看 GDN 专题。'), call, finish('named-topic', 'GDN 专题里有 3 条记录。'),
+    start('named-inseparable', '请查看 GDN 专题，然后解释门控的作用。'),
+    call, finish('named-inseparable', 'GDN 专题中有 3 条记录，门控逐元素调制信号。'),
+    start('one-newline', 'bang sync --topic gdn\n为什么门控能减弱噪声？'),
+    call, finish('one-newline', '已同步 Bang 白板。\n门控逐元素调制信号。'),
     start('inseparable', '请将白板中的成立条件改为“样本只有 8 个”，再说明这对泛化的影响。'),
     finish('inseparable', '已把条件改为“样本只有 8 个”，这限制了泛化结论。'),
     start('receipt-only', '看看状态'), health, finish('receipt-only', '当前服务正在监听本地端口。'),
     turn('bang-design', '绑定会话在 Bang 的架构里如何跨重启恢复？', '绑定状态和游标以事务保存。'),
     start('pure-last', '$bang'), call, finish('pure-last', '已同步 Bang 白板。'),
   ].join(''));
-  const [mixed] = await episodes(run, ['mixed', 'bang-design']);
-  assert.equal(mixed.messages[0].content, '为什么门控能减弱噪声？');
-  assert.equal(mixed.messages[1].content, '门控逐元素调制信号。');
+  const exchanges = await episodes(run, ['mixed', 'one-newline', 'bang-design']);
+  for (const exchange of exchanges.slice(0, 2)) {
+    assert.deepEqual(exchange.messages.map(({ content }) => content), ['为什么门控能减弱噪声？', '门控逐元素调制信号。']);
+  }
   assert.equal((await run(['status'])).bindings[0].lastTurnId, 'pure-last');
 });
 

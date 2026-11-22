@@ -3,7 +3,7 @@ import { BangError } from '../store.ts';
 import type { BangStore } from '../store.ts';
 import type { workspacePaths } from '../workspace.ts';
 import {
-  applyMerge, contextFor, publishBoard, readBoard, saveRevision, validateRelationship,
+  applyMerge, contextFor, currentBoard, publishBoard, readBoard, saveRevision, validateRelationship,
 } from './board.ts';
 import { invalidOutput, parseDelta, parseMerge, safeId, validateHint, validateLandmark, validateSources } from './contract.ts';
 import type { Episode, SessionDelta, SessionGraph } from './contract.ts';
@@ -12,10 +12,12 @@ import type { ReasoningProvider } from './provider.ts';
 
 type Topic = ReturnType<BangStore['findTopic']>;
 type Paths = ReturnType<typeof workspacePaths>;
+type SourceSession = Pick<Episode, 'sourceTool' | 'sessionId'>;
 type Job = {
   id: string;
   topic_id: string;
   session_id: string;
+  harness: string | null;
   stage: 'pass1_session' | 'pass2_merge';
   episode_ids: string;
   payload_json: string | null;
@@ -27,6 +29,7 @@ type Job = {
 type JobResult = {
   id: string;
   sessionId: string;
+  sourceTool: string | null;
   stage: Job['stage'];
   attempts: number;
   status: Job['status'];
@@ -114,7 +117,7 @@ export class ReasoningEngine {
     const revision = this.store.db.prepare('SELECT revision FROM topic_revisions WHERE trigger_job_id = ?')
       .get(job.id) as { revision: number } | undefined;
     return {
-      id: job.id, sessionId: job.session_id, stage: job.stage, status: job.status, attempts: job.attempts,
+      id: job.id, sessionId: job.session_id, sourceTool: job.harness, stage: job.stage, status: job.status, attempts: job.attempts,
       episodeIds: episodeIds(job), revision: revision?.revision ?? null,
       error: job.error_code ? { code: job.error_code, message: job.error_detail } : null,
     };
@@ -124,17 +127,17 @@ export class ReasoningEngine {
     return this.store.db.prepare('SELECT * FROM jobs WHERE id = ?').get(id) as Job;
   }
 
-  private subgraph(topicId: string, sessionId: string) {
+  private subgraph(topicId: string, sessionId: string, sourceTool: string) {
     return this.store.db.prepare(`
-      SELECT subgraph_json, last_episode_id FROM session_subgraphs WHERE topic_id = ? AND session_id = ?
-    `).get(topicId, sessionId) as SubgraphRow | undefined;
+      SELECT subgraph_json, last_episode_id FROM session_subgraphs WHERE topic_id = ? AND session_id = ? AND harness = ?
+    `).get(topicId, sessionId, sourceTool) as SubgraphRow | undefined;
   }
 
-  private startJob(topicId: string, sessionId: string) {
+  private startJob(topicId: string, { sessionId, sourceTool }: SourceSession) {
     return this.store.transaction(() => {
       const previous = this.store.db.prepare(`
-        SELECT * FROM jobs WHERE topic_id = ? AND session_id = ? AND status != 'done' ORDER BY rowid LIMIT 1
-      `).get(topicId, sessionId) as Job | undefined;
+        SELECT * FROM jobs WHERE topic_id = ? AND session_id = ? AND harness = ? AND status != 'done' ORDER BY rowid LIMIT 1
+      `).get(topicId, sessionId, sourceTool) as Job | undefined;
       if (previous) {
         this.store.db.prepare(`
           UPDATE jobs SET status = 'running', attempts = attempts + 1, error_code = NULL,
@@ -142,24 +145,24 @@ export class ReasoningEngine {
         `).run(now(), previous.id);
         return this.getJob(previous.id);
       }
-      const episodes = this.store.listEpisodes(topicId, sessionId);
-      const watermark = this.subgraph(topicId, sessionId)?.last_episode_id;
+      const episodes = this.store.listEpisodes(topicId, sessionId, sourceTool);
+      const watermark = this.subgraph(topicId, sessionId, sourceTool)?.last_episode_id;
       const remaining = episodes.slice(watermark ? episodes.findIndex((episode) => episode.id === watermark) + 1 : 0);
       if (!remaining.length) return;
       const id = randomUUID();
       const time = now();
       this.store.db.prepare(`
-        INSERT INTO jobs (id, topic_id, session_id, stage, episode_ids, status, attempts, created_at, updated_at)
-        VALUES (?, ?, ?, 'pass1_session', ?, 'running', 1, ?, ?)
-      `).run(id, topicId, sessionId, JSON.stringify(remaining.map(({ id }) => id)), time, time);
+        INSERT INTO jobs (id, topic_id, session_id, harness, stage, episode_ids, status, attempts, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 'pass1_session', ?, 'running', 1, ?, ?)
+      `).run(id, topicId, sessionId, sourceTool, JSON.stringify(remaining.map(({ id }) => id)), time, time);
       return this.getJob(id);
     });
   }
 
-  private async pass1(topic: Topic, job: Job, provider: ReasoningProvider) {
-    const stored = this.subgraph(topic.id, job.session_id);
+  private async pass1(topic: Topic, job: Job, sourceTool: string, provider: ReasoningProvider) {
+    const stored = this.subgraph(topic.id, job.session_id, sourceTool);
     const prior = stored ? JSON.parse(stored.subgraph_json) as SessionGraph : emptyGraph;
-    const sessionEpisodes = this.store.listEpisodes(topic.id, job.session_id);
+    const sessionEpisodes = this.store.listEpisodes(topic.id, job.session_id, sourceTool);
     const inputIds = new Set(episodeIds(job));
     const active = activeEpisodes(sessionEpisodes);
     const activeIds = new Set(active.map(({ id }) => id));
@@ -179,21 +182,33 @@ export class ReasoningEngine {
     const changed = JSON.stringify(updated) !== JSON.stringify(prior);
     this.store.transaction(() => {
       this.store.db.prepare(`
-        INSERT INTO session_subgraphs (topic_id, session_id, subgraph_json, last_episode_id, updated_at)
-        VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT (topic_id, session_id) DO UPDATE SET subgraph_json = excluded.subgraph_json,
+        INSERT INTO session_subgraphs (topic_id, session_id, harness, subgraph_json, last_episode_id, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT (topic_id, harness, session_id) DO UPDATE SET subgraph_json = excluded.subgraph_json,
           last_episode_id = excluded.last_episode_id, updated_at = excluded.updated_at
-      `).run(topic.id, job.session_id, JSON.stringify(updated), episodeIds(job).at(-1)!, now());
+      `).run(topic.id, job.session_id, sourceTool, JSON.stringify(updated), episodeIds(job).at(-1)!, now());
       this.store.db.prepare(`
-        UPDATE jobs SET stage = ?, payload_json = ?, status = ?, updated_at = ? WHERE id = ?
+        UPDATE jobs SET stage = ?, payload_json = ?, episode_ids = ?, status = ?, updated_at = ? WHERE id = ?
       `).run(changed ? 'pass2_merge' : 'pass1_session', changed ? JSON.stringify(delta) : null,
-        changed ? 'running' : 'done', now(), job.id);
+        job.episode_ids, changed ? 'running' : 'done', now(), job.id);
     });
     return this.getJob(job.id);
   }
 
-  private async pass2(topic: Topic, job: Job, provider: ReasoningProvider) {
-    const session = JSON.parse(this.subgraph(topic.id, job.session_id)!.subgraph_json) as SessionGraph;
+  private async pass2(topic: Topic, job: Job, sourceTool: string, provider: ReasoningProvider) {
+    const stored = this.subgraph(topic.id, job.session_id, sourceTool)!;
+    let session = JSON.parse(stored.subgraph_json) as SessionGraph;
+    const sessionEpisodes = this.store.listEpisodes(topic.id, job.session_id, sourceTool);
+    const activeIds = new Set(activeEpisodes(sessionEpisodes).map(({ id }) => id));
+    if ([...sourcesIn(session)].some((id) => !activeIds.has(id))) {
+      // A pending merge can outlive its sources. Refresh the local graph and include the revisions
+      // before retrying, keeping the original job until the refresh succeeds.
+      const attempted = new Set(episodeIds(job));
+      const watermark = sessionEpisodes.findIndex(({ id }) => id === stored.last_episode_id);
+      const inputs = sessionEpisodes.filter(({ id }, index) => attempted.has(id) || index > watermark);
+      job = await this.pass1(topic, { ...job, episode_ids: JSON.stringify(inputs.map(({ id }) => id)) }, sourceTool, provider);
+      session = JSON.parse(this.subgraph(topic.id, job.session_id, sourceTool)!.subgraph_json) as SessionGraph;
+    }
     const changes = JSON.parse(job.payload_json!) as SessionDelta;
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const base = readBoard(this.store, topic.id);
@@ -205,7 +220,7 @@ export class ReasoningEngine {
       const providedSources = activeEpisodes(this.store.listEpisodes(topic.id)).filter(({ id }) => sourceIds.has(id));
       const merge = parseMerge(await provider.complete('pass2', {
         session, changes, ...context,
-        episode_sources: providedSources.map(({ id, occurredAt, sessionId, turnId }) => ({ id, occurredAt, sessionId, turnId })),
+        episode_sources: providedSources.map(({ id, occurredAt, sourceTool, sessionId, turnId }) => ({ id, occurredAt, sourceTool, sessionId, turnId })),
       }, this.abort.signal));
       const committed = this.store.transaction(() => {
         const current = readBoard(this.store, topic.id);
@@ -228,13 +243,13 @@ export class ReasoningEngine {
     throw new BangError('board_changed', 'Topic changed during merge. Sync again to use the latest revision', 409);
   }
 
-  private async run(topic: Topic, sessionId: string) {
-    let job = this.startJob(topic.id, sessionId);
+  private async run(topic: Topic, session: SourceSession) {
+    let job = this.startJob(topic.id, session);
     if (!job) return;
     try {
       const provider = configuredProvider(this.paths.config);
-      if (job.stage === 'pass1_session') job = await this.pass1(topic, job, provider);
-      if (job.stage === 'pass2_merge') await this.pass2(topic, job, provider);
+      if (job.stage === 'pass1_session') job = await this.pass1(topic, job, session.sourceTool, provider);
+      if (job.stage === 'pass2_merge') await this.pass2(topic, job, session.sourceTool, provider);
     } catch (error) {
       const failure = error instanceof BangError ? error : new BangError('reasoning_failed', 'Unable to process the session', 500);
       this.store.db.prepare(`
@@ -244,11 +259,11 @@ export class ReasoningEngine {
     return this.jobResult(this.getJob(job.id));
   }
 
-  private syncSession(topic: Topic, sessionId: string) {
-    const key = JSON.stringify([topic.id, sessionId]);
+  private syncSession(topic: Topic, session: SourceSession) {
+    const key = JSON.stringify([topic.id, session.sourceTool, session.sessionId]);
     const active = this.active.get(key);
     if (active) return active;
-    const task = this.run(topic, sessionId).finally(() => this.active.delete(key));
+    const task = this.run(topic, session).finally(() => this.active.delete(key));
     this.active.set(key, task);
     return task;
   }
@@ -256,10 +271,11 @@ export class ReasoningEngine {
   async sync(topic: Topic, sessionId?: string) {
     if (topic.status === 'archived') throw new BangError('topic_archived', 'Topic is archived', 409);
     if (this.abort.signal.aborted) throw new BangError('service_stopping', 'Service is stopping', 503);
-    const sessions = sessionId === undefined
-      ? [...new Set(this.store.listEpisodes(topic.id).map((episode) => episode.sessionId))]
-      : [sessionId];
-    const completed = await Promise.all(sessions.map((session) => this.syncSession(topic, session)));
+    const sessions = new Map<string, SourceSession>();
+    for (const { sourceTool, sessionId: nativeId } of this.store.listEpisodes(topic.id, sessionId)) {
+      sessions.set(JSON.stringify([sourceTool, nativeId]), { sourceTool, sessionId: nativeId });
+    }
+    const completed = await Promise.all([...sessions.values()].map((session) => this.syncSession(topic, session)));
     const board = readBoard(this.store, topic.id);
     if (board.revision > 0) this.export(topic, board);
     return { topicId: topic.id, revision: board.revision, jobs: completed.filter((job) => job !== undefined) };
@@ -267,7 +283,7 @@ export class ReasoningEngine {
 
   export(topic: Topic, board = readBoard(this.store, topic.id)) {
     try {
-      return publishBoard(this.paths.directory, topic.slug, board);
+      return publishBoard(this.paths.directory, topic.slug, currentBoard(this.store, board));
     } catch {
       throw new BangError('export_failed', 'Topic state is stored in SQLite. Retry bang export to refresh the snapshots', 500);
     }

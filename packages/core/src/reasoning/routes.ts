@@ -1,20 +1,21 @@
 import type { RouteContext } from '../server.ts';
 import { requiredString } from '../store.ts';
-import { inspectBoard, readBoard, revisions } from './board.ts';
+import { currentBoard, inspectBoard, readBoard, revisions } from './board.ts';
 import type { ReasoningEngine } from './engine.ts';
 
 export async function routeReasoning(engine: ReasoningEngine, context: RouteContext) {
   const { parts, store, request, url, body, json } = context;
   const [api, topics, topicId, action] = parts;
   if (api !== 'api' || topics !== 'topics' || parts.length !== 4) return false;
-  if (request.method === 'GET' && action === 'board') {
+  if (request.method === 'GET' && (action === 'board' || action === 'inspect')) {
     const topic = store.findTopic(topicId);
-    return respond({
-      topic,
-      ...inspectBoard(readBoard(store, topic.id), url.searchParams.get('query') ?? undefined,
-        url.searchParams.get('include_superseded') === 'true'),
-      jobs: engine.jobs(topic.id),
-    });
+    const board = currentBoard(store, readBoard(store, topic.id));
+    const query = url.searchParams.get('query');
+    const includeSuperseded = url.searchParams.get('include_superseded') === 'true';
+    const projection = action === 'inspect' || query !== null
+      ? inspectBoard(board, query ?? undefined, includeSuperseded)
+      : board;
+    return respond({ topic, ...projection, jobs: engine.jobs(topic.id) });
   }
   if (request.method === 'GET' && action === 'jobs') {
     const topic = store.findTopic(topicId);

@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-import { schema } from './schema.ts';
+import { migrateReasoningSessions, schema } from './schema.ts';
 
 export class BangError extends Error {
   code: string;
@@ -115,12 +115,16 @@ export class BangStore {
       this.db.exec('PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
       this.transaction(() => {
         const state = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
-        if (state.user_version === 0) this.db.exec(schema + 'PRAGMA user_version = 2;');
-        else if (state.user_version === 1) this.db.exec(`
-          ALTER TABLE adapter_cursors ADD COLUMN active_turn_json TEXT;
-          PRAGMA user_version = 2;
-        `);
-        else if (state.user_version !== 2) throw new Error(`Unsupported Bang database version ${state.user_version}`);
+        if (state.user_version === 0) {
+          this.db.exec(schema + 'PRAGMA user_version = 3;');
+          return;
+        }
+        if (state.user_version === 1) this.db.exec('ALTER TABLE adapter_cursors ADD COLUMN active_turn_json TEXT;');
+        if (state.user_version === 1 || state.user_version === 2) {
+          this.db.exec(migrateReasoningSessions + 'PRAGMA user_version = 3;');
+        } else if (state.user_version !== 3) {
+          throw new Error(`Unsupported Bang database version ${state.user_version}`);
+        }
       });
     } catch (error) {
       this.db.close();
@@ -212,13 +216,16 @@ export class BangStore {
     });
   }
 
-  listEpisodes(idOrSlug: string, sessionId?: string) {
+  listEpisodes(idOrSlug: string, sessionId?: string, sourceTool?: string) {
     const topic = this.findTopic(idOrSlug);
     const rows = sessionId === undefined
       ? this.db.prepare('SELECT * FROM episodes WHERE topic_id = ? ORDER BY ingest_index').all(topic.id)
-      : this.db.prepare(`
-          SELECT * FROM episodes WHERE topic_id = ? AND session_id = ? ORDER BY ingest_index
-        `).all(topic.id, sessionId);
+      : sourceTool === undefined
+        ? this.db.prepare('SELECT * FROM episodes WHERE topic_id = ? AND session_id = ? ORDER BY ingest_index')
+          .all(topic.id, sessionId)
+        : this.db.prepare(`
+            SELECT * FROM episodes WHERE topic_id = ? AND session_id = ? AND harness = ? ORDER BY ingest_index
+          `).all(topic.id, sessionId, sourceTool);
     return (rows as EpisodeRow[]).map(episodeFromRow);
   }
 

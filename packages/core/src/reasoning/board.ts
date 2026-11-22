@@ -58,6 +58,35 @@ export function readBoard(store: BangStore, topicId: string): Board {
   };
 }
 
+export function currentBoard(store: BangStore, board: Board): Board {
+  const revisions = store.db.prepare(`
+    SELECT replaces_episode_id FROM episodes WHERE topic_id = ? AND replaces_episode_id IS NOT NULL
+  `).all(board.knowledge.topic_id) as { replaces_episode_id: string }[];
+  if (!revisions.length) return board;
+  const withdrawn = new Set(revisions.map(({ replaces_episode_id }) => replaces_episode_id));
+  const supported = (item: Sources) => item.source_episodes.some((id) => !withdrawn.has(id));
+  const nodes = board.knowledge.nodes.filter(supported);
+  const visible = new Set(nodes.map(({ id }) => id));
+  const edges = board.knowledge.edges.filter((edge) =>
+    visible.has(edge.from) && visible.has(edge.to) && supported(edge));
+  const clusters = board.knowledge.clusters.map((cluster) => ({
+    ...cluster, node_ids: cluster.node_ids.filter((id) => visible.has(id)),
+  })).filter(({ node_ids }) => node_ids.length >= 2);
+  const states = board.epistemic.nodes.filter((state) => visible.has(state.node_id) && supported(state))
+    .map((state) => {
+      if (!state.mastery_source_episode_id || !withdrawn.has(state.mastery_source_episode_id)) return state;
+      const current = { ...state };
+      delete current.mastery;
+      delete current.mastery_source_episode_id;
+      return current;
+    });
+  return {
+    ...board,
+    knowledge: { ...board.knowledge, nodes, edges, clusters },
+    epistemic: { ...board.epistemic, nodes: states },
+  };
+}
+
 export function publishBoard(directory: string, slug: string, board: Board) {
   const target = join(directory, 'topics', slug);
   const files = ['knowledge.json', 'epistemic.json', 'layout.json'] as const;
@@ -344,23 +373,23 @@ export function contextFor(board: Board, session: SessionGraph) {
 
 export function inspectBoard(board: Board, query?: string, includeSuperseded = false) {
   const eligible = board.knowledge.nodes.filter((node) => includeSuperseded || node.status !== 'superseded');
-  if (!query?.trim()) return board;
-  const terms = keywords(query);
+  const terms = keywords(query ?? '');
+  const searching = Boolean(query?.trim());
   const state = new Map(board.epistemic.nodes.map((item) => [item.node_id, item]));
-  const matches = eligible.map((node) => ({
+  const matches = searching ? eligible.map((node) => ({
     id: node.id,
     score: relevance(node.title, terms) * 3 + relevance([
       describe(node), ...(state.get(node.id)?.belief_history.flatMap((shift) => [shift.previous_belief, shift.correction]) ?? []),
     ].join(' '), terms),
-  })).filter(({ score }) => score > 0).sort((a, b) => b.score - a.score);
-  const ids = new Set(matches.map(({ id }) => id));
+  })).filter(({ score }) => score > 0).sort((a, b) => b.score - a.score) : [];
   const allEligible = new Set(eligible.map(({ id }) => id));
+  const ids = searching ? new Set(matches.map(({ id }) => id)) : allEligible;
   const relations = board.knowledge.edges.filter(({ from, to }) =>
     (ids.has(from) || ids.has(to)) && allEligible.has(from) && allEligible.has(to));
   const related = new Set(relations.flatMap(({ from, to }) => [from, to]));
   return {
     ...board,
-    matches: [...ids],
+    ...(searching ? { matches: [...ids] } : {}),
     knowledge: {
       ...board.knowledge,
       nodes: eligible.filter(({ id }) => ids.has(id) || related.has(id)),

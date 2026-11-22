@@ -122,7 +122,7 @@ async function main() {
     const parameters = new URLSearchParams();
     if (query) parameters.set('query', query);
     if (flag('--include-superseded')) parameters.set('include_superseded', 'true');
-    return print(await call(service, `${endpoint}/board?${parameters}`));
+    return print(await call(service, `${endpoint}/inspect?${parameters}`));
   }
   if (command === 'status' || command === 'stop') {
     const paths = workspacePaths(project);
