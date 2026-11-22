@@ -96,7 +96,7 @@ async function main() {
   }
   const command = args.shift();
   if (command === 'help' || command === '--help' || command === undefined) {
-    console.log('bang [--project <dir>] init | topic list/create/switch/archive | episode record/list/get | ingest | serve | stop | status | open');
+    console.log('bang [--project <dir>] init | topic list/create/switch/archive | episode record/list/get | ingest | sync | inspect | export | serve | stop | status | open');
     return;
   }
   if ((command === 'serve' || command === 'start') && flag('--foreground')) {
@@ -107,6 +107,21 @@ async function main() {
     }
     print({ running: true, pid: runtime.discovery.pid, port: runtime.discovery.port });
     return;
+  }
+  if (command === 'sync' || command === 'inspect' || command === 'export' ||
+      (command === 'status' && args.includes('--topic'))) {
+    const topic = option('--topic');
+    const service = await ensureService(project, port);
+    const selected = requiredString(topic ?? (await call(service, '/api/topics')).activeTopicId, 'topic');
+    const endpoint = `/api/topics/${encodeURIComponent(selected)}`;
+    if (command === 'sync') return print(await call(service, `${endpoint}/sync`, 'POST', { sessionId: option('--session') }));
+    if (command === 'export') return print(await call(service, `${endpoint}/export`, 'POST'));
+    if (command === 'status') return print(await call(service, `${endpoint}/jobs`));
+    const query = option('--query');
+    const parameters = new URLSearchParams();
+    if (query) parameters.set('query', query);
+    if (flag('--include-superseded')) parameters.set('include_superseded', 'true');
+    return print(await call(service, `${endpoint}/board?${parameters}`));
   }
   if (command === 'status' || command === 'stop') {
     const paths = workspacePaths(project);

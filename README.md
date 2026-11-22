@@ -1,6 +1,6 @@
 # Bang v2
 
-Bang 把围绕专题展开的对话保存在本机，供后续整理和回看。本阶段提供专题管理、原文录入与修订，以及浏览器会话交换。
+Bang 把围绕专题展开的对话保存在本机，整理为可追溯到原文的认知路标。CLI 提供专题管理、原文录入与修订、手动同步、检查和导出。
 
 ## 启动
 
@@ -44,6 +44,19 @@ npm run bang -- --project /path/to/project topic archive gdn
 每次录入会返回 Episode ID。修订时保留原来源轮次标识，并用 `--replaces <episode-id>` 或 JSON 的 `replacesEpisodeId` 指向直接前版。重复投递同一版会返回已有 ID。
 
 原文和修订存于项目的 `.bang/bang.db`，进程发现与 CLI 凭据存于 `.bang/server.json`。初始化会向项目的 `.gitignore` 添加本地数据库、发现和凭据文件的忽略规则。项目配置启用显式采集。
+
+## 整理和检查专题
+
+手动同步需要显式配置兼容 Chat Completions JSON Schema 输出的模型。可在 `.bang/config.json` 中设置 `llm.base_url` 和 `llm.model`，也可通过 `BANG_LLM_BASE_URL` 和 `BANG_LLM_MODEL` 覆盖。基础地址通常以 `/v1` 结尾，模型需要凭据时通过环境变量 `BANG_LLM_API_KEY` 提供。从环境配置时，先停止已运行的守护进程，再从配置了环境变量的终端同步。同步时会将本批 Episode 的原文发送到所配置的地址。
+
+```sh
+npm run bang -- --project /path/to/project sync --topic gdn
+npm run bang -- --project /path/to/project status --topic gdn
+npm run bang -- --project /path/to/project inspect --topic gdn --query "为什么示例只更新第一列？"
+npm run bang -- --project /path/to/project export --topic gdn
+```
+
+`sync --session <source-session-id>` 可指定一个会话。输出包含每个会话的终态。`inspect` 显示路标、关系、个人认知与来源 ID，可用 `episode get` 回读对应问答。专题快照写入 `.bang/topics/<slug>/` 的三份 JSON 文件。
 
 ## 开发与归档
 
