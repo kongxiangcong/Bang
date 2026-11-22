@@ -1,6 +1,6 @@
 # 02: 两层整理引擎与 GDN 总结
 
-Status: ready-for-agent
+Status: needs-info
 
 **What to build:** 用户分批同步真实 GDN 会话，可从总结查到一次理解转折及其依据。
 
@@ -16,3 +16,5 @@ Status: ready-for-agent
 ## Comments
 
 整理引擎已合并至 `integration/bang-v2`（`66e0c13`）。通过受控的回环兼容 API，公开 CLI 分批录入 17 轮并验证两阶段提交、来源查询、重启回读与空增量。私有证据位于 `.scratch/bang-v2/validation/02-gdn/controlled-ISYGVd/`，其中包含两个检查点的 inspect 输出和 Episode 引用。该端点使用预设模型输出，真实模型的 GDN 提炼与语义验收仍待执行。
+
+代码审查修复合并于 `453f47d`，受控用例在 Node 22.13.0 上复跑通过，证据位于 `.scratch/bang-v2/validation/02-gdn/controlled-Jk7Nxu/`。本地 Qwen2.5-3B-Instruct Q4_K_M 通过兼容 API 结构化输出探测。实际 GDN 重放分别在 120 秒和 300 秒超时下停在第一批 Pass 1，专题语义版本为 0。两次失败记录位于 `.scratch/bang-v2/validation/02-gdn/configured-82fVrL/` 和 `configured-9U5veW/`。继续验收需要能完成整理的兼容模型端点和模型名。
