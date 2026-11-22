@@ -115,8 +115,12 @@ export class BangStore {
       this.db.exec('PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
       this.transaction(() => {
         const state = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
-        if (state.user_version === 0) this.db.exec(schema + 'PRAGMA user_version = 1;');
-        else if (state.user_version !== 1) throw new Error(`Unsupported Bang database version ${state.user_version}`);
+        if (state.user_version === 0) this.db.exec(schema + 'PRAGMA user_version = 2;');
+        else if (state.user_version === 1) this.db.exec(`
+          ALTER TABLE adapter_cursors ADD COLUMN active_turn_json TEXT;
+          PRAGMA user_version = 2;
+        `);
+        else if (state.user_version !== 2) throw new Error(`Unsupported Bang database version ${state.user_version}`);
       });
     } catch (error) {
       this.db.close();
