@@ -10,7 +10,7 @@
   ],
   "scripts": {
     "bang": "node --experimental-strip-types packages/adapters/src/cli.ts",
-    "test": "node --test tests/v2",
+    "test": "node --test \"tests/v2/*.test.mjs\"",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
