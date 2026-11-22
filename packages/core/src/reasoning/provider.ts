@@ -32,12 +32,20 @@ export type ReasoningProvider = {
 
 export function configuredProvider(configPath: string): ReasoningProvider {
   const config = JSON.parse(readFileSync(configPath, 'utf8')) as {
-    llm?: { base_url?: string; model?: string };
+    llm?: { base_url?: string; model?: string; timeout_ms?: unknown };
   };
   const baseUrl = process.env.BANG_LLM_BASE_URL ?? config.llm?.base_url;
   const model = process.env.BANG_LLM_MODEL ?? config.llm?.model;
   if (typeof baseUrl !== 'string' || !baseUrl.trim() || typeof model !== 'string' || !model.trim()) {
     throw new BangError('reasoning_not_configured', 'Set BANG_LLM_BASE_URL and BANG_LLM_MODEL or llm.base_url and llm.model in .bang/config.json', 409);
+  }
+  const timeoutOverride = process.env.BANG_LLM_TIMEOUT_MS;
+  let timeoutMs = config.llm?.timeout_ms === undefined ? 120_000 : config.llm.timeout_ms;
+  if (timeoutOverride !== undefined) {
+    timeoutMs = /^\d+$/u.test(timeoutOverride) ? Number(timeoutOverride) : Number.NaN;
+  }
+  if (typeof timeoutMs !== 'number' || !Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 3_600_000) {
+    throw new BangError('invalid_reasoning_timeout', 'Model timeout must be an integer from 1 to 3600000 milliseconds');
   }
   const apiKey = process.env.BANG_LLM_API_KEY;
   let endpoint: URL;
@@ -55,6 +63,7 @@ export function configuredProvider(configPath: string): ReasoningProvider {
 
   return {
     async complete(stage, input, signal) {
+      const requestSignal = AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]);
       let response: Response;
       try {
         response = await fetch(endpoint, {
@@ -64,7 +73,7 @@ export function configuredProvider(configPath: string): ReasoningProvider {
             ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
           },
           redirect: 'error',
-          signal: AbortSignal.any([signal, AbortSignal.timeout(120_000)]),
+          signal: requestSignal,
           body: JSON.stringify({
             model,
             messages: [
@@ -99,6 +108,7 @@ export function configuredProvider(configPath: string): ReasoningProvider {
         return JSON.parse(content) as unknown;
       } catch (error) {
         if (error instanceof BangError) throw error;
+        if (requestSignal.aborted) throw new BangError('provider_unavailable', 'The model request failed or timed out', 502);
         invalidOutput('Model response is not valid JSON');
       }
     },

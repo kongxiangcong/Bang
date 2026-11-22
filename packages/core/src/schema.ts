@@ -1,3 +1,15 @@
+const sessionSubgraphs = `
+  CREATE TABLE IF NOT EXISTS session_subgraphs (
+    topic_id TEXT NOT NULL REFERENCES topics(id),
+    session_id TEXT NOT NULL,
+    harness TEXT NOT NULL,
+    subgraph_json TEXT NOT NULL,
+    last_episode_id TEXT,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY(topic_id, harness, session_id)
+  ) STRICT;
+`;
+
 export const schema = `
   CREATE TABLE IF NOT EXISTS topics (
     id TEXT PRIMARY KEY,
@@ -52,18 +64,12 @@ export const schema = `
     last_turn_id TEXT,
     updated_at TEXT NOT NULL
   ) STRICT;
-  CREATE TABLE IF NOT EXISTS session_subgraphs (
-    topic_id TEXT NOT NULL REFERENCES topics(id),
-    session_id TEXT NOT NULL,
-    subgraph_json TEXT NOT NULL,
-    last_episode_id TEXT,
-    updated_at TEXT NOT NULL,
-    PRIMARY KEY(topic_id, session_id)
-  ) STRICT;
+  ${sessionSubgraphs}
   CREATE TABLE IF NOT EXISTS jobs (
     id TEXT PRIMARY KEY,
     topic_id TEXT NOT NULL REFERENCES topics(id),
     session_id TEXT NOT NULL,
+    harness TEXT,
     stage TEXT NOT NULL,
     episode_ids TEXT NOT NULL,
     payload_json TEXT,
@@ -91,4 +97,35 @@ export const schema = `
     layout_json TEXT NOT NULL,
     updated_at TEXT NOT NULL
   ) STRICT;
+`;
+
+export const migrateReasoningSessions = `
+  ALTER TABLE session_subgraphs RENAME TO legacy_session_subgraphs;
+  ${sessionSubgraphs}
+  INSERT INTO session_subgraphs (topic_id, session_id, harness, subgraph_json, last_episode_id, updated_at)
+  SELECT legacy.topic_id, legacy.session_id, watermark.harness, legacy.subgraph_json,
+    legacy.last_episode_id, legacy.updated_at
+  FROM legacy_session_subgraphs AS legacy
+  JOIN episodes AS watermark ON watermark.id = legacy.last_episode_id
+  WHERE NOT EXISTS (
+    SELECT 1 FROM episodes AS earlier
+    WHERE earlier.topic_id = legacy.topic_id AND earlier.session_id = legacy.session_id
+      AND earlier.ingest_index <= watermark.ingest_index AND earlier.harness != watermark.harness
+  );
+  DELETE FROM legacy_session_subgraphs AS legacy WHERE EXISTS (
+    SELECT 1 FROM session_subgraphs AS migrated
+    WHERE migrated.topic_id = legacy.topic_id AND migrated.session_id = legacy.session_id
+  );
+
+  ALTER TABLE jobs ADD COLUMN harness TEXT;
+  UPDATE jobs SET harness = (
+    SELECT CASE WHEN COUNT(DISTINCT episodes.harness) = 1 THEN MIN(episodes.harness) END
+    FROM json_each(jobs.episode_ids) AS input JOIN episodes ON episodes.id = input.value
+  );
+  UPDATE jobs SET harness = NULL, status = 'failed', error_code = 'source_session_replay',
+    error_detail = 'This legacy job used a combined session. Sync replays its sources separately.'
+  WHERE status != 'done' AND (harness IS NULL OR EXISTS (
+    SELECT 1 FROM legacy_session_subgraphs AS legacy
+    WHERE legacy.topic_id = jobs.topic_id AND legacy.session_id = jobs.session_id
+  ));
 `;

@@ -55,7 +55,7 @@ npm run bang -- --project /path/to/project topic archive gdn
 
 ## 整理和检查专题
 
-手动同步需要显式配置兼容 Chat Completions JSON Schema 输出的模型。可在 `.bang/config.json` 中设置 `llm.base_url` 和 `llm.model`，也可通过 `BANG_LLM_BASE_URL` 和 `BANG_LLM_MODEL` 覆盖。基础地址通常以 `/v1` 结尾，模型需要凭据时通过环境变量 `BANG_LLM_API_KEY` 提供。从环境配置时，先停止已运行的守护进程，再从配置了环境变量的终端同步。同步时会将本批 Episode 的原文发送到所配置的地址。
+手动同步需要显式配置兼容 Chat Completions JSON Schema 输出的模型。可在 `.bang/config.json` 中设置 `llm.base_url` 和 `llm.model`，也可通过 `BANG_LLM_BASE_URL` 和 `BANG_LLM_MODEL` 覆盖。基础地址通常以 `/v1` 结尾，模型需要凭据时通过环境变量 `BANG_LLM_API_KEY` 提供。从环境配置时，先停止已运行的守护进程，再从配置了环境变量的终端同步。同步时会将本批 Episode 的原文发送到所配置的地址。 单次模型请求默认超时 120 秒，可用 `llm.timeout_ms` 或优先级更高的 `BANG_LLM_TIMEOUT_MS` 设置，接受 1 到 3,600,000 毫秒的整数。
 
 ```sh
 npm run bang -- --project /path/to/project sync --topic gdn

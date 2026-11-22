@@ -179,6 +179,17 @@ export function validateSources(item: Sources, allowed: ReadonlyMap<string, Epis
   }
 }
 
+function demonstratesMastery(quote: string) {
+  const selfReport = /^(?:(?:因为|所以)\s*)?(?:我[^，,。.!?！？]{0,20}(?:理解|明白|懂|掌握|学会)|(?:我)?(?:理解|明白|懂|掌握|学会)(?:了|啦)|(?:because\s+|so\s+)?i\s+(?:(?:now|finally|fully|completely|already|think|can|do|really)\s+)*(?:understand|get it|got it|see why|learned|mastered)|谢谢|感谢|thanks\b|thank you\b)/iu;
+  const question = /[?？]\s*$/u;
+  const evidence = /[\p{Letter}\p{Number}]\s*(?:=|≈|⇒|→)\s*(?:[\p{Letter}\p{Number}[(]|-\d)|\b(?:because|therefore|thus|if|when|measured|observed|returns|outputs)\b|(?:因为|所以|因此|由于|当.+时|意味着|导致|推出|得到|测得|观察到|输出)/iu;
+  return quote.split(/(?<=[。.!?！？；;\n])/u).some((sentence) => {
+    if (question.test(sentence)) return false;
+    const clauses = sentence.split(/[，,：:]/u).map((clause) => clause.trim());
+    return clauses.some((clause) => clause.length >= 10 && !selfReport.test(clause) && evidence.test(clause));
+  });
+}
+
 export function validateHint(hint: EpistemicHint, allowed: ReadonlyMap<string, Episode>) {
   validateSources(hint, allowed);
   if (hint.quote) {
@@ -191,11 +202,8 @@ export function validateHint(hint: EpistemicHint, allowed: ReadonlyMap<string, E
   if (hint.mastery === 'self_reported' && !hint.quote) {
     invalidOutput('Self-reported mastery requires an exact user quote');
   }
-  if (hint.mastery === 'verified') {
-    const quote = hint.quote?.text;
-    if (!quote || quote.trim().length < 16 || /^(?:我)?(?:理解了|懂了|明白了|i (?:get it|understand))[.!。！\s]*$/iu.test(quote.trim())) {
-      invalidOutput('Verified mastery requires a demonstrated explanation, derivation or experiment from the user');
-    }
+  if (hint.mastery === 'verified' && !demonstratesMastery(hint.quote?.text ?? '')) {
+    invalidOutput('Verified mastery requires a demonstrated explanation, derivation or experiment from the user');
   }
   if (hint.belief_shift && !hint.source_episodes.includes(hint.belief_shift.trigger_episode_id)) {
     invalidOutput('Belief shift trigger must reference an Episode cited by the shift');
