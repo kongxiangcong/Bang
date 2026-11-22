@@ -3,6 +3,8 @@ import { readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { IncomingMessage, Server, ServerResponse } from 'node:http';
 import { BangError, BangStore, requiredString } from './store.ts';
+import { ReasoningEngine } from './reasoning/engine.ts';
+import { routeReasoning } from './reasoning/routes.ts';
 import { initializeWorkspace, writeWorkspaceDefaults } from './workspace.ts';
 
 const host = '127.0.0.1';
@@ -153,6 +155,7 @@ export async function startServer(project: string, options: RuntimeOptions = {})
   const paths = initializeWorkspace(project);
   const store = new BangStore(paths.database);
   const lifecycle = { store, paths };
+  const reasoning = new ReasoningEngine(store, paths);
   const bearer = token();
   const tickets = new Map<string, { topic: string; expires: number }>();
   const sessions = new Map<string, number>();
@@ -270,9 +273,9 @@ export async function startServer(project: string, options: RuntimeOptions = {})
           return json(store.getEpisode(parts[2], parts[4]));
         }
       }
-      if (options.route && await options.route({ ...lifecycle, request, response, url, parts, body: read, json })) {
-        return;
-      }
+      const context = { ...lifecycle, request, response, url, parts, body: read, json };
+      if (options.route && await options.route(context)) return;
+      if (await routeReasoning(reasoning, context)) return;
       if (method === 'GET' && url.pathname === '/') {
         response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         response.end('<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>Bang</title><p>Bang 本地服务已连接。</p></html>');
@@ -295,6 +298,7 @@ export async function startServer(project: string, options: RuntimeOptions = {})
     closing ??= (async () => {
       ready = false;
       try {
+        await reasoning.close();
         await teardown?.();
       } finally {
         await new Promise<void>((resolve) => {
