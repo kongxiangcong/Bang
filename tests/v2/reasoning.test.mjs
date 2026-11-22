@@ -309,3 +309,20 @@ test('待重试的 Pass 2 遇到来源修订时，先刷新会话再提交新版
   assert.deepEqual(node.source_episodes, [revised.id]);
   assert.deepEqual((await run(sync)).jobs, []);
 });
+
+test('模型请求超时支持配置和环境覆盖，拒绝超出上限的值', async (t) => {
+  const { run, path } = await fixture(t, () => empty);
+  const configPath = join(path, '.bang', 'config.json');
+  const config = JSON.parse(await readFile(configPath, 'utf8'));
+  config.llm.timeout_ms = 3_600_001;
+  await writeFile(configPath, JSON.stringify(config));
+  await run(['ingest', '--topic', 'rules'], turn(1, 'How does the rule work?'));
+
+  const sync = ['sync', '--topic', 'rules'];
+  const invalid = (await run(sync)).jobs[0];
+  assert.equal(invalid.error?.code, 'invalid_reasoning_timeout');
+  await run(['stop']);
+  const recovered = (await run(sync, undefined, { BANG_LLM_TIMEOUT_MS: '5000' })).jobs[0];
+  assert.equal(recovered.id, invalid.id);
+  assert.equal(recovered.status, 'done');
+});
