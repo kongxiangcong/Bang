@@ -7,6 +7,7 @@ import type { Discovery } from '../../core/src/server.ts';
 import { probeService, readDiscovery, requestService, startServer } from '../../core/src/server.ts';
 import { BangError, requiredString } from '../../core/src/store.ts';
 import { workspacePaths } from '../../core/src/workspace.ts';
+import { codexCapture } from './codex-watcher.ts';
 
 const args = process.argv.slice(2);
 function option(name: string) {
@@ -96,11 +97,11 @@ async function main() {
   }
   const command = args.shift();
   if (command === 'help' || command === '--help' || command === undefined) {
-    console.log('bang [--project <dir>] init | topic list/create/switch/archive | episode record/list/get | ingest | sync | inspect | export | serve | stop | status | open');
+    console.log('bang [--project <dir>] init | topic list/create/switch/archive | episode record/list/get | ingest | bind | unbind | sync | inspect | export | serve | stop | status | open');
     return;
   }
   if ((command === 'serve' || command === 'start') && flag('--foreground')) {
-    const runtime = await startServer(project, { port });
+    const runtime = await startServer(project, { port, ...codexCapture() });
     if (runtime.owned) {
       process.once('SIGINT', () => void runtime.close());
       process.once('SIGTERM', () => void runtime.close());
@@ -129,7 +130,9 @@ async function main() {
     const health = discovered && await probeService(discovered);
     if (!discovered || !health) return print({ running: false });
     if (command === 'status') {
-      return print({ running: true, ready: health.ready, pid: discovered.pid, port: discovered.port });
+      return print({ running: true, ready: health.ready, pid: discovered.pid, port: discovered.port,
+        ...(health.ready ? await call(discovered, '/api/codex/bindings') : {}),
+      });
     }
     const result = await call(discovered, '/api/stop', 'POST');
     for (let attempt = 0; attempt < 100 && readDiscovery(paths)?.token === discovered.token; attempt += 1) {
@@ -151,6 +154,23 @@ async function main() {
     const result = await call(service, '/api/auth/exchange', 'POST', { topic });
     if (!urlOnly) await startBrowser(String(result.url));
     return print(urlOnly ? result : { opened: true });
+  }
+  if (command === 'bind' || command === 'unbind') {
+    const hostSession = process.env.CODEX_THREAD_ID || process.env.CODEX_SESSION_ID;
+    const sessionId = requiredString(option('--session') ?? (hostSession || undefined), 'Codex session. Provide --session');
+    const service = await ensureService(project, port);
+    if (command === 'unbind') {
+      return print(await call(service, `/api/codex/bindings/${encodeURIComponent(sessionId)}`, 'DELETE'));
+    }
+    const fromHost = sessionId === hostSession;
+    const topicId = requiredString(option('--topic'), 'topic');
+    const transcriptOption = option('--transcript');
+    const turnOption = option('--turn');
+    const transcript = (transcriptOption ?? (fromHost && process.env.CODEX_TRANSCRIPT_PATH)) || undefined;
+    const turnId = (turnOption ?? (fromHost && process.env.CODEX_TURN_ID)) || undefined;
+    return print(await call(service, '/api/codex/bindings', 'POST', {
+      topicId, sessionId, transcript, turnId, includeActive: fromHost,
+    }));
   }
   if (command === 'topic') {
     const action = args.shift();
