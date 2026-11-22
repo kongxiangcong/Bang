@@ -18,6 +18,14 @@ npm run bang -- --project /path/to/project topic switch gdn
 
 `open --topic gdn` 在默认浏览器中完成一次性会话交换。使用 `open --url` 时，CLI 输出可供浏览器打开的一次性地址。
 
+## 采集 Codex 会话
+
+在 Codex 的当前会话中运行 `bang bind --topic gdn`，采集从该轮开始。从外部终端使用 `bang bind --topic gdn --session <id>`，在两轮之间绑定会从下一轮开始。Bang 从 `$CODEX_HOME/sessions`（默认 `~/.codex/sessions`）定位本项目中明确指定的主会话。宿主提供的 transcript 路径和活动轮标识也可以通过 `--transcript` 和 `--turn` 指定。
+
+`bang status` 显示会话绑定状态和已处理的最后一轮。退出守护进程保留绑定，重新启动后补齐期间的对话。`bang unbind --session <id>` 结束采集，再次绑定时跳过中间的对话。
+
+采集跳过纯 Bang 操作。混合轮只保存可独立辨认的专题问答。无法分离的白板修改指令会跳过 Episode 采集，人工编辑及字段锁定接入待 [06 白板原地编辑](.scratch/bang-v2/issues/06-edit-proposals.md) 完成。
+
 ## 录入和回读 Episode
 
 将一个 JSON 对象通过标准输入交给 `ingest --topic gdn`，或用 `--file` 指定 JSON 或 JSONL 文件。多个活跃专题时需明确指定专题。来源工具、会话和来源轮次标识应直接沿用来源数据。

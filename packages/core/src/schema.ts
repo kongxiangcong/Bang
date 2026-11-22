@@ -48,6 +48,7 @@ export const schema = `
     capture_from_offset INTEGER NOT NULL,
     byte_offset INTEGER NOT NULL,
     line_buffer TEXT NOT NULL DEFAULT '',
+    active_turn_json TEXT,
     last_turn_id TEXT,
     updated_at TEXT NOT NULL
   ) STRICT;
