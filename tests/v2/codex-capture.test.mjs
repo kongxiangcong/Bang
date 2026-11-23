@@ -116,6 +116,7 @@ test('Codex 绑定排除整理器、子代理、分支会话与其他项目', as
   await mkdir(other);
   const excluded = [
     ['organizer', { originator: 'bang-organizer' }],
+    ['internal-exec', { source: 'exec', thread_source: 'subagent' }],
     ['child', { source: { subagent: { thread_spawn: { parent_thread_id: 'main' } } } }],
     ['child-cli', { agent_nickname: 'subagent' }],
     ['fork', { forked_from_id: 'main' }],
@@ -127,7 +128,7 @@ test('Codex 绑定排除整理器、子代理、分支会话与其他项目', as
     await assert.rejects(run(['bind', '--topic', 'gdn', '--session', id]), /codex_session_excluded/);
   }
   const neverBound = await session('never-bound');
-  const main = await session('main');
+  const main = await session('main', { source: 'exec', thread_source: 'user' });
   await run(['bind', '--topic', 'gdn', '--session', 'main']);
   await appendFile(neverBound, turn('unbound', '未授权', '未授权'));
   await appendFile(main, turn('allowed', '已授权', '已授权'));
