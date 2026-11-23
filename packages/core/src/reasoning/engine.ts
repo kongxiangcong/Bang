@@ -13,6 +13,7 @@ import type { ReasoningProvider } from './provider.ts';
 type Topic = ReturnType<BangStore['findTopic']>;
 type Paths = ReturnType<typeof workspacePaths>;
 type SourceSession = Pick<Episode, 'sourceTool' | 'sessionId'>;
+type ScheduledSession = SourceSession & { topicId: string };
 type Job = {
   id: string;
   topic_id: string;
@@ -23,6 +24,7 @@ type Job = {
   payload_json: string | null;
   status: 'pending' | 'running' | 'done' | 'failed';
   attempts: number;
+  next_retry_at: string | null;
   error_code: string | null;
   error_detail: string | null;
 };
@@ -35,10 +37,15 @@ type JobResult = {
   status: Job['status'];
   episodeIds: string[];
   revision: number | null;
+  nextRetryAt: string | null;
   error: { code: string; message: string | null } | null;
 };
 type SubgraphRow = { subgraph_json: string; last_episode_id: string | null };
 const now = () => new Date().toISOString();
+const scheduleIntervalMs = 1_000;
+const turnsPerBatch = 5;
+const idlePeriodMs = 90_000;
+const retryDelaysMs = [15_000, 30_000];
 const emptyGraph: SessionGraph = { landmarks: [], relationships: [], epistemic_hints: [] };
 const episodeIds = (job: Job) => JSON.parse(job.episode_ids) as string[];
 
@@ -97,15 +104,64 @@ export class ReasoningEngine {
   private paths: Paths;
   private abort = new AbortController();
   private active = new Map<string, Promise<JobResult | undefined>>();
+  private scheduler?: ReturnType<typeof setInterval>;
 
   constructor(store: BangStore, paths: Paths) {
     this.store = store;
     this.paths = paths;
   }
 
+  start() {
+    this.scheduler = setInterval(() => {
+      try {
+        this.schedule();
+      } catch (error) {
+        console.error('Unable to schedule automatic reasoning', error);
+      }
+    }, scheduleIntervalMs).unref();
+  }
+
   async close() {
+    clearInterval(this.scheduler);
     this.abort.abort();
     await Promise.allSettled(this.active.values());
+  }
+
+  private schedule() {
+    const time = Date.now();
+    const idleBefore = new Date(time - idlePeriodMs).toISOString();
+    const ready = this.store.db.prepare(`
+      SELECT episode.topic_id AS topicId, episode.session_id AS sessionId, episode.harness AS sourceTool
+      FROM episodes AS episode
+      JOIN topics AS topic ON topic.id = episode.topic_id AND topic.status = 'active'
+      LEFT JOIN session_subgraphs AS session ON session.topic_id = episode.topic_id
+        AND session.session_id = episode.session_id AND session.harness = episode.harness
+      LEFT JOIN episodes AS watermark ON watermark.id = session.last_episode_id
+      WHERE episode.ingest_index > COALESCE(watermark.ingest_index, 0)
+      GROUP BY episode.topic_id, episode.session_id, episode.harness
+      HAVING (COUNT(CASE WHEN episode.replaces_episode_id IS NULL THEN 1 END) >= ? OR MAX(episode.recorded_at) <= ?)
+        AND NOT EXISTS (
+          SELECT 1 FROM jobs WHERE topic_id = episode.topic_id AND session_id = episode.session_id
+            AND harness = episode.harness AND status != 'done'
+        )
+      UNION
+      SELECT job.topic_id, job.session_id, job.harness FROM jobs AS job
+      JOIN topics AS topic ON topic.id = job.topic_id AND topic.status = 'active'
+      WHERE job.harness IS NOT NULL AND (
+        job.status IN ('pending', 'running') OR (job.status = 'failed' AND job.next_retry_at <= ?)
+      )
+    `).all(turnsPerBatch, idleBefore, new Date(time).toISOString()) as ScheduledSession[];
+    if (!ready.length) return;
+    let provider: ReasoningProvider;
+    try {
+      provider = configuredProvider(this.paths.config);
+    } catch {
+      // Leave saved Episodes available while the user configures the model.
+      return;
+    }
+    for (const session of ready) {
+      void this.syncSession(this.store.findTopic(session.topicId), session, provider);
+    }
   }
 
   jobs(topicId: string) {
@@ -118,7 +174,7 @@ export class ReasoningEngine {
       .get(job.id) as { revision: number } | undefined;
     return {
       id: job.id, sessionId: job.session_id, sourceTool: job.harness, stage: job.stage, status: job.status, attempts: job.attempts,
-      episodeIds: episodeIds(job), revision: revision?.revision ?? null,
+      episodeIds: episodeIds(job), revision: revision?.revision ?? null, nextRetryAt: job.next_retry_at,
       error: job.error_code ? { code: job.error_code, message: job.error_detail } : null,
     };
   }
@@ -141,7 +197,7 @@ export class ReasoningEngine {
       if (previous) {
         this.store.db.prepare(`
           UPDATE jobs SET status = 'running', attempts = attempts + 1, error_code = NULL,
-            error_detail = NULL, updated_at = ? WHERE id = ?
+            error_detail = NULL, next_retry_at = NULL, updated_at = ? WHERE id = ?
         `).run(now(), previous.id);
         return this.getJob(previous.id);
       }
@@ -178,6 +234,7 @@ export class ReasoningEngine {
       epistemic_hints: prior.epistemic_hints.filter((hint) => sourced(hint) && nodeIds.has(hint.node_id)),
     };
     const delta = parseDelta(await provider.complete('pass1', { previous, episodes: newEpisodes }, this.abort.signal));
+    this.abort.signal.throwIfAborted();
     const updated = applyDelta(previous, delta, allowed);
     const changed = JSON.stringify(updated) !== JSON.stringify(prior);
     this.store.transaction(() => {
@@ -222,6 +279,7 @@ export class ReasoningEngine {
         session, changes, ...context,
         episode_sources: providedSources.map(({ id, occurredAt, sourceTool, sessionId, turnId }) => ({ id, occurredAt, sourceTool, sessionId, turnId })),
       }, this.abort.signal));
+      this.abort.signal.throwIfAborted();
       const committed = this.store.transaction(() => {
         const current = readBoard(this.store, topic.id);
         if (current.revision !== base.revision) return false;
@@ -243,28 +301,43 @@ export class ReasoningEngine {
     throw new BangError('board_changed', 'Topic changed during merge. Sync again to use the latest revision', 409);
   }
 
-  private async run(topic: Topic, session: SourceSession) {
+  private async run(topic: Topic, session: SourceSession, provider?: ReasoningProvider) {
     let job = this.startJob(topic.id, session);
     if (!job) return;
     try {
-      const provider = configuredProvider(this.paths.config);
+      provider ??= configuredProvider(this.paths.config);
       if (job.stage === 'pass1_session') job = await this.pass1(topic, job, session.sourceTool, provider);
       if (job.stage === 'pass2_merge') await this.pass2(topic, job, session.sourceTool, provider);
     } catch (error) {
+      if (this.abort.signal.aborted) {
+        this.store.db.prepare("UPDATE jobs SET status = 'pending', updated_at = ? WHERE id = ?").run(now(), job.id);
+        return this.jobResult(this.getJob(job.id));
+      }
       const failure = error instanceof BangError ? error : new BangError('reasoning_failed', 'Unable to process the session', 500);
+      const delay = retryDelaysMs[job.attempts - 1];
+      const retryAt = delay !== undefined && failure.code !== 'topic_archived'
+        ? new Date(Date.now() + delay).toISOString()
+        : null;
       this.store.db.prepare(`
-        UPDATE jobs SET status = 'failed', error_code = ?, error_detail = ?, updated_at = ? WHERE id = ?
-      `).run(failure.code, failure.message, now(), job.id);
+        UPDATE jobs SET status = 'failed', next_retry_at = ?, error_code = ?, error_detail = ?, updated_at = ? WHERE id = ?
+      `).run(retryAt, failure.code, failure.message, now(), job.id);
     }
     return this.jobResult(this.getJob(job.id));
   }
 
-  private syncSession(topic: Topic, session: SourceSession) {
+  private syncSession(topic: Topic, session: SourceSession, provider?: ReasoningProvider) {
     const key = JSON.stringify([topic.id, session.sourceTool, session.sessionId]);
     const active = this.active.get(key);
     if (active) return active;
-    const task = this.run(topic, session).finally(() => this.active.delete(key));
+    const task = this.run(topic, session, provider).then((job) => {
+      if (provider && job?.status === 'done') {
+        const board = readBoard(this.store, topic.id);
+        if (board.revision > 0) this.export(topic, board);
+      }
+      return job;
+    }).finally(() => this.active.delete(key));
     this.active.set(key, task);
+    if (provider) void task.catch((error) => console.error('Automatic reasoning failed', error));
     return task;
   }
 
