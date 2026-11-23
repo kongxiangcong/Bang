@@ -11,6 +11,8 @@ description: 在当前学习目录开始或接续 Bang 的专题记录，获取�
 {{BANG_ENTRY}} skill start
 ```
 
+如果宿主沙箱限制本机回环访问，或会在命令退出后回收 Bang 后台进程，通过宿主的常规审批机制执行本次已安装的 Bang 命令。Codex 的执行工具支持 `sandbox_permissions` 时，使用 `require_escalated` 请求本次命令的执行权限。以获批执行后的 CLI 回执为准。
+
 当前会话已有绑定时沿用原专题。用户明确指定专题，或从候选中选定专题时，在启动命令末尾追加 `--topic`，把用户给出的完整专题名、`slug` 或 `id` 作为一个参数传入，并按当前 shell 正确引用参数。
 
 回执为 `choose_topic` 时，告诉用户本会话仍未绑定，列出 `candidates` 中各专题的名称和 `slug`，等用户选定后再运行启动命令。
