@@ -11,6 +11,7 @@ import { sourceHarness } from '../../core/src/delivery.ts';
 import { workspacePaths } from '../../core/src/workspace.ts';
 import { codexCapture } from './codex-watcher.ts';
 import { serveMcp } from './mcp.ts';
+import { skillStatus } from './skill-status.ts';
 import { startSkill } from './skill.ts';
 
 const args = process.argv.slice(2);
@@ -95,6 +96,22 @@ async function call<Result = Record<string, unknown>>(service: Discovery, path: 
   return result as Result;
 }
 
+async function stopProject(project: string, port?: number) {
+  const paths = workspacePaths(project);
+  const discovered = readDiscovery(paths);
+  const health = discovered && await probeService(discovered);
+  if (!health && !existsSync(paths.database)) return { running: false, unverifiedSessions: [] };
+  const service = discovered && health ? discovered : await ensureService(project, port);
+  const result = await call<{ running: boolean; unverifiedSessions: string[] }>(service, '/api/stop', 'POST');
+  for (let attempt = 0; attempt < 100 && readDiscovery(paths)?.token === service.token; attempt += 1) {
+    await delay(25);
+  }
+  if (readDiscovery(paths)?.token === service.token) {
+    throw new BangError('stop_timeout', 'Bang service did not stop.');
+  }
+  return result;
+}
+
 function startBrowser(url: string) {
   const [command, ...parameters] = process.platform === 'darwin'
     ? ['open', url]
@@ -162,27 +179,16 @@ async function main() {
     if (flag('--include-superseded')) parameters.set('include_superseded', 'true');
     return print(await call(service, `${endpoint}/inspect?${parameters}`));
   }
-  if (command === 'status' || command === 'stop') {
+  if (command === 'status') {
     const paths = workspacePaths(project);
     const discovered = readDiscovery(paths);
     const health = discovered && await probeService(discovered);
-    if (command === 'status') {
-      if (!discovered || !health) return print({ running: false });
-      return print({ running: true, ready: health.ready, pid: discovered.pid, port: discovered.port,
-        ...(health.ready ? await call(discovered, '/api/codex/bindings') : {}),
-      });
-    }
-    if (!health && !existsSync(paths.database)) return print({ running: false, unverifiedSessions: [] });
-    const service = discovered && health ? discovered : await ensureService(project, port);
-    const result = await call(service, '/api/stop', 'POST');
-    for (let attempt = 0; attempt < 100 && readDiscovery(paths)?.token === service.token; attempt += 1) {
-      await delay(25);
-    }
-    if (readDiscovery(paths)?.token === service.token) {
-      throw new BangError('stop_timeout', 'Bang service did not stop.');
-    }
-    return print(result);
+    if (!discovered || !health) return print({ running: false });
+    return print({ running: true, ready: health.ready, pid: discovered.pid, port: discovered.port,
+      ...(health.ready ? await call(discovered, '/api/codex/bindings') : {}),
+    });
   }
+  if (command === 'stop') return print(await stopProject(project, port));
   if (['init', 'serve', 'start'].includes(command)) {
     const service = await ensureService(project, port);
     return print({ running: true, pid: service.pid, port: service.port, projectRoot: service.project_root });
@@ -197,6 +203,17 @@ async function main() {
   }
   if (command === 'skill') {
     const action = args.shift();
+    if (action === 'status') {
+      if (!existsSync(workspacePaths(project).database)) {
+        return print({ status: 'uninitialized', message: 'Bang 尚未初始化。' });
+      }
+      const service = await ensureService(project, port);
+      return print(await skillStatus((path, method, body) => call(service, path, method, body)));
+    }
+    if (action === 'stop') {
+      const result = await stopProject(project, port);
+      return print({ ...result, message: '已停止当前项目的采集与白板服务。' });
+    }
     if (action === 'start') {
       const topicArgument = option('--topic');
       const topic = topicArgument === undefined ? undefined : requiredString(topicArgument, 'topic');
@@ -207,7 +224,7 @@ async function main() {
         ...binding, topic,
       }));
     }
-    throw new BangError('unknown_command', 'Expected skill start.');
+    throw new BangError('unknown_command', 'Expected skill start, status or stop.');
   }
   if (command === 'bind' || command === 'unbind') {
     const session = sessionContext();
