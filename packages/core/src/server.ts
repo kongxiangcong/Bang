@@ -340,6 +340,7 @@ export async function startServer(project: string, options: RuntimeOptions = {})
       if (claimed) break;
     }
     teardown = await options.onStart?.(lifecycle);
+    reasoning.start();
     ready = true;
     return { discovery: service, close, owned: true };
   } catch (error) {
