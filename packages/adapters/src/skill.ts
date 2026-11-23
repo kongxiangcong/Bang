@@ -1,12 +1,13 @@
 import { basename } from 'node:path';
 import { BangError } from '../../core/src/store.ts';
+import { captureBindings } from './capture-bindings.ts';
 
 type ServiceCall = <Result = Record<string, unknown>>(path: string, method?: string, body?: unknown) => Promise<Result>;
 
 type Topic = { id: string; slug: string; title: string; status: 'active' | 'archived' };
 type Topics = { topics: Topic[] };
-type Binding = { sessionId: string; topicId: string; enabled: boolean };
 type BindingOptions = {
+  harness: string;
   sessionId: string;
   transcript?: string;
   turnId?: string;
@@ -71,18 +72,22 @@ async function reasoningConfiguration(call: ServiceCall) {
 }
 
 export async function startSkill(call: ServiceCall, project: string, { topic: selector, ...options }: BindingOptions & { topic?: string }) {
-  const current = await call<{ bindings: Binding[] }>('/api/codex/bindings');
-  const existing = current.bindings.find(({ sessionId, enabled }) => sessionId === options.sessionId && enabled);
+  const watching = options.harness === 'codex';
+  const current = await captureBindings(call);
+  const existing = current.find(({ sourceTool, sessionId, enabled }) =>
+    sourceTool === options.harness && sessionId === options.sessionId && enabled);
   const selection = await startTopic(call, project, existing?.topicId, selector);
   if (selection.status === 'choose_topic') return selection;
   const { topic } = selection;
   const model = await reasoningConfiguration(call);
-  const binding = await call<Binding & { status: string }>('/api/codex/bindings', 'POST', { ...options, topicId: topic.id });
+  const endpoint = watching ? '/api/codex/bindings' : '/api/delivery/bindings';
+  const binding = await call<{ status: string; enabled: boolean; bindingId?: string }>(endpoint, 'POST', { ...options, topicId: topic.id });
   if (binding.status !== 'bound' || !binding.enabled) {
-    throw new BangError('capture_not_ready', 'Codex 会话采集尚未生效。');
+    throw new BangError('capture_not_ready', '会话采集尚未生效。');
   }
-  const { bindings } = await call<{ bindings: Binding[] }>('/api/codex/bindings');
-  const sessions = bindings.filter(({ topicId, enabled }) => enabled && topicId === topic.id).map(({ sessionId }) => sessionId);
+  const bindings = await captureBindings(call);
+  const sessions = bindings.filter(({ topicId, enabled }) => enabled && topicId === topic.id)
+    .map(({ sessionId }) => sessionId);
   const { url } = await call<{ url: string }>('/api/auth/exchange', 'POST', { topic: topic.id });
   const modelMessages = {
     configured: '',
@@ -90,5 +95,6 @@ export async function startSkill(call: ServiceCall, project: string, { topic: se
     invalid: '整理模型配置无效。',
     unknown: '当前服务无法报告整理模型的配置状态。',
   };
-  return { status: 'recording', topic, url, sessions, model, message: '正在自动记录。' + modelMessages[model] };
+  const message = watching ? '正在自动记录。' : '白板已就绪，宿主提交的问答会保存。';
+  return { status: 'recording', topic, url, sessions, model, bindingId: binding.bindingId, message: message + modelMessages[model] };
 }

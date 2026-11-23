@@ -1,10 +1,11 @@
+import { closeDeliveryInterval, openDeliveryInterval } from '../../core/src/delivery.ts';
 import type { RouteContext } from '../../core/src/server.ts';
 import { BangError, BangStore, requiredString } from '../../core/src/store.ts';
 import {
   bindingBoundary, completeLines, consumeRow, locateTranscript, openTranscript, parseRow, readChunk, transcriptMeta,
 } from './codex-transcript.ts';
 import type { ActiveTurn } from './codex-transcript.ts';
-import { filterCodexExchange } from './codex-filter.ts';
+import { filterExchange } from '../../core/src/capture-filter.ts';
 
 type Cursor = {
   adapter_key: string;
@@ -124,6 +125,7 @@ class CodexWatcher {
             capture_from_offset, byte_offset, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `).run(prefix + path, harness, session, topic.id, meta.signature, boundary, boundary, new Date().toISOString());
+        openDeliveryInterval(this.store, harness, session, topic.id, Boolean(prior));
       });
       return { status: 'bound', ...summary(this.cursor(session)!) };
     } finally {
@@ -140,10 +142,13 @@ class CodexWatcher {
         if (!fileMissing(error)) throw error;
       });
       this.checkRunning();
-      this.store.db.prepare(`
-        UPDATE adapter_cursors SET enabled = 0, active_turn_json = NULL, line_buffer = '', updated_at = ?
-        WHERE harness = ? AND session_id = ?
-      `).run(new Date().toISOString(), harness, cursor.session_id);
+      this.store.transaction(() => {
+        this.store.db.prepare(`
+          UPDATE adapter_cursors SET enabled = 0, active_turn_json = NULL, line_buffer = '', updated_at = ?
+          WHERE harness = ? AND session_id = ?
+        `).run(new Date().toISOString(), harness, cursor.session_id);
+        closeDeliveryInterval(this.store, harness, cursor.session_id);
+      });
     }
     return { status: 'unbound', ...summary(this.cursor(cursor.session_id)!) };
   }
@@ -231,7 +236,7 @@ class CodexWatcher {
           active = result.active;
           if (result.ended) lastTurnId = result.ended;
           const turn = result.complete;
-          const exchange = turn && filterCodexExchange(turn.user, turn.assistant, turn.bangOperation);
+          const exchange = turn && filterExchange(turn.user, turn.assistant, turn.bangOperation);
           if (turn && exchange) {
             try {
               this.store.recordEpisode({
