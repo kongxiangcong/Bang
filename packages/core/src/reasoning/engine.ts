@@ -169,6 +169,13 @@ export class ReasoningEngine {
       .map((job) => this.jobResult(job));
   }
 
+  latestSuccessfulJob(topicId: string) {
+    const job = this.store.db.prepare(`
+      SELECT * FROM jobs WHERE topic_id = ? AND status = 'done' ORDER BY updated_at DESC, rowid DESC LIMIT 1
+    `).get(topicId) as Job | undefined;
+    return job ? this.jobResult(job) : null;
+  }
+
   private jobResult(job: Job): JobResult {
     const revision = this.store.db.prepare('SELECT revision FROM topic_revisions WHERE trigger_job_id = ?')
       .get(job.id) as { revision: number } | undefined;
