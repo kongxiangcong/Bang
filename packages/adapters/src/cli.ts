@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { text as readStream } from 'node:stream/consumers';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -141,17 +142,19 @@ async function main() {
     const paths = workspacePaths(project);
     const discovered = readDiscovery(paths);
     const health = discovered && await probeService(discovered);
-    if (!discovered || !health) return print({ running: false });
     if (command === 'status') {
+      if (!discovered || !health) return print({ running: false });
       return print({ running: true, ready: health.ready, pid: discovered.pid, port: discovered.port,
         ...(health.ready ? await call(discovered, '/api/codex/bindings') : {}),
       });
     }
-    const result = await call(discovered, '/api/stop', 'POST');
-    for (let attempt = 0; attempt < 100 && readDiscovery(paths)?.token === discovered.token; attempt += 1) {
+    if (!health && !existsSync(paths.database)) return print({ running: false, unverifiedSessions: [] });
+    const service = discovered && health ? discovered : await ensureService(project, port);
+    const result = await call(service, '/api/stop', 'POST');
+    for (let attempt = 0; attempt < 100 && readDiscovery(paths)?.token === service.token; attempt += 1) {
       await delay(25);
     }
-    if (readDiscovery(paths)?.token === discovered.token) {
+    if (readDiscovery(paths)?.token === service.token) {
       throw new BangError('stop_timeout', 'Bang service did not stop.');
     }
     return print(result);
