@@ -6,6 +6,7 @@ import { BangError, BangStore, requiredString } from './store.ts';
 import { ReasoningEngine } from './reasoning/engine.ts';
 import { routeReasoning } from './reasoning/routes.ts';
 import { initializeWorkspace, writeWorkspaceDefaults } from './workspace.ts';
+import { serveWhiteboard } from './whiteboard.ts';
 
 const host = '127.0.0.1';
 const defaultPort = 4318;
@@ -293,11 +294,7 @@ export async function startServer(project: string, options: RuntimeOptions = {})
       const context = { ...lifecycle, request, response, url, parts, body: read, json };
       if (options.route && await options.route(context)) return;
       if (await routeReasoning(reasoning, context)) return;
-      if (method === 'GET' && url.pathname === '/') {
-        response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        response.end('<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>Bang</title><p>Bang 本地服务已连接。</p></html>');
-        return;
-      }
+      if (method === 'GET' && serveWhiteboard(url.pathname, response)) return;
       throw new BangError('not_found', 'Route not found', 404);
     } catch (error) {
       if (response.headersSent) {

@@ -85,7 +85,11 @@ test('本地服务检查 Host、Origin、CLI 凭据和一次性浏览器交换',
   const otherCookie = otherExchange.headers.get('set-cookie').split(';')[0];
   assert.notEqual(cookie.split('=')[0], otherCookie.split('=')[0]);
   assert.equal((await runExchange(url)).status, 401);
-  assert.equal((await fetch(`${endpoint}/?topic=gdn`, { headers: { Cookie: cookie } })).status, 200);
+  const board = await fetch(`${endpoint}/?topic=gdn`, { headers: { Cookie: cookie } });
+  assert.equal(board.status, 200);
+  assert.match(await board.text(), /<main[^>]+id="canvas"/);
+  assert.match(board.headers.get('content-security-policy'), /script-src 'self'/);
+  assert.equal((await fetch(`${endpoint}/whiteboard.js`, { headers: { Cookie: cookie } })).status, 200);
   assert.equal((await fetch(`${endpoint}/api/topics`, { headers: { Cookie: cookie } })).status, 200);
   assert.equal((await fetch(`${endpoint}/api/topics`, { headers: { Cookie: otherCookie } })).status, 401);
   assert.equal((await fetch(`${endpoint}/api/topics`, {
