@@ -174,9 +174,13 @@ async function main() {
   if (command === 'skill') {
     const action = args.shift();
     if (action === 'start') {
+      const topicArgument = option('--topic');
+      const topic = topicArgument === undefined ? undefined : requiredString(topicArgument, 'topic');
       const binding = codexBinding(codexSession());
       const service = await ensureService(project, port);
-      return print(await startSkill((path, method, body) => call(service, path, method, body), service.project_root, binding));
+      return print(await startSkill((path, method, body) => call(service, path, method, body), service.project_root, {
+        ...binding, topic,
+      }));
     }
     throw new BangError('unknown_command', 'Expected skill start.');
   }
