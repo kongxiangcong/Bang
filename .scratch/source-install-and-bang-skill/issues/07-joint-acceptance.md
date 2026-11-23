@@ -26,4 +26,6 @@ Status: ready-for-agent
 
 先行试跑的五轮原文全部保存。原模型提示下，三次整理均把用户复述标为已验证，语义校验拒绝后白板保持第 0 版。上述对照运行的末批中，模型第一次写错一位来源 ID，公开作业状态记录了拒绝，自动重试后才发布第 2 版。[先行作业状态](../validation/live-gdn-VmbynW/midpoint.json) · [被拒绝的模型提示结果](../validation/live-gdn-VmbynW/midpoint-rejected-epistemic-hints.json) · [末批重试状态](../validation/live-gdn-nNjIVB/final-jobs.json)
 
+在模型提示修订 `4ff48b9` 后也完成了实际宿主和白板验收。首批五轮在第一次尝试发布第 1 版。浏览器脚本最初按字面“第一列”找标题，漏掉了“单个 token 会更新哪些列？”，触发清理停采。随后通过已安装的技能重新绑定同一 Codex 会话，重开白板，并核对中途 inspect 完全一致，再继续最终五轮。第二批第一次整理输出有误的 `about` 关系，重试后发布第 2 版。独立推导 Episode `16c56502-98ba-4d25-8c11-eaca040d642b` 被记录为已验证。末尾从真实 Codex 停采并继续对话，之后用 `$bang status` 的新链接重开，仍为十轮且无会话采集。[重开后的中途白板](../validation/live-gdn-tK6mpI/midpoint-reopened-canvas.png) · [终版 inspect](../validation/live-gdn-tK6mpI/final.json) · [末批作业](../validation/live-gdn-tK6mpI/final-jobs.json) · [终版白板](../validation/live-gdn-tK6mpI/final-canvas.png) · [抽查原文](../validation/live-gdn-tK6mpI/source-spot-check.json) · [停采后历史](../validation/live-gdn-tK6mpI/reopened-history.png) · [宿主进度与停采回执](../validation/live-gdn-tK6mpI/stop-and-reopen.json)
+
 整理内容和实际可交互白板待用户共同评审后签核。
