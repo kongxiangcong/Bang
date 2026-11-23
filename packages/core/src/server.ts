@@ -6,6 +6,7 @@ import { BangError, BangStore, requiredString } from './store.ts';
 import { ReasoningEngine } from './reasoning/engine.ts';
 import { routeReasoning } from './reasoning/routes.ts';
 import { initializeWorkspace, writeWorkspaceDefaults } from './workspace.ts';
+import { routeDelivery } from './delivery.ts';
 import { serveWhiteboard } from './whiteboard.ts';
 
 const host = '127.0.0.1';
@@ -293,6 +294,7 @@ export async function startServer(project: string, options: RuntimeOptions = {})
       }
       const context = { ...lifecycle, request, response, url, parts, body: read, json };
       if (options.route && await options.route(context)) return;
+      if (await routeDelivery(context)) return;
       if (await routeReasoning(reasoning, context)) return;
       if (method === 'GET' && serveWhiteboard(url.pathname, response)) return;
       throw new BangError('not_found', 'Route not found', 404);

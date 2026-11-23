@@ -28,8 +28,8 @@ const tags = {
 export const skeletons = [
   'about', 'answers', 'part_of', 'depends_on', 'leads_to', 'supports', 'refutes', 'qualifies', 'supersedes',
 ] as const;
-const masteries = ['unfamiliar', 'exploring', 'self_reported', 'verified', 'shaky'] as const;
-const stances = ['neutral', 'endorsed', 'skeptical', 'rejected'] as const;
+export const masteries = ['unfamiliar', 'exploring', 'self_reported', 'verified', 'shaky'] as const;
+export const stances = ['neutral', 'endorsed', 'skeptical', 'rejected'] as const;
 const provenances = ['EXTRACTED', 'INFERRED'] as const;
 const layoutHints = ['auto', 'hierarchy', 'flow', 'radial', 'comparison', 'free'] as const;
 

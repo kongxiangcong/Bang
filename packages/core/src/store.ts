@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-import { migrateCaptureStop, migrateReasoningSessions, schema } from './schema.ts';
+import { deliveryBindings, migrateCaptureStop, migrateReasoningSessions, schema } from './schema.ts';
 
 export class BangError extends Error {
   code: string;
@@ -73,6 +73,15 @@ function episodeFromRow(row: EpisodeRow) {
   };
 }
 
+export function episodeTimestamp(value: unknown) {
+  const timestamp = requiredString(value, 'timestamp');
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(timestamp) ||
+      !Number.isFinite(Date.parse(timestamp))) {
+    throw new BangError('invalid_timestamp', 'Use an ISO 8601 timestamp with a timezone');
+  }
+  return timestamp;
+}
+
 function episodeMessages(value: unknown): [EpisodeMessage, EpisodeMessage] {
   if (!Array.isArray(value) || value.length !== 2) {
     throw new BangError('invalid_messages', 'Expected the user message and assistant reply');
@@ -82,12 +91,7 @@ function episodeMessages(value: unknown): [EpisodeMessage, EpisodeMessage] {
     if (message?.role !== role || typeof message.content !== 'string') {
       throw new BangError('invalid_messages', `Expected the ${role} message with text content`);
     }
-    const timestamp = requiredString(message.timestamp, 'timestamp');
-    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(timestamp) ||
-        !Number.isFinite(Date.parse(timestamp))) {
-      throw new BangError('invalid_timestamp', 'Use an ISO 8601 timestamp with a timezone');
-    }
-    return { role, timestamp, content: message.content };
+    return { role, timestamp: episodeTimestamp(message.timestamp), content: message.content };
   }
   return [parse(value[0], 'user'), parse(value[1], 'assistant')];
 }
@@ -116,7 +120,7 @@ export class BangStore {
       this.transaction(() => {
         const state = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
         if (state.user_version === 0) {
-          this.db.exec(schema + 'PRAGMA user_version = 4;');
+          this.db.exec(schema + 'PRAGMA user_version = 5;');
           return;
         }
         if (state.user_version === 1) this.db.exec('ALTER TABLE adapter_cursors ADD COLUMN active_turn_json TEXT;');
@@ -124,8 +128,11 @@ export class BangStore {
           this.db.exec(migrateReasoningSessions);
         }
         if (state.user_version >= 1 && state.user_version <= 3) {
-          this.db.exec(migrateCaptureStop + 'PRAGMA user_version = 4;');
-        } else if (state.user_version !== 4) {
+          this.db.exec(migrateCaptureStop);
+        }
+        if (state.user_version >= 1 && state.user_version <= 4) {
+          this.db.exec(deliveryBindings + 'PRAGMA user_version = 5;');
+        } else if (state.user_version !== 5) {
           throw new Error(`Unsupported Bang database version ${state.user_version}`);
         }
       });
@@ -153,11 +160,14 @@ export class BangStore {
   }
 
   endCapture(stoppedAt: number) {
-    this.db.prepare(`
-      UPDATE adapter_cursors
-      SET enabled = 0, stopped_at = ?, stop_pending = (harness = 'codex'), updated_at = ?
-      WHERE enabled = 1
-    `).run(stoppedAt, new Date(stoppedAt).toISOString());
+    this.transaction(() => {
+      this.db.prepare(`
+        UPDATE adapter_cursors
+        SET enabled = 0, stopped_at = ?, stop_pending = (harness = 'codex'), updated_at = ?
+        WHERE enabled = 1
+      `).run(stoppedAt, new Date(stoppedAt).toISOString());
+      this.db.prepare('UPDATE delivery_bindings SET ended_at = ? WHERE ended_at IS NULL').run(stoppedAt);
+    });
   }
 
   listTopics() {

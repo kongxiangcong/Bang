@@ -39,7 +39,10 @@ export async function routeReasoning(engine: ReasoningEngine, context: RouteCont
     const topic = store.findTopic(topicId);
     const input = await body();
     const session = input.sessionId === undefined ? undefined : requiredString(input.sessionId, 'sessionId');
-    return respond(await engine.sync(topic, session));
+    return respond(input.enqueue === true ? engine.enqueue(topic, session) : await engine.sync(topic, session));
+  }
+  if (request.method === 'POST' && action === 'epistemic') {
+    return respond(engine.updateEpistemic(store.findTopic(topicId), await body()));
   }
   if (request.method === 'POST' && action === 'export') {
     return respond(engine.export(store.findTopic(topicId)));

@@ -7,8 +7,10 @@ import { fileURLToPath } from 'node:url';
 import type { Discovery } from '../../core/src/server.ts';
 import { probeService, readDiscovery, requestService, startServer } from '../../core/src/server.ts';
 import { BangError, requiredString } from '../../core/src/store.ts';
+import { sourceHarness } from '../../core/src/delivery.ts';
 import { workspacePaths } from '../../core/src/workspace.ts';
 import { codexCapture } from './codex-watcher.ts';
+import { serveMcp } from './mcp.ts';
 import { startSkill } from './skill.ts';
 
 const args = process.argv.slice(2);
@@ -32,6 +34,13 @@ function codexSession() {
   const hostSession = process.env.CODEX_THREAD_ID || process.env.CODEX_SESSION_ID;
   const sessionId = requiredString(option('--session') ?? (hostSession || undefined), 'Codex session. Provide --session');
   return { sessionId, includeActive: sessionId === hostSession };
+}
+
+function sessionContext() {
+  const harness = sourceHarness(option('--harness') ?? process.env.BANG_HARNESS ?? 'codex');
+  if (harness === 'codex') return { harness, ...codexSession() };
+  const sessionId = requiredString(option('--session') ?? process.env.BANG_SESSION_ID, 'Provide --session for this host');
+  return { harness, sessionId, includeActive: false };
 }
 
 function codexBinding({ sessionId, includeActive }: ReturnType<typeof codexSession>) {
@@ -111,8 +120,23 @@ async function main() {
   }
   const command = args.shift();
   if (command === 'help' || command === '--help' || command === undefined) {
-    console.log('bang [--project <dir>] init | topic list/create/switch/archive | episode record/list/get | ingest | bind | unbind | sync | inspect | export | serve | stop | status | open');
+    console.log('bang [--project <dir>] init | topic list/create/switch/archive | episode record/list/get | ingest | deliver | mcp | bind | unbind | sync | inspect | export | serve | stop | status | open');
     return;
+  }
+  if (command === 'mcp') {
+    return serveMcp(async (path, method, body) => call(await ensureService(project, port), path, method, body));
+  }
+  if (command === 'deliver') {
+    let input: unknown;
+    try {
+      input = JSON.parse(await readStream(process.stdin));
+    } catch {
+      throw new BangError('invalid_json', 'Expected a host turn JSON object');
+    }
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+      throw new BangError('invalid_json', 'Expected a host turn JSON object');
+    }
+    return print(await call(await ensureService(project, port), '/api/delivery/turns', 'POST', input));
   }
   if ((command === 'serve' || command === 'start') && flag('--foreground')) {
     const runtime = await startServer(project, { port, ...codexCapture() });
@@ -176,7 +200,8 @@ async function main() {
     if (action === 'start') {
       const topicArgument = option('--topic');
       const topic = topicArgument === undefined ? undefined : requiredString(topicArgument, 'topic');
-      const binding = codexBinding(codexSession());
+      const session = sessionContext();
+      const binding = session.harness === 'codex' ? { ...codexBinding(session), harness: session.harness } : session;
       const service = await ensureService(project, port);
       return print(await startSkill((path, method, body) => call(service, path, method, body), service.project_root, {
         ...binding, topic,
@@ -185,8 +210,16 @@ async function main() {
     throw new BangError('unknown_command', 'Expected skill start.');
   }
   if (command === 'bind' || command === 'unbind') {
-    const session = codexSession();
+    const session = sessionContext();
     const service = await ensureService(project, port);
+    if (session.harness !== 'codex') {
+      if (command === 'unbind') {
+        const binding = [session.harness, session.sessionId].map(encodeURIComponent).join('/');
+        return print(await call(service, `/api/delivery/bindings/${binding}`, 'DELETE'));
+      }
+      const topicId = requiredString(option('--topic'), 'topic');
+      return print(await call(service, '/api/delivery/bindings', 'POST', { topicId, ...session }));
+    }
     if (command === 'unbind') {
       return print(await call(service, `/api/codex/bindings/${encodeURIComponent(session.sessionId)}`, 'DELETE'));
     }

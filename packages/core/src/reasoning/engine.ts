@@ -3,7 +3,7 @@ import { BangError } from '../store.ts';
 import type { BangStore } from '../store.ts';
 import type { workspacePaths } from '../workspace.ts';
 import {
-  applyMerge, contextFor, currentBoard, publishBoard, readBoard, saveRevision, validateRelationship,
+  applyMerge, contextFor, currentBoard, publishBoard, readBoard, saveRevision, updateEpistemic, validateRelationship,
 } from './board.ts';
 import { invalidOutput, parseDelta, parseMerge, safeId, validateHint, validateLandmark, validateSources } from './contract.ts';
 import type { Episode, SessionDelta, SessionGraph } from './contract.ts';
@@ -103,7 +103,7 @@ export class ReasoningEngine {
   private store: BangStore;
   private paths: Paths;
   private abort = new AbortController();
-  private active = new Map<string, Promise<JobResult | undefined>>();
+  private active = new Map<string, { id: string; task: Promise<JobResult> }>();
   private scheduler?: ReturnType<typeof setInterval>;
 
   constructor(store: BangStore, paths: Paths) {
@@ -124,7 +124,7 @@ export class ReasoningEngine {
   async close() {
     clearInterval(this.scheduler);
     this.abort.abort();
-    await Promise.allSettled(this.active.values());
+    await Promise.allSettled([...this.active.values()].map(({ task }) => task));
   }
 
   private schedule() {
@@ -160,7 +160,7 @@ export class ReasoningEngine {
       return;
     }
     for (const session of ready) {
-      void this.syncSession(this.store.findTopic(session.topicId), session, provider);
+      this.syncSession(this.store.findTopic(session.topicId), session, provider, true);
     }
   }
 
@@ -301,9 +301,8 @@ export class ReasoningEngine {
     throw new BangError('board_changed', 'Topic changed during merge. Sync again to use the latest revision', 409);
   }
 
-  private async run(topic: Topic, session: SourceSession, provider?: ReasoningProvider) {
-    let job = this.startJob(topic.id, session);
-    if (!job) return;
+  private async run(topic: Topic, session: SourceSession, initialJob: Job, provider?: ReasoningProvider) {
+    let job = initialJob;
     try {
       provider ??= configuredProvider(this.paths.config);
       if (job.stage === 'pass1_session') job = await this.pass1(topic, job, session.sourceTool, provider);
@@ -325,33 +324,56 @@ export class ReasoningEngine {
     return this.jobResult(this.getJob(job.id));
   }
 
-  private syncSession(topic: Topic, session: SourceSession, provider?: ReasoningProvider) {
+  private syncSession(topic: Topic, session: SourceSession, provider?: ReasoningProvider, publish = false) {
     const key = JSON.stringify([topic.id, session.sourceTool, session.sessionId]);
     const active = this.active.get(key);
     if (active) return active;
-    const task = this.run(topic, session, provider).then((job) => {
-      if (provider && job?.status === 'done') {
+    const initial = this.startJob(topic.id, session);
+    if (!initial) return;
+    const task = this.run(topic, session, initial, provider).then((job) => {
+      if (publish && job.status === 'done') {
         const board = readBoard(this.store, topic.id);
         if (board.revision > 0) this.export(topic, board);
       }
       return job;
     }).finally(() => this.active.delete(key));
-    this.active.set(key, task);
-    if (provider) void task.catch((error) => console.error('Automatic reasoning failed', error));
-    return task;
+    const queued = { id: initial.id, task };
+    this.active.set(key, queued);
+    if (publish) void task.catch((error) => console.error('Background reasoning failed', error));
+    return queued;
   }
 
-  async sync(topic: Topic, sessionId?: string) {
+  private topicSessions(topic: Topic, sessionId?: string) {
     if (topic.status === 'archived') throw new BangError('topic_archived', 'Topic is archived', 409);
     if (this.abort.signal.aborted) throw new BangError('service_stopping', 'Service is stopping', 503);
     const sessions = new Map<string, SourceSession>();
     for (const { sourceTool, sessionId: nativeId } of this.store.listEpisodes(topic.id, sessionId)) {
       sessions.set(JSON.stringify([sourceTool, nativeId]), { sourceTool, sessionId: nativeId });
     }
-    const completed = await Promise.all([...sessions.values()].map((session) => this.syncSession(topic, session)));
+    return [...sessions.values()];
+  }
+
+  enqueue(topic: Topic, sessionId?: string) {
+    const jobs = this.topicSessions(topic, sessionId).flatMap((session) => {
+      const queued = this.syncSession(topic, session, undefined, true);
+      return queued ? [this.jobResult(this.getJob(queued.id))] : [];
+    });
+    return { topicId: topic.id, jobs };
+  }
+
+  async sync(topic: Topic, sessionId?: string) {
+    const completed = await Promise.all(this.topicSessions(topic, sessionId)
+      .map((session) => this.syncSession(topic, session)?.task));
     const board = readBoard(this.store, topic.id);
     if (board.revision > 0) this.export(topic, board);
     return { topicId: topic.id, revision: board.revision, jobs: completed.filter((job) => job !== undefined) };
+  }
+
+  updateEpistemic(topic: Topic, input: Record<string, unknown>) {
+    if (topic.status === 'archived') throw new BangError('topic_archived', 'Topic is archived', 409);
+    const result = updateEpistemic(this.store, topic.id, input);
+    this.export(topic, result.board);
+    return { status: result.status, revision: result.board.revision, state: result.state };
   }
 
   export(topic: Topic, board = readBoard(this.store, topic.id)) {

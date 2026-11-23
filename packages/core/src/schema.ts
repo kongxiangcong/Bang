@@ -1,3 +1,16 @@
+export const deliveryBindings = `
+  CREATE TABLE IF NOT EXISTS delivery_bindings (
+    harness TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    topic_id TEXT NOT NULL REFERENCES topics(id),
+    binding_id TEXT NOT NULL UNIQUE,
+    started_at INTEGER NOT NULL,
+    ended_at INTEGER,
+    rebound INTEGER NOT NULL DEFAULT 0 CHECK (rebound IN (0, 1)),
+    PRIMARY KEY (harness, session_id)
+  ) STRICT;
+`;
+
 const sessionSubgraphs = `
   CREATE TABLE IF NOT EXISTS session_subgraphs (
     topic_id TEXT NOT NULL REFERENCES topics(id),
@@ -66,6 +79,7 @@ export const schema = `
     stop_pending INTEGER NOT NULL DEFAULT 0,
     updated_at TEXT NOT NULL
   ) STRICT;
+  ${deliveryBindings}
   ${sessionSubgraphs}
   CREATE TABLE IF NOT EXISTS jobs (
     id TEXT PRIMARY KEY,
