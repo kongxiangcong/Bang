@@ -46,7 +46,8 @@ export async function transcriptMeta(file: FileHandle, root: string, expectedId?
   if (row?.type !== 'session_meta' || typeof meta?.id !== 'string' ||
       (expectedId !== undefined && meta.id !== expectedId) ||
       (meta.session_id != null && meta.session_id !== meta.id) ||
-      typeof meta.source !== 'string' || !['cli', 'vscode', 'appServer'].includes(meta.source) ||
+      typeof meta.source !== 'string' ||
+      !(['cli', 'vscode', 'appServer'].includes(meta.source) || (meta.source === 'exec' && meta.thread_source === 'user')) ||
       meta.forked_from_id || meta.parent_thread_id || meta.parent_session_id || meta.agent_nickname ||
       meta.originator === 'bang-organizer' || meta.bang_internal === true ||
       typeof meta.cwd !== 'string' || await realpath(meta.cwd).catch(() => undefined) !== root) return;

@@ -54,6 +54,79 @@ async function episodes(run, ids, topic = 'gdn') {
   return found;
 }
 
+test('Bang 有多个活跃专题时先请用户选择，选定后从新绑定起点采集', async (t) => {
+  const { run, session } = await project(t);
+  const other = await run(['topic', 'create', 'state', '--title', '循环状态']);
+  await run(['topic', 'create', 'retired']);
+  await run(['topic', 'archive', 'retired']);
+  const file = await session('choosing');
+  const startSkill = (...args) => run(['skill', 'start', '--session', 'choosing', ...args]);
+
+  const choice = await startSkill();
+  assert.equal(choice.status, 'choose_topic');
+  assert.deepEqual(choice.candidates.map(({ slug, title }) => [slug, title]), [['gdn', 'GDN'], ['state', '循环状态']]);
+  assert.equal(choice.url, undefined);
+  await appendFile(file, turn('while-choosing', '选择前的问题', '选择前的答案'));
+
+  const selected = await startSkill('--topic', '循环状态');
+  assert.equal(selected.topic.id, other.id);
+  const exchange = await fetch(selected.url, { redirect: 'manual' });
+  assert.equal(exchange.headers.get('location'), '/?topic=state');
+  await appendFile(file, turn('after-selection', '选择后的问题', '选择后的答案'));
+  const [saved] = await episodes(run, ['after-selection'], 'state');
+  const source = await run(['episode', 'get', saved.id, '--topic', 'state']);
+  assert.deepEqual(source.messages.map(({ content }) => content), ['选择后的问题', '选择后的答案']);
+  await episodes(run, [], 'gdn');
+});
+
+test('Bang 遇到同名专题时列出可区分的标识，接受精确的 slug', async (t) => {
+  const { run, session } = await project(t);
+  await run(['topic', 'create', 'first', '--title', '循环状态']);
+  const second = await run(['topic', 'create', 'second', '--title', '循环状态']);
+  await session('same-title');
+  const startSkill = (topic) => run(['skill', 'start', '--session', 'same-title', '--topic', topic]);
+
+  await assert.rejects(startSkill('循环'), /topic_not_found/);
+  const choice = await startSkill('循环状态');
+  assert.equal(choice.status, 'choose_topic');
+  assert.deepEqual(choice.candidates.map(({ slug }) => slug), ['first', 'second']);
+  assert.equal((await startSkill('second')).topic.id, second.id);
+});
+
+test('Bang 重复启动沿用原采集区间，解绑只结束指定会话的采集', async (t) => {
+  const { run, session } = await project(t);
+  const a = await session('learning-a');
+  const b = await session('learning-b');
+  const startSkill = (id, ...args) => run(['skill', 'start', '--session', id, ...args]);
+  const initial = await startSkill('learning-a');
+  assert.equal(initial.topic.slug, 'gdn');
+  await appendFile(a, start('ongoing', 'A 会话进行中的问题'));
+  await run(['topic', 'create', 'different']);
+  const parallel = await startSkill('learning-b', '--topic', initial.topic.id);
+  assert.deepEqual(parallel.sessions, ['learning-a', 'learning-b']);
+
+  const repeated = await startSkill('learning-a', '--topic', 'different');
+  assert.equal(repeated.topic.id, initial.topic.id);
+  assert.deepEqual(repeated.sessions, ['learning-a', 'learning-b']);
+  await appendFile(a, finish('ongoing', 'A 会话进行中的回答'));
+  await episodes(run, ['ongoing']);
+  await appendFile(b, turn('parallel', 'B 会话的问题', 'B 会话的回答'));
+  const originals = await episodes(run, ['ongoing', 'parallel']);
+  for (const [index, contents] of [
+    ['A 会话进行中的问题', 'A 会话进行中的回答'],
+    ['B 会话的问题', 'B 会话的回答'],
+  ].entries()) {
+    const original = await run(['episode', 'get', originals[index].id, '--topic', 'gdn']);
+    assert.deepEqual(original.messages.map(({ content }) => content), contents);
+  }
+
+  await run(['unbind', '--session', 'learning-a']);
+  await appendFile(a, turn('unbound', 'A 会话解绑后的问题', 'A 会话解绑后的回答'));
+  await appendFile(b, turn('continues', 'B 会话继续讨论', 'B 会话继续采集'));
+  await episodes(run, ['ongoing', 'parallel', 'continues']);
+  assert.deepEqual((await startSkill('learning-b')).sessions, ['learning-b']);
+});
+
 test('Codex 第 12 轮绑定时从当轮采集，轮间绑定从下一轮开始', async (t) => {
   const { run, session } = await project(t);
   const file = await session('in-chat');
@@ -116,6 +189,7 @@ test('Codex 绑定排除整理器、子代理、分支会话与其他项目', as
   await mkdir(other);
   const excluded = [
     ['organizer', { originator: 'bang-organizer' }],
+    ['internal-exec', { source: 'exec', thread_source: 'subagent' }],
     ['child', { source: { subagent: { thread_spawn: { parent_thread_id: 'main' } } } }],
     ['child-cli', { agent_nickname: 'subagent' }],
     ['fork', { forked_from_id: 'main' }],
@@ -127,7 +201,7 @@ test('Codex 绑定排除整理器、子代理、分支会话与其他项目', as
     await assert.rejects(run(['bind', '--topic', 'gdn', '--session', id]), /codex_session_excluded/);
   }
   const neverBound = await session('never-bound');
-  const main = await session('main');
+  const main = await session('main', { source: 'exec', thread_source: 'user' });
   await run(['bind', '--topic', 'gdn', '--session', 'main']);
   await appendFile(neverBound, turn('unbound', '未授权', '未授权'));
   await appendFile(main, turn('allowed', '已授权', '已授权'));

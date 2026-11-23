@@ -3,8 +3,8 @@ import { BangError } from '../../core/src/store.ts';
 
 type ServiceCall = <Result = Record<string, unknown>>(path: string, method?: string, body?: unknown) => Promise<Result>;
 
-type Topic = { id: string; slug: string; title: string };
-type Topics = { topics: Topic[]; activeTopicId: string | null };
+type Topic = { id: string; slug: string; title: string; status: 'active' | 'archived' };
+type Topics = { topics: Topic[] };
 type Binding = { sessionId: string; topicId: string; enabled: boolean };
 type BindingOptions = {
   sessionId: string;
@@ -23,21 +23,41 @@ async function initialTopic(call: ServiceCall, project: string): Promise<Topic> 
   }
 }
 
-async function startTopic(call: ServiceCall, project: string) {
+async function startTopic(call: ServiceCall, project: string, boundTopicId?: string, selector?: string) {
   const list = () => call<Topics>('/api/topics');
-  const { topics, activeTopicId } = await list();
-  const active = topics.find(({ id }) => id === activeTopicId);
-  if (active) return active;
-  if (topics.length) throw new BangError('no_active_topic', '项目没有活跃专题。');
-  try {
-    return await initialTopic(call, project);
-  } catch (error) {
-    if (!(error instanceof BangError) || error.code !== 'topic_exists') throw error;
-    const refreshed = await list();
-    const selected = refreshed.topics.find(({ id }) => id === refreshed.activeTopicId);
-    if (!selected) throw error;
-    return selected;
+  let { topics } = await list();
+  if (boundTopicId !== undefined) {
+    const topic = topics.find(({ id }) => id === boundTopicId);
+    if (!topic) throw new BangError('topic_not_found', '当前会话绑定的专题不存在。', 404);
+    return { topic };
   }
+
+  if (!topics.length && selector === undefined) {
+    try {
+      return { topic: await initialTopic(call, project) };
+    } catch (error) {
+      if (!(error instanceof BangError) || error.code !== 'topic_exists') throw error;
+      ({ topics } = await list());
+    }
+  }
+
+  const active = topics.filter(({ status }) => status === 'active');
+  if (selector !== undefined) {
+    const identified = topics.find(({ id }) => id === selector) ?? topics.find(({ slug }) => slug === selector);
+    if (identified?.status === 'archived') throw new BangError('topic_archived', '指定的专题已归档。', 409);
+    if (identified) return { topic: identified };
+  }
+  const candidates = selector === undefined ? active : active.filter(({ title }) => title === selector);
+  if (candidates.length === 1) return { topic: candidates[0] };
+  if (candidates.length > 1) {
+    return {
+      status: 'choose_topic' as const,
+      candidates,
+      message: selector === undefined ? '请选择要记录的专题。' : '存在同名专题，请按专题标识选择。',
+    };
+  }
+  if (selector !== undefined) throw new BangError('topic_not_found', `没有找到专题「${selector}」。`, 404);
+  throw new BangError('no_active_topic', '项目没有活跃专题。');
 }
 
 async function reasoningConfiguration(call: ServiceCall) {
@@ -50,8 +70,12 @@ async function reasoningConfiguration(call: ServiceCall) {
   }
 }
 
-export async function startSkill(call: ServiceCall, project: string, options: BindingOptions) {
-  const topic = await startTopic(call, project);
+export async function startSkill(call: ServiceCall, project: string, { topic: selector, ...options }: BindingOptions & { topic?: string }) {
+  const current = await call<{ bindings: Binding[] }>('/api/codex/bindings');
+  const existing = current.bindings.find(({ sessionId, enabled }) => sessionId === options.sessionId && enabled);
+  const selection = await startTopic(call, project, existing?.topicId, selector);
+  if (selection.status === 'choose_topic') return selection;
+  const { topic } = selection;
   const model = await reasoningConfiguration(call);
   const binding = await call<Binding & { status: string }>('/api/codex/bindings', 'POST', { ...options, topicId: topic.id });
   if (binding.status !== 'bound' || !binding.enabled) {
