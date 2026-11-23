@@ -1,7 +1,0 @@
-#!/bin/sh
-case $0 in
-  */*) package_dir=${0%/*} ;;
-  *) package_dir=. ;;
-esac
-unset NODE_OPTIONS
-exec "$package_dir/node/bin/node" "$package_dir/release/bang.mjs" "$@"

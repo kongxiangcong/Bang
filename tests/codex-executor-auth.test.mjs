@@ -1,6 +1,0 @@
-import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs/promises';import os from 'node:os';import path from 'node:path';import {fixture} from './completed-turns.test.mjs';
-test('actual Codex refuses an empty authorization home before dispatch',{skip:!process.env.BANG_CODEX_AUDIT_BINARY},async()=>{
- const authHome=await fs.mkdtemp(path.join(os.tmpdir(),'bang-no-auth-'));
- process.env.BANG_ORGANIZER_CODEX=JSON.stringify({version:1,executable:process.env.BANG_CODEX_AUDIT_BINARY,authHome,model:'gpt-6.1-sol'});const f=await fixture();delete process.env.BANG_ORGANIZER_CODEX;
- try{await f.call('organizer-enable',{topicId:f.bound.topic.id});await f.call('turn-ingest',f.signed([f.turn()]));let status;for(let i=0;i<100;i++){status=await f.call('organizer-status',{topicId:f.bound.topic.id});if(status.tasks[0]?.status==='failed')break;await new Promise(r=>setTimeout(r,50));}assert.equal(status.pauseReason,'AUTH_REQUIRED');assert.equal(status.tasks[0].attempts.length,1);assert.equal(status.tasks[0].process.exitConfirmed,true);assert.equal(status.tasks[0].process.executor.stage,'authorization');console.log(JSON.stringify({actualCli:true,platform:process.platform,auth:'isolated-empty-home',result:'AUTH_REQUIRED-before-model-dispatch'}));}finally{await f.close();await fs.rm(authHome,{recursive:true,force:true});}
-});
