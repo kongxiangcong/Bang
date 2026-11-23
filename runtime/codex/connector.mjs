@@ -1,8 +1,10 @@
 import fs from 'node:fs';
 import {createHash,createPublicKey,randomUUID,sign} from 'node:crypto';
 import {runtimeOperation} from '../native/runtime.mjs';
+import {CODEX_VERSION} from './executor-config.mjs';
 
-export const CODEX_VERSION='0.169.0-alpha.11.1';
+// Existing connector registrations and signed proofs use this version tag.
+export {CODEX_VERSION};
 const hash=value=>createHash('sha256').update(value).digest('hex');
 const cursor=(turnId,version=null,sourceHash=null)=>'cx1.'+Buffer.from(JSON.stringify([turnId,version,sourceHash])).toString('base64url');
 const decode=value=>{try{const result=JSON.parse(Buffer.from(value.slice(4),'base64url'));if(!value.startsWith('cx1.')||result.length!==3||typeof result[0]!=='string')throw Error();return result;}catch{throw Error('Codex cursor unsupported');}};
@@ -22,10 +24,10 @@ export class CodexSessionConnector {
   return {connectorId:this.connectorId,payload,signature:sign(null,Buffer.from(payload),this.privateKey).toString('base64url')};
  }
  async identity(threadId){
-  if(this.transport.version!==CODEX_VERSION)failure('unsupported host version');
+  if(process.platform!=='linux'&&this.transport.version!==CODEX_VERSION)failure('unsupported host version');
   const {thread}=await this.transport.request('thread/read',{threadId,includeTurns:false});
   if(thread?.id!==threadId||thread.parentThreadId!==null||!['cli','vscode','appServer'].includes(thread.source))failure('not an exact primary thread');
-  if(thread.cliVersion!==CODEX_VERSION||thread.historyMode!=='paginated')failure('unsupported source format or version');
+  if(thread.historyMode!=='paginated'||(process.platform!=='linux'&&thread.cliVersion!==CODEX_VERSION))failure('unsupported source format or version');
   if(fs.realpathSync(thread.cwd)!==this.project)failure('workspace mismatch');
   return thread;
  }

@@ -64,11 +64,18 @@ test('restart resumes native durable cursor; terminal failures leave gaps and di
  }finally{await f.close();}
 });
 
-test('untrusted events, foreign workspace, child agents, unsupported version fail before body reads',async()=>{
+test('untrusted events, foreign workspace, child agents and unsupported history fail before body reads',async()=>{
  const f=await fixture();try{
   await assert.rejects(f.connector.enable({...f.hook,hook_event_name:'Stop'},{scope:['*']}),/UserPromptSubmit/);
-  f.transport.version='0.130.0';await assert.rejects(f.connector.enable(f.hook,{scope:['*']}),/version/);f.transport.version=CODEX_VERSION;
+  if(process.platform!=='linux'){
+   f.transport.version='0.130.0';
+   await assert.rejects(f.connector.enable(f.hook,{scope:['*']}),/version/);
+   f.transport.version=CODEX_VERSION;
+  }
   const request=f.transport.request;
+  f.transport.request=async(method,p)=>{const r=await request(method,p);if(method==='thread/read')r.thread.historyMode='legacy';return r;};
+  await assert.rejects(f.connector.enable(f.hook,{scope:['*']}),/source format/);
+  f.transport.request=request;
   f.transport.request=async(method,p)=>{const r=await request(method,p);if(method==='thread/read')r.thread.parentThreadId='parent';return r;};
   await assert.rejects(f.connector.enable(f.hook,{scope:['*']}),/primary/);
   assert.deepEqual(f.reads,[]);assert.deepEqual(await f.call('topics'),[]);

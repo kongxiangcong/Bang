@@ -7,9 +7,11 @@ import {CODEX_VERSION} from './connector.mjs';
 // not attach to a running desktop turn and never starts/resumes a thread.
 export async function openCodexStoredTransport({executable=process.env.CODEX_APP_RUNTIME_CLI_PATH,threadId}){
  if(!executable||!path.isAbsolute(executable)||typeof threadId!=='string'||!threadId)throw Error('Codex exact executable and thread identity required');
- let version;
- try{version=(await promisify(execFile)(executable,['--version'],{timeout:10000,windowsHide:true,maxBuffer:65536})).stdout.trim();}catch{throw Error('Codex executable unavailable');}
- if(version!==`codex-cli ${CODEX_VERSION}`)throw Error('Codex unsupported executable version');
+ if(process.platform!=='linux'){
+  let version;
+  try{version=(await promisify(execFile)(executable,['--version'],{timeout:10000,windowsHide:true,maxBuffer:65536})).stdout.trim();}catch{throw Error('Codex executable unavailable');}
+  if(version!==`codex-cli ${CODEX_VERSION}`)throw Error('Codex unsupported executable version');
+ }
  const child=spawn(executable,['app-server','--stdio'],{stdio:['pipe','pipe','pipe'],windowsHide:true});
  let sequence=0,buffer='',closed=false;const pending=new Map();
  const terminate=()=>{if(!closed){closed=true;child.stdin.end();const timer=setTimeout(()=>child.kill(),1500);timer.unref();child.once('close',()=>clearTimeout(timer));}for(const waiter of pending.values()){clearTimeout(waiter.timer);waiter.reject(Error('Codex read channel closed'));}pending.clear();};
@@ -26,12 +28,16 @@ export async function openCodexStoredTransport({executable=process.env.CODEX_APP
   const id=++sequence,timer=setTimeout(()=>{terminate();},10000);
   pending.set(id,{resolve,reject,timer,method});child.stdin.write(JSON.stringify({id,method,params})+'\n');
  });
+ let version;
  try{
   const initialized=await rpc('initialize',{clientInfo:{name:'bang-stored-session-reader',version:'0.1'},capabilities:null});
-  if(typeof initialized.userAgent!=='string'||!initialized.userAgent.includes(`/${CODEX_VERSION} `))throw Error('Codex server version mismatch');
+  const userAgent=initialized?.userAgent;
+  if(typeof userAgent!=='string'||!userAgent)throw Error('Invalid Codex server handshake');
+  if(process.platform!=='linux'&&!userAgent.includes(`/${CODEX_VERSION} `))throw Error('Codex server version mismatch');
+  version=userAgent.match(/^\S+\/([^\s]+)\s/)?.[1];
   child.stdin.write(JSON.stringify({method:'initialized'})+'\n');
  }catch(error){terminate();throw error;}
- return {version:CODEX_VERSION,close:terminate,async request(method,params){
+ return {version:process.platform==='linux'?version:CODEX_VERSION,close:terminate,async request(method,params){
   if(!['thread/read','thread/turns/list','thread/items/list'].includes(method)||params.threadId!==threadId)throw Error('Codex read outside authorized session');
   if(method==='thread/read'&&params.includeTurns!==false)throw Error('Codex full-history read prohibited');
   if(method==='thread/turns/list'&&params.itemsView!=='notLoaded')throw Error('Codex turn metadata only');

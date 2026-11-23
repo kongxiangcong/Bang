@@ -9,6 +9,7 @@ import {enablePromptContext,offerPromptContext,queryPromptContext,readCodexInsta
 
 const activationPrompt='Bang: enable current session';
 const unverified={systemMessage:'Bang could not verify this session. No completion or synchronization is claimed. Check Bang connector status.'};
+const unsupportedHost=version=>process.platform!=='linux'&&version&&version!==CODEX_VERSION;
 
 // The entry path and arguments are reviewed in Codex project Hook trust.
 // Older reviewed commands omit --context-v1 and retain activation-only behavior.
@@ -19,7 +20,7 @@ export async function runCodexHook(hook,{project,threadId,hostVersion,contextEna
  let transport;
  try{
   if(typeof threadId!=='string'||!threadId||threadId.length>256||threadId!==hook.session_id||
-   hook.agent_id!=null||hook.agent_type!=null||(hostVersion&&hostVersion!==CODEX_VERSION))return emit(activating?unverified:{});
+   hook.agent_id!=null||hook.agent_type!=null||unsupportedHost(hostVersion))return emit(activating?unverified:{});
   project=fs.realpathSync(project);
   if(fs.realpathSync(hook.cwd)!==project)return emit(activating?unverified:{});
   if(!activating)return offerPromptContext({project,sessionId:threadId,turnId:hook.turn_id,emit});
@@ -50,7 +51,7 @@ async function main(){
  });
  if(mode==='--query'){
   try{
-   if(fs.realpathSync(process.cwd())!==fs.realpathSync(project)||(hostVersion&&hostVersion!==CODEX_VERSION))throw Error();
+   if(fs.realpathSync(process.cwd())!==fs.realpathSync(project)||unsupportedHost(hostVersion))throw Error();
    await emit(await queryPromptContext(fs.realpathSync(project),threadId,args));
   }catch{
    process.stderr.write('No authorized pinned whiteboard query. Use the reference for the current Bang turn, or the manual knowledge-context operation.\n');

@@ -45,7 +45,7 @@ function codexCheck(candidate) {
   }
   if (result.status !== 0) return { status: 'unavailable' };
   const version = result.stdout.trim().match(/^codex-cli ([\w.-]+)$/)?.[1];
-  return version === CODEX_VERSION
+  return version && (process.platform === 'linux' || version === CODEX_VERSION)
     ? { status: 'compatible', version, executable }
     : { status: 'version-mismatch', version: version ?? null };
 }
@@ -116,7 +116,7 @@ async function projectPlan(project, release, values = {}) {
   const plan = {
     project,
     host: 'codex',
-    requiredVersion: CODEX_VERSION,
+    requiredVersion: process.platform === 'linux' ? null : CODEX_VERSION,
     hookFile: entry.path,
     hooks: ['absent', 'unsafe'].includes(entry.state) ? entry.state : 'existing',
     trust: 'review-in-codex',
@@ -190,7 +190,7 @@ async function main() {
     const { manifest, release } = packageFiles();
     if (command === 'up') {
       const codex = codexCheck(hostCodex(values.codex));
-      if (codex.status !== 'compatible') throw Error('Pinned native Codex required: ' + codex.status);
+      if (codex.status !== 'compatible') throw Error('Compatible native Codex required: ' + codex.status);
       const { startBundle } = await import('./bundle.mjs');
       const result = await startBundle(project,{executable:codex.executable,model:values.model,topicId:values.topic});
       console.log(JSON.stringify(result));
@@ -202,7 +202,9 @@ async function main() {
       console.log(JSON.stringify(await serveEditor(root, project, Number(values.port), manifest.files)));
     } else {
       const plan = await projectPlan(project, release);
-      const codex = codexCheck(values.codex ?? process.env.CODEX_APP_RUNTIME_CLI_PATH);
+      const codex = codexCheck(process.platform === 'linux'
+        ? hostCodex(values.codex)
+        : values.codex ?? process.env.CODEX_APP_RUNTIME_CLI_PATH);
       if (command === 'check') {
         await import('node:sqlite');
         console.log(JSON.stringify({
@@ -216,7 +218,7 @@ async function main() {
           process.exitCode = 1;
         }
       } else {
-        if (codex.status !== 'compatible') throw Error('Pinned native Codex required: ' + codex.status);
+        if (codex.status !== 'compatible') throw Error('Compatible native Codex required: ' + codex.status);
         if (plan.hooks === 'unsafe') throw Error('Codex hook path must be a real directory and regular file');
         const shouldInstall = command === 'install-codex';
         if (shouldInstall && plan.maintenance.actions.install !== 'create') {

@@ -7,7 +7,9 @@ const env={...process.env,CODEX_HOME:config.authHome};
 function run(args,input){return new Promise((resolve,reject)=>{const p=spawn(config.executable,args,{cwd:process.cwd(),env,shell:false,windowsHide:true,stdio:['pipe','pipe','pipe']});let out='',err='',bytes=0;p.on('error',()=>reject(Error('EXECUTOR_UNAVAILABLE')));p.stdout.on('data',d=>{bytes+=d.length;if(bytes>4*1024*1024){p.kill();reject(Error('OUTPUT_INVALID'));}else out+=d;});p.stderr.on('data',d=>{err=(err+d).slice(-4096);});p.stdin.on('error',()=>{});p.stdin.end(input);p.on('close',code=>resolve({code,out,err}));});}
 async function execute(input){
  const prefix=config.prefixArgs??[];
- stage='version';const version=await run([...prefix,'--version']);if(version.code!==0||version.out.trim()!==`codex-cli ${CODEX_VERSION}`)throw Error('EXECUTOR_CONFIGURATION');
+ if(process.platform!=='linux'){
+  stage='version';const version=await run([...prefix,'--version']);if(version.code!==0||version.out.trim()!==`codex-cli ${CODEX_VERSION}`)throw Error('EXECUTOR_CONFIGURATION');
+ }
  stage='authorization';const auth=await run([...prefix,'login','status']);if(auth.code!==0||!/Logged in using/.test(auth.out+auth.err)){reason='authentication';throw Error('AUTH_REQUIRED');}
  stage='catalog';const catalogResult=await run([...prefix,'debug','models','--bundled']);if(catalogResult.code!==0)throw Error('EXECUTOR_CONFIGURATION');
  const catalog=JSON.parse(catalogResult.out);catalog.models=catalog.models.filter(m=>m.slug===config.model);if(catalog.models.length!==1)throw Error('EXECUTOR_CONFIGURATION');

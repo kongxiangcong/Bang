@@ -10,7 +10,7 @@ Before starting the native project Runtime, explicitly set `BANG_ORGANIZER_CODEX
 {"version":1,"executable":"ABSOLUTE/PATH/TO/codex","authHome":"ABSOLUTE/AUTHORIZED/CODEX_HOME","model":"gpt-6.1-sol","inheritProxy":false}
 ```
 
-The supported executable reports exactly `codex-cli 0.169.0-alpha.11.1`. The selected model must exist in that binary's bundled catalog. No model/provider fallback occurs. Optional `prefixArgs` supports an owner-vetted native launcher; it is not accepted from browser/HTTP/control requests. The adapter and executable are trusted local code, not a sandbox for arbitrary supplied executables. Simultaneous native and Codex executor configurations are rejected.
+On Linux, the adapter uses the configured executable and checks authorization, the bundled model catalog, and restricted execution. On Windows, the executable must also report exactly `codex-cli 0.169.0-alpha.11.1`. The selected model must exist in that binary's bundled catalog. No model/provider fallback occurs. Optional `prefixArgs` supports an owner-vetted native launcher; it is not accepted from browser/HTTP/control requests. The adapter and executable are trusted local code, not a sandbox for arbitrary supplied executables. Simultaneous native and Codex executor configurations are rejected.
 
 The native supervisor launches the Node adapter in its private attempt directory. It retains Windows Job / Linux process-group ownership over the actual CLI and descendants. Task input travels as JSON over stdin, never in a shell command or argument. The adapter gives only the configured `CODEX_HOME` path to Codex's supported auth chain; Bang never opens, copies, returns or logs credential files. `login status` checks recognition before model dispatch; later expired-token/provider failures remain separately classified. A recognized login does not promise connectivity or entitlement.
 
@@ -33,7 +33,7 @@ Public operations remain `organizer-enable`, `organizer-status`, `organizer-cont
 ```text
 node --test tests/codex-executor.test.mjs tests/native-organizer.test.mjs tests/organizer-controls.test.mjs
 node tests/codex-capability-audit.mjs
-node --test --test-name-pattern="actual pinned Codex" tests/codex-executor-auth.test.mjs
+node --test --test-name-pattern="actual Codex" tests/codex-executor-auth.test.mjs
 npm run build --prefix prototypes/whiteboard-integration
 ```
 

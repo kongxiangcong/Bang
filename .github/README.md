@@ -4,9 +4,9 @@
 
 **白板和讨论属于项目，聊天是可切换的输入来源。** 在目标项目的 Codex 会话中调用 `$bang-bundle`，初始化后台整理与白板；新建会话后再次调用，接着同一专题讨论。
 
-Windows 与 Linux x64 验证包提供统一入口。在包目录首次安装技能（Windows：`.\Bang.cmd install-skill`，Linux：`./bang install-skill`），再在目标项目的 Codex 聊天中发送 `$bang-bundle`。之后正常聊天，独立整理器在完成轮后更新已提交白板。[安装与运行说明](../release/README.md)
+Linux 可以直接从本仓库安装技能并使用本机 Codex。也可使用 Windows 或 Linux x64 验证包提供的入口。之后在目标项目的 Codex 聊天中发送 `$bang-bundle`，独立整理器在完成轮后更新已提交白板。[验证包说明](../release/README.md)
 
-## 旧版 Linux 运行入口
+## 在 Linux 从源码运行
 
 需要 Linux、Node.js 22+、npm、util-linux 的 `flock`，以及已有可用认证的兼容 Codex CLI。CLI 须支持 `exec --ephemeral --ignore-user-config --output-schema` 和 `shell_tool` 开关。
 

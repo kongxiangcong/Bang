@@ -8,7 +8,7 @@ Windows 和 Linux 都先在解压后的验证包目录安装一次技能。Windo
 
 在目标项目中打开新的 Codex 聊天，发送 `$bang-bundle`。它核对当前项目、当前主聊天和调用轮，启动白板及后台整理器，返回白板链接。之后继续和 Codex 正常对话。整理器在每个可核验的完成轮后独立执行，使用宿主 Codex 已有登录和模型额度。即使关闭白板，项目后台仍可接收和整理。已打开的白板在提示有新版本时使用「刷新」拉取已提交内容。
 
-需要能读取当前宿主聊天记录的 Codex，以及固定版原生 Codex CLI `0.169.0-alpha.11.1`。技能优先使用宿主提供的可执行文件路径，其次尝试 PATH 上的原生 CLI。整理器默认使用 `gpt-6.1-sol`。同一聊天再次调用会复用当前专题和进度。切换到同一项目的新聊天时再次调用，已接收的积压仍会继续整理。
+需要能读取当前宿主聊天记录的 Codex。Linux 可使用已安装、支持整理器所需功能的原生 Codex CLI。Windows 要求 `0.169.0-alpha.11.1`。技能优先使用宿主提供的可执行文件路径，其次尝试 PATH 上的原生 CLI。整理器默认使用 `gpt-6.1-sol`。同一聊天再次调用会复用当前专题和进度。切换到同一项目的新聊天时再次调用，已接收的积压仍会继续整理。也可[在 Linux 从源码运行](../.github/README.md#在-linux-从源码运行)。
 
 Windows 的受限工具进程可能无法为独立 Codex 初始化宿主状态。看到 `BANG_WINDOWS_HOST_ACCESS` 时，通过 Codex 的常规权限提示批准这一次项目初始化。随后照常聊天。
 
@@ -16,7 +16,7 @@ Windows 的受限工具进程可能无法为独立 Codex 初始化宿主状态�
 
 ## 手动打开白板或配置 Codex Hook
 
-以安装位置为当前目录。将示例路径替换成已有项目和固定版 Codex 原生可执行文件的路径。
+以安装位置为当前目录。将示例路径替换成已有项目和本机原生 Codex 可执行文件的路径。Windows 使用上文指定的版本。
 
     .\Bang.cmd plan --project "D:\项目 工作区"
     .\Bang.cmd check --project "D:\项目 工作区" --codex "C:\工具\Codex\codex.exe"
@@ -30,7 +30,7 @@ Linux 示例（以解压得到的安装目录为当前目录）。
     ./bang prepare-codex --project "$HOME/项目 工作区" --codex "$HOME/工具/Codex/codex"
     ./bang serve --project "$HOME/项目 工作区"
 
-plan 显示项目级入口的状态。check 验证包内资源、Node、SQLite 和 Codex 0.169.0-alpha.11.1 的原生版本。两条命令均以只读方式访问项目和安装资源；版本检查使用独立临时目录。版本检测以本地原生可执行文件的 --version 为准。check 的零退出码表示资源验证和版本检测通过。
+plan 显示项目级入口的状态。check 验证包内资源、Node、SQLite，并在独立临时目录探测原生 Codex 的 `--version`。Linux 报告实际版本，Windows 另要求 `0.169.0-alpha.11.1`。两条命令均以只读方式访问项目和安装资源。check 的零退出码表示预检通过。
 
 prepare-codex 在项目的私有 Runtime 目录创建供审阅的 hooks.json 和可读 command.txt。项目已有 hooks 时，在阅读候选配置后，手动将对应事件合并到项目的 .codex/hooks.json。项目没有 hooks 时，可显式运行以下命令创建项目入口。
 

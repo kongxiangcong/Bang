@@ -1,14 +1,14 @@
 import fs from 'node:fs/promises';
 import {CODEX_VERSION} from './executor-config.mjs';
 
-// Adapt one exact, pinned Codex transcript to the connector's turn reader.
+// Adapt one exact Codex transcript to the connector's turn reader.
 // The tool shell does not need to spawn another Codex App Server to bind it.
 export async function openCodexTranscriptTransport({threadId,transcript}){
   const lines=(await fs.readFile(transcript,'utf8')).split('\n');
   const first=JSON.parse(lines[0]);
   const meta=first.payload;
   if(first.type!=='session_meta'||meta?.id!==threadId||meta.session_id!==threadId||
-     meta.cli_version!==CODEX_VERSION||!['cli','vscode','appServer'].includes(meta.source)||meta.forked_from_id){
+     (process.platform!=='linux'&&meta.cli_version!==CODEX_VERSION)||!['cli','vscode','appServer'].includes(meta.source)||meta.forked_from_id){
     throw Error('Codex transcript is not the expected primary session');
   }
   const turns=[];
@@ -51,7 +51,7 @@ export async function openCodexTranscriptTransport({threadId,transcript}){
   }
   const thread={id:meta.id,sessionId:meta.session_id,parentThreadId:null,source:meta.source,
     cwd:meta.cwd,cliVersion:meta.cli_version,historyMode:'paginated'};
-  return {version:CODEX_VERSION,close(){},activeTurnId:active?.id,async request(method,params){
+  return {version:meta.cli_version,close(){},activeTurnId:active?.id,async request(method,params){
     if(params.threadId!==threadId)throw Error('Codex read outside the bound transcript');
     if(method==='thread/read'&&params.includeTurns===false)return {thread};
     if(method==='thread/turns/list'&&params.itemsView==='notLoaded'){

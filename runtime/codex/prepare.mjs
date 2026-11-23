@@ -8,7 +8,7 @@ import {readCodexInstall} from './context-delivery.mjs';
 
 const project=fs.realpathSync(process.argv[2]),review=path.resolve(process.argv[3]??path.join(project,'.scratch','codex-hook-review'));
 const executable=process.env.CODEX_APP_RUNTIME_CLI_PATH;
-if(!executable||!path.isAbsolute(executable))throw Error('Pinned Codex executable required');
+if(!executable||!path.isAbsolute(executable))throw Error('Absolute Codex executable path required');
 const {workspaceId}=await runtimeOperation(project,'start');
 const manifest=path.join(project,'.bang','runtime','codex-install.json');
 if(!fs.existsSync(manifest)){
