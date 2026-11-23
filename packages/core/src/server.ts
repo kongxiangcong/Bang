@@ -7,7 +7,6 @@ import { ReasoningEngine } from './reasoning/engine.ts';
 import { routeReasoning } from './reasoning/routes.ts';
 import { initializeWorkspace, writeWorkspaceDefaults } from './workspace.ts';
 import { routeDelivery } from './delivery.ts';
-import { serveWhiteboard } from './whiteboard.ts';
 
 const host = '127.0.0.1';
 const defaultPort = 4318;
@@ -33,6 +32,7 @@ export type RouteContext = LifecycleContext & {
 };
 type RuntimeOptions = {
   port?: number;
+  watcherHarnesses?: readonly string[];
   route?: (context: RouteContext) => boolean | Promise<boolean>;
   onStart?: (context: LifecycleContext) => void | (() => void | Promise<void>)
     | Promise<void | (() => void | Promise<void>)>;
@@ -78,7 +78,7 @@ export async function probeService(service: Discovery) {
     const response = await requestService(service, '/api/health', { signal: AbortSignal.timeout(500) });
     if (!response.ok) return;
     const health = await response.json() as {
-      pid: number; project_root: string; version: string; ready: boolean;
+      pid: number; project_root: string; version: string; ready: boolean; captureStop?: boolean;
     };
     if (health.pid === service.pid && health.project_root === service.project_root) return health;
   } catch {
@@ -231,7 +231,7 @@ export async function startServer(project: string, options: RuntimeOptions = {})
         throw new BangError('unauthorized', 'Authorization required', 401);
       }
       if (method === 'GET' && url.pathname === '/api/health') {
-        return json({ pid: service.pid, project_root: paths.root, version: '2.0.0', ready });
+        return json({ pid: service.pid, project_root: paths.root, version: '2.0.0', ready, captureStop: true });
       }
       if (method === 'POST' && url.pathname === '/api/stop') {
         if (!authenticatedCli) throw new BangError('unauthorized', 'CLI authorization required', 401);
@@ -294,9 +294,8 @@ export async function startServer(project: string, options: RuntimeOptions = {})
       }
       const context = { ...lifecycle, request, response, url, parts, body: read, json };
       if (options.route && await options.route(context)) return;
-      if (await routeDelivery(context)) return;
+      if (await routeDelivery(context, options.watcherHarnesses)) return;
       if (await routeReasoning(reasoning, context)) return;
-      if (method === 'GET' && serveWhiteboard(url.pathname, response)) return;
       throw new BangError('not_found', 'Route not found', 404);
     } catch (error) {
       if (response.headersSent) {

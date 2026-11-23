@@ -34,7 +34,7 @@ node --experimental-strip-types "$HOME/.agents/skills/bang/launch.mjs" skill sta
 ["--experimental-strip-types", "/path/to/.agents/skills/bang/launch.mjs", "--project", "/path/to/project", "mcp"]
 ```
 
-逐轮投递的宿主在助手完整回复后调用 `bang_record_turn`，提供 `harness`、`session_id`、`source_turn_id`、`user_text` 和 `assistant_text`。将启动回执中的 `bindingId` 随同本次采集区间的投递传为 `binding_id`。宿主集成也可通过同一 CLI 入口向 `deliver` 的标准输入写入这一 JSON 对象。停止或解绑后，重新绑定的会话使用新的采集区间。
+逐轮投递的宿主先绑定当前会话，然后在助手完整回复后调用 `bang_record_turn`，提供 `harness`、`session_id`、`source_turn_id`、`user_text` 和 `assistant_text`。将启动回执中的 `bindingId` 随同本次采集区间的投递传为 `binding_id`。项目主动停止后，迟到的投递须携带原 `binding_id` 和宿主原生的 ISO 8601 完成时间 `completed_at`，且该轮须在原采集区间内完成。宿主集成也可通过同一 CLI 入口向 `deliver` 的标准输入写入这一 JSON 对象。停止或解绑后，重新绑定的会话使用新的采集区间。
 
 ## 使用 CLI
 

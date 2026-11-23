@@ -150,7 +150,7 @@ test('一次源码安装可在两个学习目录绑定并回读各自的第一�
 
 test('源码更新期间原项目沿用原版本采集，新启动的项目使用新版', async (t) => {
   const { checkout, install, learningDirectory } = await installation(t, { copySource: true });
-  const board = join(checkout, 'packages', 'core', 'src', 'whiteboard', 'index.html');
+  const board = join(checkout, 'packages', 'web', 'src', 'whiteboard', 'index.html');
   const originalBoard = await readFile(board, 'utf8');
   const oldBoard = originalBoard + '\n<!-- Old Bang release -->\n';
   const newBoard = originalBoard + '\n<!-- New Bang release -->\n';
@@ -198,6 +198,34 @@ test('源码更新期间原项目沿用原版本采集，新启动的项目使�
   assert.deepEqual(restarted.sessions, initial.sessions);
   assert.equal(await readWhiteboard(restarted), newBoard);
   assert.deepEqual((await readDuring()).messages.map(({ content }) => content), [question, answer]);
+});
+
+test('新版技能停止旧守护进程后保留末轮，后续状态查询不会恢复旧绑定', async (t) => {
+  const { checkout, install, learningDirectory } = await installation(t, { copySource: true });
+  const server = join(checkout, 'packages', 'core', 'src', 'server.ts');
+  const current = await readFile(server, 'utf8');
+  const legacy = current.replace(/      if \(method === 'POST' && url\.pathname === '\/api\/stop'\) \{[\s\S]*?\n      \}/u, `
+      if (method === 'POST' && url.pathname === '/api/stop') {
+        response.once('finish', () => void close());
+        return json({ running: false });
+      }`).replace(', ready, captureStop: true', ', ready');
+  assert.notEqual(legacy, current);
+  await writeFile(server, legacy);
+  await install();
+  const project = await learningDirectory('gdn', 'legacy-watcher');
+  await project.start();
+
+  await writeFile(server, current);
+  await install();
+  await appendFile(project.transcript, beginTurn('before-stop', '停止前已完成的问答？') +
+    completeTurn('before-stop', '这一轮仍然属于原采集区间。'));
+  assert.deepEqual((await project.run(['skill', 'stop'])).unverifiedSessions, []);
+  const afterStop = new Date().toISOString();
+  await appendFile(project.transcript, (beginTurn('after-stop', '停采以后？') +
+    completeTurn('after-stop', '这一轮应跳过。')).replaceAll(timestamp, afterStop));
+  assert.deepEqual((await project.run(['skill', 'status'])).topics[0].sessions, []);
+  const episodes = await waitForEpisodes(project.run, 'gdn', 1);
+  assert.deepEqual(episodes.map(({ turnId }) => turnId), ['before-stop']);
 });
 
 test('更新安装失败后仍可用原有技能启动并访问原专题', async (t) => {

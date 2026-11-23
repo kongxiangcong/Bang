@@ -11,6 +11,17 @@ export const deliveryBindings = `
   ) STRICT;
 `;
 
+export const stoppedDeliveryIntervals = `
+  CREATE TABLE IF NOT EXISTS stopped_delivery_intervals (
+    binding_id TEXT PRIMARY KEY,
+    harness TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    topic_id TEXT NOT NULL REFERENCES topics(id),
+    started_at INTEGER NOT NULL,
+    ended_at INTEGER NOT NULL
+  ) STRICT;
+`;
+
 const sessionSubgraphs = `
   CREATE TABLE IF NOT EXISTS session_subgraphs (
     topic_id TEXT NOT NULL REFERENCES topics(id),
@@ -80,6 +91,7 @@ export const schema = `
     updated_at TEXT NOT NULL
   ) STRICT;
   ${deliveryBindings}
+  ${stoppedDeliveryIntervals}
   ${sessionSubgraphs}
   CREATE TABLE IF NOT EXISTS jobs (
     id TEXT PRIMARY KEY,

@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-import { deliveryBindings, migrateCaptureStop, migrateReasoningSessions, schema } from './schema.ts';
+import { deliveryBindings, migrateCaptureStop, migrateReasoningSessions, schema, stoppedDeliveryIntervals } from './schema.ts';
 
 export class BangError extends Error {
   code: string;
@@ -120,7 +120,7 @@ export class BangStore {
       this.transaction(() => {
         const state = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
         if (state.user_version === 0) {
-          this.db.exec(schema + 'PRAGMA user_version = 5;');
+          this.db.exec(schema + 'PRAGMA user_version = 6;');
           return;
         }
         if (state.user_version === 1) this.db.exec('ALTER TABLE adapter_cursors ADD COLUMN active_turn_json TEXT;');
@@ -131,8 +131,11 @@ export class BangStore {
           this.db.exec(migrateCaptureStop);
         }
         if (state.user_version >= 1 && state.user_version <= 4) {
-          this.db.exec(deliveryBindings + 'PRAGMA user_version = 5;');
-        } else if (state.user_version !== 5) {
+          this.db.exec(deliveryBindings);
+        }
+        if (state.user_version >= 1 && state.user_version <= 5) {
+          this.db.exec(stoppedDeliveryIntervals + 'PRAGMA user_version = 6;');
+        } else if (state.user_version !== 6) {
           throw new Error(`Unsupported Bang database version ${state.user_version}`);
         }
       });
@@ -163,9 +166,13 @@ export class BangStore {
     this.transaction(() => {
       this.db.prepare(`
         UPDATE adapter_cursors
-        SET enabled = 0, stopped_at = ?, stop_pending = (harness = 'codex'), updated_at = ?
+        SET enabled = 0, stopped_at = ?, stop_pending = (file_signature IS NOT NULL), updated_at = ?
         WHERE enabled = 1
       `).run(stoppedAt, new Date(stoppedAt).toISOString());
+      this.db.prepare(`
+        INSERT INTO stopped_delivery_intervals (binding_id, harness, session_id, topic_id, started_at, ended_at)
+        SELECT binding_id, harness, session_id, topic_id, started_at, ? FROM delivery_bindings WHERE ended_at IS NULL
+      `).run(stoppedAt);
       this.db.prepare('UPDATE delivery_bindings SET ended_at = ? WHERE ended_at IS NULL').run(stoppedAt);
     });
   }
@@ -256,6 +263,14 @@ export class BangStore {
       .get(topic.id, episodeId) as EpisodeRow | undefined;
     if (!row) throw new BangError('episode_not_found', 'Episode does not exist in this topic', 404);
     return episodeFromRow(row);
+  }
+
+  findOriginalEpisode(topicId: string, sourceTool: string, sessionId: string, turnId: string) {
+    const row = this.db.prepare(`
+      SELECT * FROM episodes WHERE topic_id = ? AND harness = ? AND session_id = ? AND source_turn_id = ?
+      AND replaces_episode_id IS NULL
+    `).get(topicId, sourceTool, sessionId, turnId) as EpisodeRow | undefined;
+    return row && episodeFromRow(row);
   }
 
   recordEpisode(input: EpisodeInput) {

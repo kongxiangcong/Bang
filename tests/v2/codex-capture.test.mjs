@@ -127,6 +127,18 @@ test('Bang 重复启动沿用原采集区间，解绑只结束指定会话的采
   assert.deepEqual((await startSkill('learning-b')).sessions, ['learning-b']);
 });
 
+test('旧绑定的专题归档后，Bang 可接续剩下的活跃专题', async (t) => {
+  const { run, session } = await project(t);
+  const file = await session('archived-topic');
+  const startSkill = () => run(['skill', 'start', '--session', 'archived-topic']);
+  assert.equal((await startSkill()).topic.slug, 'gdn');
+  await run(['topic', 'create', 'active']);
+  await run(['topic', 'archive', 'gdn']);
+  assert.equal((await startSkill()).topic.slug, 'active');
+  await appendFile(file, turn('active-topic', '接续哪个专题？', '接续活跃专题。'));
+  await episodes(run, ['active-topic'], 'active');
+});
+
 test('Codex 第 12 轮绑定时从当轮采集，轮间绑定从下一轮开始', async (t) => {
   const { run, session } = await project(t);
   const file = await session('in-chat');
@@ -181,6 +193,24 @@ test('纯 Bang 操作只推进游标，混合轮只保留可独立识别的专�
     assert.deepEqual(exchange.messages.map(({ content }) => content), ['为什么门控能减弱噪声？', '门控逐元素调制信号。']);
   }
   assert.equal((await run(['status'])).bindings[0].lastTurnId, 'pure-last');
+});
+
+test('Codex 的内联 $bang 与工具回执保留原样的专题问答', async (t) => {
+  const { run, session } = await project(t);
+  const file = await session('inline-skill');
+  await run(['bind', '--topic', 'gdn', '--session', 'inline-skill']);
+  const launcher = row('response_item', {
+    type: 'custom_tool_call', name: 'exec',
+    input: `text(await tools.exec_command({cmd:"'/path/to/node' --experimental-strip-types '/tmp/isolation/home/.agents/skills/bang/launch.mjs' skill start"}))`,
+  });
+  const question = '为什么门控能减弱噪声？';
+  const answer = '门控逐元素调制信号。';
+  await appendFile(file,
+    start('inline', `$bang ${question}`) + launcher +
+    finish('inline', `Bang 已开始自动记录 **gdn** 专题。整理模型尚未配置。\n\n${answer}`) +
+    start('status', '请查看 GDN 专题。') + launcher + finish('status', 'GDN 专题里有 3 条记录。'));
+  const [saved] = await episodes(run, ['inline']);
+  assert.deepEqual(saved.messages.map(({ content }) => content), [question, answer]);
 });
 
 test('Codex 绑定排除整理器、子代理、分支会话与其他项目', async (t) => {

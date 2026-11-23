@@ -1,4 +1,3 @@
-import { closeDeliveryInterval, openDeliveryInterval } from '../../core/src/delivery.ts';
 import type { RouteContext } from '../../core/src/server.ts';
 import { BangError, BangStore, requiredString } from '../../core/src/store.ts';
 import {
@@ -125,7 +124,6 @@ class CodexWatcher {
             capture_from_offset, byte_offset, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `).run(prefix + path, harness, session, topic.id, meta.signature, boundary, boundary, new Date().toISOString());
-        openDeliveryInterval(this.store, harness, session, topic.id, Boolean(prior));
       });
       return { status: 'bound', ...summary(this.cursor(session)!) };
     } finally {
@@ -142,13 +140,10 @@ class CodexWatcher {
         if (!fileMissing(error)) throw error;
       });
       this.checkRunning();
-      this.store.transaction(() => {
-        this.store.db.prepare(`
-          UPDATE adapter_cursors SET enabled = 0, active_turn_json = NULL, line_buffer = '', updated_at = ?
-          WHERE harness = ? AND session_id = ?
-        `).run(new Date().toISOString(), harness, cursor.session_id);
-        closeDeliveryInterval(this.store, harness, cursor.session_id);
-      });
+      this.store.db.prepare(`
+        UPDATE adapter_cursors SET enabled = 0, active_turn_json = NULL, line_buffer = '', updated_at = ?
+        WHERE harness = ? AND session_id = ?
+      `).run(new Date().toISOString(), harness, cursor.session_id);
     }
     return { status: 'unbound', ...summary(this.cursor(cursor.session_id)!) };
   }
@@ -184,8 +179,8 @@ class CodexWatcher {
       await this.follow(cursor, path);
       this.store.db.prepare(`
         UPDATE adapter_cursors SET stop_pending = 0, active_turn_json = NULL, line_buffer = ''
-        WHERE adapter_key = ?
-      `).run(cursor.adapter_key);
+        WHERE adapter_key = ? AND stopped_at IS ?
+      `).run(cursor.adapter_key, cursor.stopped_at);
       return true;
     } catch {
       return false;
@@ -210,8 +205,8 @@ class CodexWatcher {
         throw new BangError('codex_transcript_changed', 'Could not verify the bound Codex transcript');
       }
       if (relocatedKey) {
-        this.store.db.prepare('UPDATE adapter_cursors SET adapter_key = ? WHERE adapter_key = ?')
-          .run(relocatedKey, cursor.adapter_key);
+        this.store.db.prepare('UPDATE adapter_cursors SET adapter_key = ? WHERE adapter_key = ? AND stopped_at IS ?')
+          .run(relocatedKey, cursor.adapter_key, cursor.stopped_at);
         cursor.adapter_key = relocatedKey;
       }
       let offset = cursor.byte_offset;
@@ -258,9 +253,9 @@ class CodexWatcher {
         // Episode identity makes a replay idempotent if the process dies before this checkpoint.
         this.store.db.prepare(`
           UPDATE adapter_cursors SET byte_offset = ?, line_buffer = ?, active_turn_json = ?, last_turn_id = ?, updated_at = ?
-          WHERE adapter_key = ?
+          WHERE adapter_key = ? AND stopped_at IS ?
         `).run(offset, pending.toString('base64'), active ? JSON.stringify(active) : null, lastTurnId,
-          new Date().toISOString(), cursor.adapter_key);
+          new Date().toISOString(), cursor.adapter_key, cursor.stopped_at);
       }
     } finally {
       await file.close();
@@ -268,10 +263,15 @@ class CodexWatcher {
   }
 }
 
+export function drainStoppedCapture(store: BangStore, project: string) {
+  return new CodexWatcher(store, project).stop();
+}
+
 export function codexCapture() {
   let watcher: CodexWatcher | undefined;
 
   return {
+    watcherHarnesses: [harness],
     onStart({ store, paths }: Pick<RouteContext, 'store' | 'paths'>) {
       const runtime = new CodexWatcher(store, paths.root);
       watcher = runtime;

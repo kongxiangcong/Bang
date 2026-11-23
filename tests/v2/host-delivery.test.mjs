@@ -13,8 +13,9 @@ import { createProject } from './cli.mjs';
 
 const cli = fileURLToPath(new URL('../../packages/adapters/src/cli.ts', import.meta.url));
 
-async function mcp(t, project, entry = cli) {
+async function mcp(t, project, entry = cli, environment = {}) {
   const child = spawn(process.execPath, ['--experimental-strip-types', entry, '--project', project, 'mcp'], {
+    env: { ...process.env, ...environment },
     stdio: ['pipe', 'pipe', 'ignore'],
   });
   const replies = createInterface({ input: child.stdout })[Symbol.asyncIterator]();
@@ -200,7 +201,63 @@ test('停止结束逐轮投递的采集区间，重绑只恢复指定会话，�
   })).status, 'capture_inactive');
 });
 
-test('已启用的 Codex watcher 在采集前后接管缺少原生标识的投递', async (t) => {
+test('逐轮投递必须先绑定，停采后的投递不重启服务', async (t) => {
+  const { path, run } = await createProject(t);
+  await run(['topic', 'create', 'first']);
+  const host = await mcp(t, path);
+  const turn = {
+    harness: 'cursor', session_id: 'native-session', source_turn_id: 'native-1',
+    user_text: 'What is gated?', assistant_text: 'The update.',
+  };
+  assert.equal((await host.call('bang_record_turn', turn)).status, 'capture_inactive');
+  assert.equal((await host.call('bang_record_turn', { ...turn, topic_id: 'first' })).status, 'capture_inactive');
+  const binding = await host.call('bang_topics', { action: 'bind', slug: 'first', harness: turn.harness, session_id: turn.session_id });
+  await run(['stop']);
+  assert.equal((await host.call('bang_record_turn', { ...turn, binding_id: binding.bindingId })).status, 'capture_inactive');
+  assert.equal((await run(['deliver'], { ...turn, session_id: 'never-bound' })).status, 'capture_inactive');
+  assert.equal((await run(['status'])).running, false);
+  assert.deepEqual((await run(['episode', 'list'])).episodes, []);
+});
+
+test('迟到投递只有能证明在原采集区间内完成时才保存', async (t) => {
+  const { path, run } = await createProject(t);
+  await run(['topic', 'create', 'first']);
+  await run(['topic', 'create', 'second']);
+  const host = await mcp(t, path);
+  const bind = (slug) => host.call('bang_topics', { action: 'bind', slug, harness: 'cursor', session_id: 'native-session' });
+  const first = await bind('first');
+  const beforeStop = new Date().toISOString();
+  await run(['stop']);
+  const turn = {
+    harness: 'cursor', session_id: 'native-session', binding_id: first.bindingId, occurred_at: beforeStop,
+    source_turn_id: 'delayed', user_text: 'What is gated?', assistant_text: 'The update.',
+  };
+  const offline = await host.call('bang_record_turn', {
+    ...turn, source_turn_id: 'delayed-offline', occurred_at: undefined, completed_at: beforeStop,
+  });
+  assert.equal(offline.status, 'recorded');
+  assert.deepEqual(offline.episode.messages.map(({ timestamp }) => timestamp), [beforeStop, beforeStop]);
+  assert.equal((await run(['status'])).running, false);
+  const gap = new Date().toISOString();
+  await delay(5);
+  const second = await bind('second');
+  const submit = (override) => host.call('bang_record_turn', { ...turn, ...override });
+  assert.equal((await submit({})).status, 'capture_inactive');
+  assert.equal((await submit({ completed_at: gap })).status, 'capture_inactive');
+  assert.equal((await submit({ binding_id: second.bindingId, occurred_at: gap, completed_at: gap })).status, 'capture_inactive');
+  await run(['unbind', '--harness', 'cursor', '--session', 'native-session']);
+  assert.equal((await submit({
+    binding_id: second.bindingId, occurred_at: undefined, completed_at: new Date().toISOString(),
+  })).status, 'capture_inactive');
+  const recorded = await submit({ completed_at: beforeStop });
+  assert.equal(recorded.status, 'recorded');
+  assert.equal((await submit({ completed_at: beforeStop })).status, 'duplicate');
+  assert.deepEqual((await run(['episode', 'get', recorded.episode.id, '--topic', 'first'])).messages.map(({ content }) => content),
+    [turn.user_text, turn.assistant_text]);
+  assert.deepEqual((await run(['episode', 'list', '--topic', 'second'])).episodes, []);
+});
+
+test('Codex watcher 在采集前后按原生轮次核对宿主投递', async (t) => {
   const { path, run } = await createProject(t);
   const transcript = join(path, 'codex.jsonl');
   const row = (type, payload) => JSON.stringify({ timestamp: new Date().toISOString(), type, payload }) + '\n';
@@ -214,6 +271,8 @@ test('已启用的 Codex watcher 在采集前后接管缺少原生标识的投�
   };
   const submit = (more) => host.call('bang_record_turn', { ...turn, ...more });
   assert.equal((await submit()).status, 'watcher_managed');
+  assert.equal((await submit({ source_turn_id: 'before-binding' })).status, 'watcher_managed');
+  assert.equal((await submit({ source_turn_id: 'codex-native', assistant_text: 'An unverified reply.' })).status, 'watcher_managed');
   assert.equal((await host.call('bang_query_board', { topic_id: receipt.topic.id })).topic.id, receipt.topic.id);
   assert.equal((await host.call('bang_sync', { topic_id: receipt.topic.id })).status, 'idle');
   await appendFile(transcript,
@@ -241,7 +300,31 @@ test('已启用的 Codex watcher 在采集前后接管缺少原生标识的投�
   const duplicate = await submit({ source_turn_id: 'codex-native' });
   assert.equal(duplicate.status, 'duplicate');
   assert.equal(duplicate.episode.id, episodes[0].id);
+  assert.equal((await submit({ source_turn_id: 'codex-native', assistant_text: 'An unverified revision.' })).status, 'watcher_managed');
   assert.equal((await run(['skill', 'status'])).topics[0].turnCount, 1);
   await run(['unbind', '--session', 'codex-session']);
   assert.equal((await submit({ source_turn_id: 'codex-unbound' })).status, 'capture_inactive');
+});
+
+test('Codex 通过 MCP 绑定时使用宿主提供的原文路径与当前轮次', async (t) => {
+  const { path, run } = await createProject(t);
+  const transcript = join(path, 'provided.jsonl');
+  const row = (type, payload) => JSON.stringify({ timestamp: new Date().toISOString(), type, payload }) + '\n';
+  const event = (type, turn_id, extra) => row('event_msg', { type, turn_id, ...extra });
+  await run(['topic', 'create', 'first']);
+  await writeFile(transcript, row('session_meta', { id: 'host-thread', source: 'cli', cwd: path }) +
+    event('task_started', 'host-turn') + event('user_message', 'host-turn', { message: 'What is gated?' }));
+  const env = { CODEX_THREAD_ID: 'host-thread', CODEX_TRANSCRIPT_PATH: transcript };
+  const invalid = await mcp(t, path, cli, { ...env, CODEX_TURN_ID: 'wrong-turn' });
+  assert.equal((await invalid.call('bang_topics', { action: 'bind', slug: 'first' })).code, 'codex_turn_not_active');
+  const host = await mcp(t, path, cli, { ...env, CODEX_TURN_ID: 'host-turn' });
+  assert.equal((await host.call('bang_topics', { action: 'bind', slug: 'first' })).status, 'bound');
+  await appendFile(transcript,
+    event('agent_message', 'host-turn', { phase: 'final_answer', message: 'The update.' }) +
+    event('task_complete', 'host-turn', { last_agent_message: 'The update.' }));
+  await run(['stop']);
+  const { episodes } = await run(['episode', 'list']);
+  assert.deepEqual(episodes.map(({ turnId, messages }) => [turnId, ...messages.map(({ content }) => content)]), [
+    ['host-turn', 'What is gated?', 'The update.'],
+  ]);
 });

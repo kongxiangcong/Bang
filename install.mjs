@@ -76,7 +76,7 @@ function install() {
   let published = false;
   try {
     // Each daemon keeps the source files from its own launch, including lazy imports.
-    for (const workspace of ['adapters', 'core']) {
+    for (const workspace of ['adapters', 'core', 'web']) {
       const path = join('packages', workspace);
       mkdirSync(join(release, path), { recursive: true });
       cpSync(join(source, path, 'package.json'), join(release, path, 'package.json'));

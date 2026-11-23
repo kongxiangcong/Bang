@@ -3,5 +3,5 @@
   "version": "2.0.0",
   "private": true,
   "type": "module",
-  "dependencies": { "@bang/core": "2.0.0" }
+  "dependencies": { "@bang/core": "2.0.0", "@bang/web": "2.0.0" }
 }

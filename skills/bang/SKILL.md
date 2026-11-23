@@ -31,7 +31,7 @@ description: 在当前学习目录开始或接续 Bang 的专题记录，查看�
 
 ## 宿主投递
 
-由宿主集成在助手回复完整结束后，把专题讨论的问答原文、原生会话 ID 和稳定原生轮次 ID 交给 `bang_record_turn`。宿主应保留启动回执的 `bindingId`，作为 `binding_id` 随本次采集区间内的原文提交。`recorded` 和 `duplicate` 回执提供可回读的 Episode；以回执确认已保存的问答。只提交实际发生的专题讨论。
+由宿主集成在助手回复完整结束后，把专题讨论的问答原文、原生会话 ID 和稳定原生轮次 ID 交给 `bang_record_turn`。宿主应保留启动回执的 `bindingId`，作为 `binding_id` 随本次采集区间内的原文提交。主动停止项目后，迟到的投递须附原 `binding_id` 及宿主原生的 ISO 8601 完成时间 `completed_at`。`recorded` 和 `duplicate` 回执提供可回读的 Episode。只提交实际发生的专题讨论，以回执确认保存结果。
 
 宿主可用以下命令启动 Bang 的 stdio MCP 服务，或将同一投递 JSON 交给 `deliver` 的标准输入。
 

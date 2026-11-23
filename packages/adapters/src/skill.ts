@@ -1,18 +1,10 @@
 import { basename } from 'node:path';
 import { BangError } from '../../core/src/store.ts';
-import { captureBindings } from './capture-bindings.ts';
-
-type ServiceCall = <Result = Record<string, unknown>>(path: string, method?: string, body?: unknown) => Promise<Result>;
+import { bindHost, captureBindings, unbindHost } from './capture-bindings.ts';
+import type { HostBinding, ServiceCall } from './capture-bindings.ts';
 
 type Topic = { id: string; slug: string; title: string; status: 'active' | 'archived' };
 type Topics = { topics: Topic[] };
-type BindingOptions = {
-  harness: string;
-  sessionId: string;
-  transcript?: string;
-  turnId?: string;
-  includeActive: boolean;
-};
 
 async function initialTopic(call: ServiceCall, project: string): Promise<Topic> {
   const title = basename(project).trim() || 'Bang';
@@ -30,7 +22,7 @@ async function startTopic(call: ServiceCall, project: string, boundTopicId?: str
   if (boundTopicId !== undefined) {
     const topic = topics.find(({ id }) => id === boundTopicId);
     if (!topic) throw new BangError('topic_not_found', '当前会话绑定的专题不存在。', 404);
-    return { topic };
+    if (topic.status === 'active') return { topic };
   }
 
   if (!topics.length && selector === undefined) {
@@ -71,7 +63,7 @@ async function reasoningConfiguration(call: ServiceCall) {
   }
 }
 
-export async function startSkill(call: ServiceCall, project: string, { topic: selector, ...options }: BindingOptions & { topic?: string }) {
+export async function startSkill(call: ServiceCall, project: string, { topic: selector, ...options }: HostBinding & { topic?: string }) {
   const watching = options.harness === 'codex';
   const current = await captureBindings(call);
   const existing = current.find(({ sourceTool, sessionId, enabled }) =>
@@ -80,8 +72,8 @@ export async function startSkill(call: ServiceCall, project: string, { topic: se
   if (selection.status === 'choose_topic') return selection;
   const { topic } = selection;
   const model = await reasoningConfiguration(call);
-  const endpoint = watching ? '/api/codex/bindings' : '/api/delivery/bindings';
-  const binding = await call<{ status: string; enabled: boolean; bindingId?: string }>(endpoint, 'POST', { ...options, topicId: topic.id });
+  if (existing && existing.topicId !== topic.id) await unbindHost(call, options);
+  const binding = await bindHost(call, options, topic.id);
   if (binding.status !== 'bound' || !binding.enabled) {
     throw new BangError('capture_not_ready', '会话采集尚未生效。');
   }

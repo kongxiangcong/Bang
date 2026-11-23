@@ -4,7 +4,7 @@ import { open, readdir, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { BangError } from '../../core/src/store.ts';
-import { bangOperationCall } from '../../core/src/capture-filter.ts';
+import { bangCommandLine } from '../../core/src/capture-filter.ts';
 
 export const chunkSize = 128 * 1024;
 const decoder = new TextDecoder('utf-8', { fatal: true });
@@ -14,6 +14,27 @@ type TranscriptRow = { type?: unknown; timestamp?: unknown; payload?: JsonObject
 
 function object(value: unknown): JsonObject | undefined {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonObject : undefined;
+}
+
+function bangOperationCall(entry: JsonObject) {
+  if (typeof entry.name !== 'string') return false;
+  const skillLaunch = /[\\/](?:\.agents[\\/]skills[\\/]bang[\\/]launch\.mjs|packages[\\/]adapters[\\/]src[\\/]cli\.ts)['"]?\s+skill\s+(?:start|status|stop)\b/u;
+  if (entry.type === 'custom_tool_call') {
+    if (!/(?:^|__)exec$/u.test(entry.name) || typeof entry.input !== 'string') return false;
+    const command = /\btools\.exec_command\s*\(\s*\{[\s\S]*?\bcmd\s*:\s*["'`]([^\n]*)/u.exec(entry.input)?.[1];
+    return command !== undefined && (bangCommandLine(command) || skillLaunch.test(command));
+  }
+  if (entry.type !== 'function_call') return false;
+  if (/(?:^|__)bang_(?:topics|record_turn|sync|query_board|update_epistemic)$/u.test(entry.name)) return true;
+  if (!/(?:^|__)exec_command$/u.test(entry.name) || typeof entry.arguments !== 'string') return false;
+  try {
+    const { cmd } = JSON.parse(entry.arguments) ?? {};
+    return typeof cmd === 'string' && cmd.split(/\r?\n|\s*(?:&&|\|\||;)\s*/u).some((part) =>
+      bangCommandLine(part) || skillLaunch.test(part));
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    return false;
+  }
 }
 
 export function parseRow(line: Buffer): TranscriptRow | undefined {
