@@ -98,6 +98,19 @@ async function waitForEpisodes(run, slug, count) {
   return episodes;
 }
 
+async function waitForMarker(path) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    try {
+      await readFile(path);
+      return;
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+      await delay(50);
+    }
+  }
+  assert.fail(`Legacy fixture did not reach ${path}`);
+}
+
 async function readWhiteboard({ url, topic }) {
   const exchange = await fetch(url, { redirect: 'manual' });
   assert.equal(exchange.status, 303);
@@ -200,32 +213,62 @@ test('源码更新期间原项目沿用原版本采集，新启动的项目使�
   assert.deepEqual((await readDuring()).messages.map(({ content }) => content), [question, answer]);
 });
 
-test('新版技能停止旧守护进程后保留末轮，后续状态查询不会恢复旧绑定', async (t) => {
+test('新版技能停止旧守护进程时封住已经开始读取的旧 watcher', async (t) => {
   const { checkout, install, learningDirectory } = await installation(t, { copySource: true });
   const server = join(checkout, 'packages', 'core', 'src', 'server.ts');
-  const current = await readFile(server, 'utf8');
+  const store = join(checkout, 'packages', 'core', 'src', 'store.ts');
+  const watcher = join(checkout, 'packages', 'adapters', 'src', 'codex-watcher.ts');
+  const [current, currentStore, currentWatcher] = await Promise.all([server, store, watcher].map((file) => readFile(file, 'utf8')));
   const legacy = current.replace(/      if \(method === 'POST' && url\.pathname === '\/api\/stop'\) \{[\s\S]*?\n      \}/u, `
       if (method === 'POST' && url.pathname === '/api/stop') {
+        const { writeFile } = await import('node:fs/promises');
+        await writeFile(paths.root + '/legacy-stop-received', '');
         response.once('finish', () => void close());
         return json({ running: false });
-      }`).replace(', ready, captureStop: true', ', ready');
+      }`).replace(', ready, captureStop: true', ', ready').replace('        store.clearLegacyCaptureFences();\n', '');
+  const legacyStore = currentStore.replace("schema + 'PRAGMA user_version = 7;'",
+    "schema.replace(legacyCaptureFences, '') + 'PRAGMA user_version = 6;'");
+  const legacyWatcher = currentWatcher.replace('      const { size } = await file.stat();', `
+      const { access, writeFile } = await import('node:fs/promises');
+      const { setTimeout: wait } = await import('node:timers/promises');
+      await writeFile(this.project + '/legacy-poll-started', '');
+      while (!await access(this.project + '/resume-legacy-poll').then(() => true, () => false)) await wait(20);
+      const { size } = await file.stat();`);
   assert.notEqual(legacy, current);
-  await writeFile(server, legacy);
+  assert.notEqual(legacyStore, currentStore);
+  assert.notEqual(legacyWatcher, currentWatcher);
+  await Promise.all([writeFile(server, legacy), writeFile(store, legacyStore), writeFile(watcher, legacyWatcher)]);
   await install();
   const project = await learningDirectory('gdn', 'legacy-watcher');
   await project.start();
 
-  await writeFile(server, current);
-  await install();
-  await appendFile(project.transcript, beginTurn('before-stop', '停止前已完成的问答？') +
-    completeTurn('before-stop', '这一轮仍然属于原采集区间。'));
-  assert.deepEqual((await project.run(['skill', 'stop'])).unverifiedSessions, []);
-  const afterStop = new Date().toISOString();
-  await appendFile(project.transcript, (beginTurn('after-stop', '停采以后？') +
-    completeTurn('after-stop', '这一轮应跳过。')).replaceAll(timestamp, afterStop));
+  let stopping;
+  try {
+    await waitForMarker(join(project.cwd, 'legacy-poll-started'));
+    await Promise.all([writeFile(server, current), writeFile(store, currentStore), writeFile(watcher, currentWatcher)]);
+    await install();
+    await appendFile(project.transcript, beginTurn('before-stop', '停止前已完成的问答？') +
+      completeTurn('before-stop', '这一轮仍然属于原采集区间。'));
+    stopping = project.run(['skill', 'stop']);
+    stopping.catch(() => {});
+    await waitForMarker(join(project.cwd, 'legacy-stop-received'));
+    const afterStop = new Date().toISOString();
+    await appendFile(project.transcript, (beginTurn('after-stop', '停采以后？') +
+      completeTurn('after-stop', '这一轮应跳过。')).replaceAll(timestamp, afterStop));
+  } finally {
+    await writeFile(join(project.cwd, 'resume-legacy-poll'), '');
+  }
+  assert.deepEqual((await stopping).unverifiedSessions, []);
   assert.deepEqual((await project.run(['skill', 'status'])).topics[0].sessions, []);
   const episodes = await waitForEpisodes(project.run, 'gdn', 1);
   assert.deepEqual(episodes.map(({ turnId }) => turnId), ['before-stop']);
+  const source = await project.run(['episode', 'get', episodes[0].id]);
+  assert.deepEqual(source.messages.map(({ content }) => content), ['停止前已完成的问答？', '这一轮仍然属于原采集区间。']);
+  const explicit = join(project.cwd, 'explicit-import.json');
+  await writeFile(explicit, JSON.stringify({
+    sourceTool: 'codex', sessionId: 'legacy-watcher', turnId: 'explicit-import', messages: source.messages,
+  }));
+  assert.equal((await project.run(['ingest', '--topic', 'gdn', '--file', explicit])).status, 'recorded');
 });
 
 test('更新安装失败后仍可用原有技能启动并访问原专题', async (t) => {

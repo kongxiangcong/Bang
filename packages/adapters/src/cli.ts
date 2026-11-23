@@ -5,7 +5,7 @@ import { text as readStream } from 'node:stream/consumers';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import type { Discovery } from '../../core/src/server.ts';
-import { probeService, readDiscovery, requestService, startServer } from '../../core/src/server.ts';
+import { discoveryIdentity, probeService, readDiscovery, requestService, startServer } from '../../core/src/server.ts';
 import { BangError, BangStore, requiredString } from '../../core/src/store.ts';
 import { prepareDelivery } from '../../core/src/delivery.ts';
 import { workspacePaths } from '../../core/src/workspace.ts';
@@ -85,16 +85,19 @@ async function call<Result = Record<string, unknown>>(service: Discovery, path: 
   return result as Result;
 }
 
-async function stopProject(project: string) {
-  const requestedAt = Date.now();
+async function stopProject(project: string, requestedAt = Date.now()): Promise<{ running: boolean; unverifiedSessions: string[] }> {
   const paths = workspacePaths(project);
   const discovered = readDiscovery(paths);
   const health = discovered && await probeService(discovered);
   if (!health && !existsSync(paths.database)) return { running: false, unverifiedSessions: [] };
   const local = health?.captureStop ? undefined : new BangStore(paths.database);
+  const legacy = local && discovered && health ? {
+    daemon: discoveryIdentity(discovered),
+    ownsDiscovery: () => readDiscovery(paths)?.token === discovered.token,
+  } : undefined;
   try {
-    // Older daemons only close. End the intervals before that daemon can release discovery.
-    local?.endCapture(requestedAt);
+    // Fence the old daemon's in-flight reads before it can release discovery.
+    if (local && !local.endCapture(requestedAt, legacy)) return await stopProject(project, requestedAt);
     if (discovered && health) {
       const result = await call<{ running: boolean; unverifiedSessions: string[] }>(discovered, '/api/stop', 'POST');
       for (let attempt = 0; attempt < 100 && readDiscovery(paths)?.token === discovered.token; attempt += 1) {
@@ -105,6 +108,7 @@ async function stopProject(project: string) {
       }
       if (!local) return result;
     }
+    if (legacy) local!.clearLegacyCaptureFences(legacy.daemon);
     return { running: false, ...await drainStoppedCapture(local!, paths.root) };
   } finally {
     local?.close();

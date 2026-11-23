@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { IncomingMessage, Server, ServerResponse } from 'node:http';
+import { connect } from 'node:net';
 import { BangError, BangStore, requiredString } from './store.ts';
 import { ReasoningEngine } from './reasoning/engine.ts';
 import { routeReasoning } from './reasoning/routes.ts';
@@ -67,6 +68,10 @@ export function readDiscovery(paths: ProjectPaths) {
   return parseDiscovery(readDiscoveryFile(paths.discovery), paths.root);
 }
 
+export function discoveryIdentity(service: Discovery) {
+  return `${service.pid}:${service.started_at}`;
+}
+
 export function requestService(service: Discovery, path: string, init?: RequestInit) {
   const headers = new Headers(init?.headers);
   headers.set('Authorization', `Bearer ${service.token}`);
@@ -84,6 +89,19 @@ export async function probeService(service: Discovery) {
   } catch {
     return undefined;
   }
+}
+
+function serviceMayStillListen(port: number) {
+  return new Promise<boolean>((resolve) => {
+    const socket = connect({ port, host });
+    function finish(listening: boolean) {
+      socket.destroy();
+      resolve(listening);
+    }
+    socket.setTimeout(500, () => finish(true));
+    socket.once('connect', () => finish(true));
+    socket.once('error', (error: NodeJS.ErrnoException) => finish(error.code !== 'ECONNREFUSED'));
+  });
 }
 
 function writeDiscovery(path: string, service: Discovery) {
@@ -352,10 +370,17 @@ export async function startServer(project: string, options: RuntimeOptions = {})
         await close();
         return { discovery: previous, close, owned: false };
       }
+      const previousIdentity = previous && discoveryIdentity(previous);
+      const fenced = previousIdentity !== undefined && store.hasLegacyCaptureFence(previousIdentity);
+      if (previous && fenced && await serviceMayStillListen(previous.port)) {
+        throw new BangError('service_stopping', 'The previous Bang service is still stopping', 503);
+      }
       const claimed = store.transaction(() => {
         if (readDiscoveryFile(paths.discovery) !== observed) return false;
+        if (!fenced && previousIdentity !== undefined && store.hasLegacyCaptureFence(previousIdentity)) return false;
         writeWorkspaceDefaults(paths);
         writeDiscovery(paths.discovery, service);
+        store.clearLegacyCaptureFences();
         return true;
       });
       if (claimed) break;

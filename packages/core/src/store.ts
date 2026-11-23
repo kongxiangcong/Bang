@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-import { deliveryBindings, migrateCaptureStop, migrateReasoningSessions, schema, stoppedDeliveryIntervals } from './schema.ts';
+import { deliveryBindings, legacyCaptureFences, migrateCaptureStop, migrateReasoningSessions, schema, stoppedDeliveryIntervals } from './schema.ts';
 
 export class BangError extends Error {
   code: string;
@@ -54,6 +54,8 @@ export type EpisodeInput = {
   revisionId?: unknown;
   replacesEpisodeId?: unknown;
 };
+
+type CaptureSource = { harness: string; session_id: string; topic_id: string };
 
 function episodeFromRow(row: EpisodeRow) {
   return {
@@ -120,7 +122,7 @@ export class BangStore {
       this.transaction(() => {
         const state = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
         if (state.user_version === 0) {
-          this.db.exec(schema + 'PRAGMA user_version = 6;');
+          this.db.exec(schema + 'PRAGMA user_version = 7;');
           return;
         }
         if (state.user_version === 1) this.db.exec('ALTER TABLE adapter_cursors ADD COLUMN active_turn_json TEXT;');
@@ -134,8 +136,11 @@ export class BangStore {
           this.db.exec(deliveryBindings);
         }
         if (state.user_version >= 1 && state.user_version <= 5) {
-          this.db.exec(stoppedDeliveryIntervals + 'PRAGMA user_version = 6;');
-        } else if (state.user_version !== 6) {
+          this.db.exec(stoppedDeliveryIntervals);
+        }
+        if (state.user_version >= 1 && state.user_version <= 6) {
+          this.db.exec(legacyCaptureFences + 'PRAGMA user_version = 7;');
+        } else if (state.user_version !== 7) {
           throw new Error(`Unsupported Bang database version ${state.user_version}`);
         }
       });
@@ -162,19 +167,42 @@ export class BangStore {
     this.db.close();
   }
 
-  endCapture(stoppedAt: number) {
-    this.transaction(() => {
-      this.db.prepare(`
+  endCapture(stoppedAt: number, legacy?: { daemon: string; ownsDiscovery: () => boolean }) {
+    return this.transaction(() => {
+      if (legacy && !legacy.ownsDiscovery()) return false;
+      // A legacy watcher can keep writing until we hold the same writer lock.
+      const cutoff = legacy ? Date.now() : stoppedAt;
+      const cursors = this.db.prepare(`
         UPDATE adapter_cursors
         SET enabled = 0, stopped_at = ?, stop_pending = (file_signature IS NOT NULL), updated_at = ?
         WHERE enabled = 1
-      `).run(stoppedAt, new Date(stoppedAt).toISOString());
+        RETURNING harness, session_id, topic_id
+      `).all(cutoff, new Date(cutoff).toISOString()) as CaptureSource[];
       this.db.prepare(`
         INSERT INTO stopped_delivery_intervals (binding_id, harness, session_id, topic_id, started_at, ended_at)
         SELECT binding_id, harness, session_id, topic_id, started_at, ? FROM delivery_bindings WHERE ended_at IS NULL
-      `).run(stoppedAt);
-      this.db.prepare('UPDATE delivery_bindings SET ended_at = ? WHERE ended_at IS NULL').run(stoppedAt);
+      `).run(cutoff);
+      const deliveries = this.db.prepare(`
+        UPDATE delivery_bindings SET ended_at = ? WHERE ended_at IS NULL
+        RETURNING harness, session_id, topic_id
+      `).all(cutoff) as CaptureSource[];
+      if (legacy) {
+        const fence = this.db.prepare('INSERT OR IGNORE INTO legacy_capture_fences VALUES (?, ?, ?, ?)');
+        for (const source of [...cursors, ...deliveries]) {
+          fence.run(source.harness, source.session_id, source.topic_id, legacy.daemon);
+        }
+      }
+      return true;
     });
+  }
+
+  clearLegacyCaptureFences(daemon?: string) {
+    if (daemon === undefined) this.db.exec('DELETE FROM legacy_capture_fences');
+    else this.db.prepare('DELETE FROM legacy_capture_fences WHERE daemon = ?').run(daemon);
+  }
+
+  hasLegacyCaptureFence(daemon: string) {
+    return Boolean(this.db.prepare('SELECT 1 FROM legacy_capture_fences WHERE daemon = ? LIMIT 1').get(daemon));
   }
 
   listTopics() {

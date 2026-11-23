@@ -22,6 +22,34 @@ export const stoppedDeliveryIntervals = `
   ) STRICT;
 `;
 
+function captureFenceTrigger(table: string, event: string, row: 'NEW' | 'OLD') {
+  return `
+    CREATE TRIGGER IF NOT EXISTS legacy_capture_${table}_${event.toLowerCase()}
+    BEFORE ${event} ON ${table}
+    WHEN EXISTS (
+      SELECT 1 FROM legacy_capture_fences AS fence
+      WHERE fence.harness = ${row}.harness AND fence.session_id = ${row}.session_id
+        AND fence.topic_id = ${row}.topic_id
+    ) BEGIN
+      SELECT RAISE(ABORT, 'Capture interval is shutting down');
+    END;
+  `;
+}
+
+export const legacyCaptureFences = `
+  CREATE TABLE IF NOT EXISTS legacy_capture_fences (
+    harness TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    topic_id TEXT NOT NULL,
+    daemon TEXT NOT NULL,
+    PRIMARY KEY (harness, session_id, topic_id, daemon)
+  ) STRICT;
+  ${captureFenceTrigger('episodes', 'INSERT', 'NEW')}
+  ${captureFenceTrigger('adapter_cursors', 'UPDATE', 'OLD')}
+  ${captureFenceTrigger('adapter_cursors', 'DELETE', 'OLD')}
+  ${captureFenceTrigger('delivery_bindings', 'UPDATE', 'OLD')}
+`;
+
 const sessionSubgraphs = `
   CREATE TABLE IF NOT EXISTS session_subgraphs (
     topic_id TEXT NOT NULL REFERENCES topics(id),
@@ -125,6 +153,7 @@ export const schema = `
     layout_json TEXT NOT NULL,
     updated_at TEXT NOT NULL
   ) STRICT;
+  ${legacyCaptureFences}
 `;
 
 export const migrateReasoningSessions = `
