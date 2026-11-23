@@ -29,6 +29,10 @@ export async function routeReasoning(engine: ReasoningEngine, context: RouteCont
   }
   if (request.method === 'GET' && action === 'jobs') {
     const topic = store.findTopic(topicId);
+    if (url.searchParams.get('latest_success') === 'true') {
+      const latest = engine.latestSuccessfulJob(topic.id);
+      return respond({ topicId: topic.id, jobs: latest ? [latest] : [] });
+    }
     return respond({ topicId: topic.id, jobs: engine.jobs(topic.id) });
   }
   if (request.method === 'GET' && action === 'revisions') {
