@@ -1,10 +1,20 @@
 import type { RouteContext } from '../server.ts';
-import { requiredString } from '../store.ts';
+import { BangError, requiredString } from '../store.ts';
 import { currentBoard, inspectBoard, readBoard, revisions } from './board.ts';
 import type { ReasoningEngine } from './engine.ts';
+import { configuredProvider } from './provider.ts';
 
 export async function routeReasoning(engine: ReasoningEngine, context: RouteContext) {
-  const { parts, store, request, url, body, json } = context;
+  const { parts, paths, store, request, url, body, json } = context;
+  if (request.method === 'GET' && url.pathname === '/api/reasoning/configuration') {
+    let status = 'configured';
+    try {
+      configuredProvider(paths.config);
+    } catch (error) {
+      status = error instanceof BangError && error.code === 'reasoning_not_configured' ? 'unconfigured' : 'invalid';
+    }
+    return respond({ status });
+  }
   const [api, topics, topicId, action] = parts;
   if (api !== 'api' || topics !== 'topics' || parts.length !== 4) return false;
   if (request.method === 'GET' && (action === 'board' || action === 'inspect')) {
