@@ -67,7 +67,9 @@ npm run bang -- --project /path/to/project topic archive gdn
 
 ## 整理和检查专题
 
-手动同步需要显式配置兼容 Chat Completions JSON Schema 输出的模型。可在 `.bang/config.json` 中设置 `llm.base_url` 和 `llm.model`，也可通过 `BANG_LLM_BASE_URL` 和 `BANG_LLM_MODEL` 覆盖。基础地址通常以 `/v1` 结尾，模型需要凭据时通过环境变量 `BANG_LLM_API_KEY` 提供。从环境配置时，先停止已运行的守护进程，再从配置了环境变量的终端同步。同步时会将本批 Episode 的原文发送到所配置的地址。 单次模型请求默认超时 120 秒，可用 `llm.timeout_ms` 或优先级更高的 `BANG_LLM_TIMEOUT_MS` 设置，接受 1 到 3,600,000 毫秒的整数。
+整理需要显式配置兼容 Chat Completions JSON Schema 输出的模型。可在 `.bang/config.json` 中设置 `llm.base_url` 和 `llm.model`，也可通过 `BANG_LLM_BASE_URL` 和 `BANG_LLM_MODEL` 覆盖。基础地址通常以 `/v1` 结尾，模型需要凭据时通过环境变量 `BANG_LLM_API_KEY` 提供。从环境配置时，请在配置了环境变量的终端重新启动守护进程。
+
+未配置模型时仍会保存原文。配置完成后，守护进程在同一会话累积五个新轮次或静默 90 秒时自动整理，也可手动同步。整理会将本批 Episode 的原文发送到所配置的地址。单次模型请求默认超时 120 秒，可用 `llm.timeout_ms` 或优先级更高的 `BANG_LLM_TIMEOUT_MS` 设置，接受 1 到 3,600,000 毫秒的整数。
 
 ```sh
 npm run bang -- --project /path/to/project sync --topic gdn
@@ -76,7 +78,7 @@ npm run bang -- --project /path/to/project inspect --topic gdn --query "为什�
 npm run bang -- --project /path/to/project export --topic gdn
 ```
 
-`sync --session <source-session-id>` 可指定一个会话。输出包含每个会话的终态。`inspect` 显示路标、关系、个人认知与来源 ID，可用 `episode get` 回读对应问答。专题快照写入 `.bang/topics/<slug>/` 的三份 JSON 文件。
+`status --topic <slug>` 显示作业进度。失败会话最多自动重试两次，分别等待 15 秒和 30 秒。可随时用 `sync --session <source-session-id>` 手动同步或重试。`inspect` 显示路标、关系、个人认知与来源 ID，可用 `episode get` 回读对应问答。专题快照写入 `.bang/topics/<slug>/` 的三份 JSON 文件。
 
 ## 开发与归档
 
