@@ -326,3 +326,21 @@ test('模型请求超时支持配置和环境覆盖，拒绝超出上限的值',
   assert.equal(recovered.id, invalid.id);
   assert.equal(recovered.status, 'done');
 });
+
+test('主动停止无需等待未完成的模型整理，已保存原文仍可回读', { timeout: 20_000 }, async (t) => {
+  const modelStarted = Promise.withResolvers();
+  const modelResponse = Promise.withResolvers();
+  const { run } = await fixture(t, () => {
+    modelStarted.resolve();
+    return modelResponse.promise;
+  });
+  t.after(() => modelResponse.resolve(empty));
+  const { episode } = await run(['ingest', '--topic', 'rules'], turn(1, 'How does the rule work?'));
+  const sync = run(['sync', '--topic', 'rules']).catch(() => undefined);
+  await modelStarted.promise;
+
+  assert.deepEqual(await run(['stop']), { running: false, unverifiedSessions: [] });
+  assert.deepEqual(await run(['status']), { running: false });
+  await sync;
+  assert.deepEqual((await run(['episode', 'get', '--topic', 'rules', episode.id])).messages, episode.messages);
+});

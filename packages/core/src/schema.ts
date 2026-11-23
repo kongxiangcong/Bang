@@ -62,6 +62,8 @@ export const schema = `
     line_buffer TEXT NOT NULL DEFAULT '',
     active_turn_json TEXT,
     last_turn_id TEXT,
+    stopped_at INTEGER,
+    stop_pending INTEGER NOT NULL DEFAULT 0,
     updated_at TEXT NOT NULL
   ) STRICT;
   ${sessionSubgraphs}
@@ -128,4 +130,9 @@ export const migrateReasoningSessions = `
     SELECT 1 FROM legacy_session_subgraphs AS legacy
     WHERE legacy.topic_id = jobs.topic_id AND legacy.session_id = jobs.session_id
   ));
+`;
+
+export const migrateCaptureStop = `
+  ALTER TABLE adapter_cursors ADD COLUMN stopped_at INTEGER;
+  ALTER TABLE adapter_cursors ADD COLUMN stop_pending INTEGER NOT NULL DEFAULT 0;
 `;

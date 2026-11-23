@@ -102,7 +102,7 @@ function timestamp(value: unknown) {
 export async function bindingBoundary(file: FileHandle, firstOffset: number) {
   const { size } = await file.stat();
   let lineOffset = firstOffset;
-  let active: { id: string; offset: number } | undefined;
+  let active: { id: string; offset: number; at?: string } | undefined;
   let pending: Buffer = Buffer.alloc(0);
   for (let offset = firstOffset; offset < size;) {
     const chunk = await readChunk(file, offset, size - offset);
@@ -113,7 +113,9 @@ export async function bindingBoundary(file: FileHandle, firstOffset: number) {
       const row = parseRow(line.bytes);
       const entry = row?.payload;
       if (row?.type !== 'event_msg' || typeof entry?.turn_id !== 'string') continue;
-      if (entry.type === 'task_started') active = { id: entry.turn_id, offset: line.offset };
+      if (entry.type === 'task_started') {
+        active = { id: entry.turn_id, offset: line.offset, at: timestamp(row.timestamp) };
+      }
       if ((entry.type === 'task_complete' || entry.type === 'turn_aborted') && active?.id === entry.turn_id) {
         active = undefined;
       }
