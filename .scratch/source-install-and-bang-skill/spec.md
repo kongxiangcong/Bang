@@ -1,6 +1,6 @@
 # Bang v2 源码安装与宿主对话中的 `$bang` 技能
 
-Status: ready-for-agent
+Status: ready-for-human
 
 ## Problem Statement
 
@@ -67,4 +67,6 @@ v1 运行时、验证包、原生 helper、迁移脚本和旧安装流程已退�
 
 ## Further Notes
 
-安装、采集、整理、交互白板和原文回读一起验收。冻结的 Q01–Q20 继续作为 v2 整理质量基准。本规格的分诊状态表示可开始实施，实际联合验收结果由实施阶段记录。[已确认的设计](../../docs/design/source_install_and_bang_skill_design.md) · [停止采集决策](../../docs/adr/0001-stop-ends-capture.md) · [v2 总规格](../bang-v2/spec.md) · [GDN 白板验收](../bang-v2/issues/03-gdn-canvas.md)
+安装、采集、整理、交互白板和原文回读一起验收。冻结的 Q01–Q20 继续作为 v2 整理质量基准。[已确认的设计](../../docs/design/source_install_and_bang_skill_design.md) · [停止采集决策](../../docs/adr/0001-stop-ends-capture.md) · [v2 总规格](../bang-v2/spec.md) · [GDN 白板验收](../bang-v2/issues/03-gdn-canvas.md)
+
+议题 01–06 已解决。第 07 项的真实宿主、自动整理、原文回读与停采重开技术验收已完成，整理内容和交互白板等待用户联合评审。[联合验收记录](issues/07-joint-acceptance.md)
