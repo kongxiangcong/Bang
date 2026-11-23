@@ -1,6 +1,6 @@
-const bangCommand = /^(?:`|\$\s+)?(?:bang|npm run bang --)\s+(?:bind|unbind|sync|status|stop|serve|open|inspect|ingest|topic|episode|export|import|retry|mcp|skill)\b/iu;
+const bangCommand = /^(?:`|\$\s+)?(?:bang|npm run bang --)\s+(?:bind|unbind|sync|status|stop|serve|open|inspect|ingest|deliver|topic|episode|export|import|retry|mcp|skill)\b/iu;
 const skillCommand = /[\\/](?:\.agents[\\/]skills[\\/]bang[\\/]launch\.mjs|packages[\\/]adapters[\\/]src[\\/]cli\.ts)['"]?\s+skill\s+(?:start|status|stop)\b/u;
-const skillPrompt = /^\s*\$bang(?=\s|$)/u;
+const skillPrompt = /^\s*(?:\$|\/)bang(?=\s|$)/u;
 const requestPatterns = [
   /(?:请|帮我|麻烦)?(?:用\s*Bang\s*)?(?:绑定|解绑|同步|打开|查看)(?:\s*Bang\s*)?(?:当前会话|这个会话|此会话|会话|(?:这个|当前)?专题|(?:当前)?白板|状态)/iu,
   /(?:请|帮我|麻烦)?(?:把|将|给|在)(?:当前|这个|该)?(?:会话|聊天)(?:[ \t]*)(?:绑定|解绑)/u,
@@ -13,7 +13,7 @@ const directive = /(?:^|[，,：:。.!?]\s*)(?:(?:请|帮我|麻烦)\s*|(?:顺�
 const startsWithAction = /^(?:(?:用\s*Bang\s*)?(?:把|将|给|在|绑定|解绑|同步|打开|查看)|(?:bind|unbind|sync|open|show|update|change|delete|lock)\b)/iu;
 const namedTopicReceipt = /^[\p{Letter}\p{Number}_-]+(?:[ \t]+[\p{Letter}\p{Number}_-]+)*\s*专题(?:里|中)?(?:有|共有|包含|收录了?)\s*\d+\s*条记录/u;
 const receiptPatterns = [
-  /正在自动记录/u,
+  /正在自动记录|白板已就绪，宿主提交的问答会保存/u,
   /http:\/\/127\.0\.0\.1:\d+\/api\/auth\/exchange\?token=[\w-]{43}(?![\w-])/u,
   /(?:已经?|成功)(?:帮你|为你|把|将)?(?:[^\n。！？]{0,15})?(?:绑定|解绑|同步|打开|修改|改为|改成|删除|锁定|添加|更新|写入|启动|停止)/u,
   /(?:绑定|解绑|同步|打开|保存|修改|更新|删除|启动|停止)(?:已完成|成功|失败)|(?:当前服务|守护进程|Bang 服务)[^\n。！？]{0,26}(?:监听|运行|就绪|端口|已停止)/iu,
@@ -36,7 +36,7 @@ export function bangOperationCall(entry: { type?: unknown; name?: unknown; argum
 }
 
 function sections(text: string, removable: (section: string) => boolean, standalone: (section: string) => boolean) {
-  const parts = text.split(/(\r?\n[ \t]*\r?\n+|(?<=^\$bang)\r?\n)/mu);
+  const parts = text.split(/(\r?\n[ \t]*\r?\n+|(?<=^(?:\$|\/)bang)\r?\n)/mu);
   return parts.flatMap((part, index) => {
     if (index % 2) return [part];
     const lines = /^([^\r\n]+)(\r?\n)([\s\S]+)$/u.exec(part);
@@ -63,7 +63,7 @@ function receipt(text: string) {
   return receiptPatterns.some((pattern) => pattern.test(text.trim()));
 }
 
-export function filterCodexExchange(user: string, assistant: string, operationCall = false) {
+export function filterExchange(user: string, assistant: string, operationCall = false) {
   const request = (section: string) => operationRequest(section, operationCall);
   const isReceipt = (section: string) => receipt(section) || (operationCall && namedTopicReceipt.test(section.trimStart()));
   const question = (section: string) => standaloneQuestion.test(section.split(/\r?\n/u, 1)[0]);

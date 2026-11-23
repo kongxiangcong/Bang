@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { filterExchange } from './capture-filter.ts';
 import type { RouteContext } from './server.ts';
 import { BangError, episodeTimestamp, requiredString } from './store.ts';
 import type { BangStore } from './store.ts';
@@ -120,13 +121,15 @@ function recordDelivery(store: BangStore, input: Record<string, unknown>) {
   const occurredAt = input.occurred_at === undefined ? undefined : episodeTimestamp(input.occurred_at);
   if (binding && occurredAt && Date.parse(occurredAt) < binding.started_at) return { status: 'capture_inactive' };
   if (binding?.rebound && !occurredAt && !suppliedInterval) return { status: 'capture_interval_required' };
+  const exchange = filterExchange(requiredString(input.user_text, 'user_text'), requiredString(input.assistant_text, 'assistant_text'));
+  if (!exchange) return { status: 'skipped_operation' };
   const timestamp = occurredAt ?? new Date().toISOString();
   return store.recordEpisode({
     topicId: available[0].id, sourceTool: harness, sessionId: session, turnId,
     replacesEpisodeId: input.replaces_episode_id,
     messages: [
-      { role: 'user', timestamp, content: requiredString(input.user_text, 'user_text') },
-      { role: 'assistant', timestamp, content: requiredString(input.assistant_text, 'assistant_text') },
+      { role: 'user', timestamp, content: exchange.user },
+      { role: 'assistant', timestamp, content: exchange.assistant },
     ],
   });
 }

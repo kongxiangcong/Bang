@@ -1,11 +1,11 @@
 import { basename } from 'node:path';
 import { BangError } from '../../core/src/store.ts';
+import { captureBindings } from './capture-bindings.ts';
 
 type ServiceCall = <Result = Record<string, unknown>>(path: string, method?: string, body?: unknown) => Promise<Result>;
 
 type Topic = { id: string; slug: string; title: string; status: 'active' | 'archived' };
 type Topics = { topics: Topic[] };
-type Binding = { sourceTool?: string; bindingId?: string; sessionId: string; topicId: string; enabled: boolean };
 type BindingOptions = {
   harness: string;
   sessionId: string;
@@ -71,19 +71,9 @@ async function reasoningConfiguration(call: ServiceCall) {
   }
 }
 
-async function captureBindings(call: ServiceCall, harness: string) {
-  try {
-    return (await call<{ bindings: Binding[] }>('/api/bindings')).bindings;
-  } catch (error) {
-    if (harness !== 'codex' || !(error instanceof BangError) || error.code !== 'not_found') throw error;
-    const { bindings } = await call<{ bindings: Binding[] }>('/api/codex/bindings');
-    return bindings.map((binding) => ({ ...binding, sourceTool: 'codex' }));
-  }
-}
-
 export async function startSkill(call: ServiceCall, project: string, { topic: selector, ...options }: BindingOptions & { topic?: string }) {
   const watching = options.harness === 'codex';
-  const current = await captureBindings(call, options.harness);
+  const current = await captureBindings(call);
   const existing = current.find(({ sourceTool, sessionId, enabled }) =>
     sourceTool === options.harness && sessionId === options.sessionId && enabled);
   const selection = await startTopic(call, project, existing?.topicId, selector);
@@ -91,12 +81,13 @@ export async function startSkill(call: ServiceCall, project: string, { topic: se
   const { topic } = selection;
   const model = await reasoningConfiguration(call);
   const endpoint = watching ? '/api/codex/bindings' : '/api/delivery/bindings';
-  const binding = await call<Binding & { status: string }>(endpoint, 'POST', { ...options, topicId: topic.id });
+  const binding = await call<{ status: string; enabled: boolean; bindingId?: string }>(endpoint, 'POST', { ...options, topicId: topic.id });
   if (binding.status !== 'bound' || !binding.enabled) {
     throw new BangError('capture_not_ready', '会话采集尚未生效。');
   }
-  const bindings = await captureBindings(call, options.harness);
-  const sessions = bindings.filter(({ topicId, enabled }) => enabled && topicId === topic.id).map(({ sessionId }) => sessionId);
+  const bindings = await captureBindings(call);
+  const sessions = bindings.filter(({ topicId, enabled }) => enabled && topicId === topic.id)
+    .map(({ sessionId }) => sessionId);
   const { url } = await call<{ url: string }>('/api/auth/exchange', 'POST', { topic: topic.id });
   const modelMessages = {
     configured: '',

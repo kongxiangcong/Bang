@@ -4,7 +4,7 @@ import { open, readdir, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { BangError } from '../../core/src/store.ts';
-import { bangOperationCall } from './codex-filter.ts';
+import { bangOperationCall } from '../../core/src/capture-filter.ts';
 
 export const chunkSize = 128 * 1024;
 const decoder = new TextDecoder('utf-8', { fatal: true });

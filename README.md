@@ -20,6 +20,22 @@ node install.mjs
 
 更新源码后重跑安装脚本可更新用户级入口。运行中的项目沿用当前版本至下次启动。安装保留用户自行编写或编辑的同名技能，安装失败时原有入口仍可用。
 
+## 在逐轮投递的宿主中使用
+
+让宿主读取同一个已安装的 `~/.agents/skills/bang/SKILL.md`。例如，Antigravity 可在学习项目的 `.agents/skills/bang` 使用指向该安装目录的链接，再用该宿主的技能入口调用 Bang。宿主集成应向技能提供当前原生会话 ID。例如在学习目录运行以下命令，将末尾参数替换为实际会话 ID。
+
+```sh
+node --experimental-strip-types "$HOME/.agents/skills/bang/launch.mjs" skill start --harness antigravity --session 'HOST_SESSION_ID'
+```
+
+在宿主的 MCP 配置中将 `node` 设为 stdio 命令，并传入以下参数。使用安装入口和学习目录的绝对路径。
+
+```json
+["--experimental-strip-types", "/path/to/.agents/skills/bang/launch.mjs", "--project", "/path/to/project", "mcp"]
+```
+
+逐轮投递的宿主在助手完整回复后调用 `bang_record_turn`，提供 `harness`、`session_id`、`source_turn_id`、`user_text` 和 `assistant_text`。将启动回执中的 `bindingId` 随同本次采集区间的投递传为 `binding_id`。宿主集成也可通过同一 CLI 入口向 `deliver` 的标准输入写入这一 JSON 对象。停止或解绑后，重新绑定的会话使用新的采集区间。
+
 ## 使用 CLI
 
 需要 Node.js 22.13 或以上版本。在此仓库运行以下命令，将 `/path/to/project` 替换为已有项目目录。省略 `--project` 时使用当前目录。

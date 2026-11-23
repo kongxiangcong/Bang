@@ -5,7 +5,7 @@ import {
   bindingBoundary, completeLines, consumeRow, locateTranscript, openTranscript, parseRow, readChunk, transcriptMeta,
 } from './codex-transcript.ts';
 import type { ActiveTurn } from './codex-transcript.ts';
-import { filterCodexExchange } from './codex-filter.ts';
+import { filterExchange } from '../../core/src/capture-filter.ts';
 
 type Cursor = {
   adapter_key: string;
@@ -236,7 +236,7 @@ class CodexWatcher {
           active = result.active;
           if (result.ended) lastTurnId = result.ended;
           const turn = result.complete;
-          const exchange = turn && filterCodexExchange(turn.user, turn.assistant, turn.bangOperation);
+          const exchange = turn && filterExchange(turn.user, turn.assistant, turn.bangOperation);
           if (turn && exchange) {
             try {
               this.store.recordEpisode({

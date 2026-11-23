@@ -1,12 +1,12 @@
+import { captureBindings } from './capture-bindings.ts';
+
 type ServiceCall = <Result>(path: string, method?: string, body?: unknown) => Promise<Result>;
 type Topic = { id: string; slug: string; title: string; status: 'active' | 'archived' };
-type CaptureBinding = { sessionId: string; topicId: string; enabled: boolean };
 type Episode = { id: string; sourceTool: string; sessionId: string; turnId: string };
 type Job = { status: string; episodeIds: string[]; revision: number | null };
 
 export async function capturingBindings(call: ServiceCall) {
-  const { bindings } = await call<{ bindings: CaptureBinding[] }>('/api/codex/bindings');
-  return bindings.filter(({ enabled }) => enabled);
+  return (await captureBindings(call)).filter(({ enabled }) => enabled);
 }
 
 export async function skillStatus(call: ServiceCall) {
