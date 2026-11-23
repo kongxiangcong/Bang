@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { text as readStream } from 'node:stream/consumers';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -8,6 +9,7 @@ import { probeService, readDiscovery, requestService, startServer } from '../../
 import { BangError, requiredString } from '../../core/src/store.ts';
 import { workspacePaths } from '../../core/src/workspace.ts';
 import { codexCapture } from './codex-watcher.ts';
+import { startSkill } from './skill.ts';
 
 const args = process.argv.slice(2);
 function option(name: string) {
@@ -24,6 +26,18 @@ function flag(name: string) {
   if (index < 0) return false;
   args.splice(index, 1);
   return true;
+}
+
+function codexSession() {
+  const hostSession = process.env.CODEX_THREAD_ID || process.env.CODEX_SESSION_ID;
+  const sessionId = requiredString(option('--session') ?? (hostSession || undefined), 'Codex session. Provide --session');
+  return { sessionId, includeActive: sessionId === hostSession };
+}
+
+function codexBinding({ sessionId, includeActive }: ReturnType<typeof codexSession>) {
+  const transcript = (option('--transcript') ?? (includeActive && process.env.CODEX_TRANSCRIPT_PATH)) || undefined;
+  const turnId = (option('--turn') ?? (includeActive && process.env.CODEX_TURN_ID)) || undefined;
+  return { sessionId, transcript, turnId, includeActive };
 }
 
 function print(value: unknown) {
@@ -57,7 +71,7 @@ async function ensureService(project: string, port?: number) {
   throw new BangError('start_timeout', 'Bang service did not become ready.');
 }
 
-async function call(service: Discovery, path: string, method = 'GET', body?: unknown) {
+async function call<Result = Record<string, unknown>>(service: Discovery, path: string, method = 'GET', body?: unknown) {
   const response = await requestService(service, path, {
     method,
     ...(body === undefined ? {} : {
@@ -69,7 +83,7 @@ async function call(service: Discovery, path: string, method = 'GET', body?: unk
   if (!response.ok) {
     throw new BangError(String(result.code), String(result.message), response.status);
   }
-  return result;
+  return result as Result;
 }
 
 function startBrowser(url: string) {
@@ -128,17 +142,19 @@ async function main() {
     const paths = workspacePaths(project);
     const discovered = readDiscovery(paths);
     const health = discovered && await probeService(discovered);
-    if (!discovered || !health) return print({ running: false });
     if (command === 'status') {
+      if (!discovered || !health) return print({ running: false });
       return print({ running: true, ready: health.ready, pid: discovered.pid, port: discovered.port,
         ...(health.ready ? await call(discovered, '/api/codex/bindings') : {}),
       });
     }
-    const result = await call(discovered, '/api/stop', 'POST');
-    for (let attempt = 0; attempt < 100 && readDiscovery(paths)?.token === discovered.token; attempt += 1) {
+    if (!health && !existsSync(paths.database)) return print({ running: false, unverifiedSessions: [] });
+    const service = discovered && health ? discovered : await ensureService(project, port);
+    const result = await call(service, '/api/stop', 'POST');
+    for (let attempt = 0; attempt < 100 && readDiscovery(paths)?.token === service.token; attempt += 1) {
       await delay(25);
     }
-    if (readDiscovery(paths)?.token === discovered.token) {
+    if (readDiscovery(paths)?.token === service.token) {
       throw new BangError('stop_timeout', 'Bang service did not stop.');
     }
     return print(result);
@@ -155,21 +171,24 @@ async function main() {
     if (!urlOnly) await startBrowser(String(result.url));
     return print(urlOnly ? result : { opened: true });
   }
+  if (command === 'skill') {
+    const action = args.shift();
+    if (action === 'start') {
+      const binding = codexBinding(codexSession());
+      const service = await ensureService(project, port);
+      return print(await startSkill((path, method, body) => call(service, path, method, body), service.project_root, binding));
+    }
+    throw new BangError('unknown_command', 'Expected skill start.');
+  }
   if (command === 'bind' || command === 'unbind') {
-    const hostSession = process.env.CODEX_THREAD_ID || process.env.CODEX_SESSION_ID;
-    const sessionId = requiredString(option('--session') ?? (hostSession || undefined), 'Codex session. Provide --session');
+    const session = codexSession();
     const service = await ensureService(project, port);
     if (command === 'unbind') {
-      return print(await call(service, `/api/codex/bindings/${encodeURIComponent(sessionId)}`, 'DELETE'));
+      return print(await call(service, `/api/codex/bindings/${encodeURIComponent(session.sessionId)}`, 'DELETE'));
     }
-    const fromHost = sessionId === hostSession;
     const topicId = requiredString(option('--topic'), 'topic');
-    const transcriptOption = option('--transcript');
-    const turnOption = option('--turn');
-    const transcript = (transcriptOption ?? (fromHost && process.env.CODEX_TRANSCRIPT_PATH)) || undefined;
-    const turnId = (turnOption ?? (fromHost && process.env.CODEX_TURN_ID)) || undefined;
     return print(await call(service, '/api/codex/bindings', 'POST', {
-      topicId, sessionId, transcript, turnId, includeActive: fromHost,
+      topicId, ...codexBinding(session),
     }));
   }
   if (command === 'topic') {

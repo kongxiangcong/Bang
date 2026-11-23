@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-import { migrateReasoningSessions, schema } from './schema.ts';
+import { migrateCaptureStop, migrateReasoningSessions, schema } from './schema.ts';
 
 export class BangError extends Error {
   code: string;
@@ -116,13 +116,16 @@ export class BangStore {
       this.transaction(() => {
         const state = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
         if (state.user_version === 0) {
-          this.db.exec(schema + 'PRAGMA user_version = 3;');
+          this.db.exec(schema + 'PRAGMA user_version = 4;');
           return;
         }
         if (state.user_version === 1) this.db.exec('ALTER TABLE adapter_cursors ADD COLUMN active_turn_json TEXT;');
         if (state.user_version === 1 || state.user_version === 2) {
-          this.db.exec(migrateReasoningSessions + 'PRAGMA user_version = 3;');
-        } else if (state.user_version !== 3) {
+          this.db.exec(migrateReasoningSessions);
+        }
+        if (state.user_version >= 1 && state.user_version <= 3) {
+          this.db.exec(migrateCaptureStop + 'PRAGMA user_version = 4;');
+        } else if (state.user_version !== 4) {
           throw new Error(`Unsupported Bang database version ${state.user_version}`);
         }
       });
@@ -147,6 +150,14 @@ export class BangStore {
   close() {
     this.db.exec('PRAGMA wal_checkpoint(PASSIVE)');
     this.db.close();
+  }
+
+  endCapture(stoppedAt: number) {
+    this.db.prepare(`
+      UPDATE adapter_cursors
+      SET enabled = 0, stopped_at = ?, stop_pending = (harness = 'codex'), updated_at = ?
+      WHERE enabled = 1
+    `).run(stoppedAt, new Date(stoppedAt).toISOString());
   }
 
   listTopics() {

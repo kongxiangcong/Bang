@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
-import { appendFile, mkdir, stat, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, rename, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
 import { createProject } from './cli.mjs';
 
 const timestamp = '2026-11-21T12:00:00.000Z';
-const row = (type, payload) => JSON.stringify({ timestamp, type, payload }) + '\n';
-const event = (type, turn_id) => row('event_msg', { type, turn_id });
+const row = (type, payload, at = timestamp) => JSON.stringify({ timestamp: at, type, payload }) + '\n';
+const event = (type, turn_id, at) => row('event_msg', { type, turn_id }, at);
 function prompt(id, text) {
   return row('response_item', {
     type: 'message', role: 'user', content: [{ type: 'input_text', text }],
@@ -16,11 +16,13 @@ function prompt(id, text) {
     },
   });
 }
-const start = (id, question) => event('task_started', id) + prompt(id, question);
-const finish = (id, answer) => row('response_item', {
+const start = (id, question, at) => event('task_started', id, at) + prompt(id, question);
+const finalAnswer = (answer) => row('response_item', {
   type: 'message', role: 'assistant', phase: 'final_answer',
   content: [{ type: 'output_text', text: answer }],
-}) + row('event_msg', { type: 'task_complete', turn_id: id, last_agent_message: answer });
+});
+const finish = (id, answer, at) => finalAnswer(answer) +
+  row('event_msg', { type: 'task_complete', turn_id: id, last_agent_message: answer }, at);
 const turn = (id, question, answer) => start(id, question) + finish(id, answer);
 
 async function project(t) {
@@ -40,10 +42,10 @@ async function project(t) {
   };
 }
 
-async function episodes(run, ids) {
+async function episodes(run, ids, topic = 'gdn') {
   let found;
   for (let attempt = 0; attempt < 30; attempt += 1) {
-    const { episodes } = await run(['episode', 'list', '--topic', 'gdn']);
+    const { episodes } = await run(['episode', 'list', '--topic', topic]);
     found = episodes;
     if (found.length >= ids.length) break;
     await delay(80);
@@ -180,8 +182,105 @@ test('解绑跳过间隔，强杀后续采已绑定会话与按字节拆开的 U
     '中文问题：如何表示门控？', '中文答案：逐元素乘法。',
   ]);
   assert.notEqual(resumed[0].id, resumed[1].id);
-  await run(['stop']);
-  await appendFile(file, turn('while-down', '停机期间仍绑定', '重启后补采'));
+  process.kill(restarted.pid, 'SIGKILL');
+  await appendFile(file, turn('while-down', '意外退出期间仍绑定', '重启后补采'));
   await run(['serve']);
   await episodes(run, [...expected, 'split', 'while-down']);
+});
+
+test('主动停止结束项目内各专题的采集，保留已完成的问答，只重新绑定一个会话', async (t) => {
+  const { run, session } = await project(t);
+  const other = await project(t);
+  const a = await session('capture-a');
+  const b = await session('capture-b');
+  const independent = await other.session('independent');
+  await run(['topic', 'create', 'Other']);
+  await Promise.all([
+    run(['bind', '--topic', 'gdn', '--session', 'capture-a']),
+    run(['bind', '--topic', 'other', '--session', 'capture-b']),
+    other.run(['bind', '--topic', 'gdn', '--session', 'independent']),
+  ]);
+  const { pid: independentPid } = await other.run(['status']);
+  await appendFile(b, start('unfinished', '停止时仍在作答'));
+  await appendFile(a, turn('complete', '停止前已完成的问题', '停止前已完成的回答'));
+  const stopped = await run(['stop']);
+  assert.equal(stopped.running, false);
+  assert.deepEqual(stopped.unverifiedSessions, []);
+  assert.deepEqual(await run(['status']), { running: false });
+
+  await appendFile(a, turn('gap-a', '停采期间的问题', '停采期间的回答'));
+  await appendFile(b, finish('unfinished', '停止后才答完') + turn('gap-b', '停采期间的问题', '停采期间的回答'));
+  await appendFile(independent, turn('continues', '另一项目的问题', '另一项目的回答'));
+  await run(['serve']);
+  assert.ok((await run(['status'])).bindings.every(({ enabled }) => !enabled));
+  const [saved] = await episodes(run, ['complete']);
+  const source = await run(['episode', 'get', '--topic', 'gdn', saved.id]);
+  assert.deepEqual(source.messages.map(({ content }) => content), ['停止前已完成的问题', '停止前已完成的回答']);
+  await episodes(run, [], 'other');
+  await episodes(other.run, ['continues']);
+  assert.equal((await other.run(['status'])).pid, independentPid);
+
+  await run(['bind', '--topic', 'other', '--session', 'capture-b']);
+  await appendFile(a, turn('still-disabled', '只重绑了 B', 'A 继续停采'));
+  await appendFile(b, turn('after-rebind', '重绑后的问题', '重绑后的回答'));
+  await episodes(run, ['after-rebind'], 'other');
+  await episodes(run, ['complete']);
+});
+
+test('停止时点名不可读的来源，恢复后只补采停止前已完成的问答', async (t) => {
+  const { run, session } = await project(t);
+  const a = await session('missing-source');
+  const b = await session('readable-source');
+  await run(['bind', '--topic', 'gdn', '--session', 'missing-source']);
+  await run(['bind', '--topic', 'gdn', '--session', 'readable-source']);
+  const unavailable = a + '.unavailable';
+  await rename(a, unavailable);
+  await appendFile(unavailable, turn('saved-on-recovery', '恢复后可证明的问答', '停止前完成') +
+    start('unfinished-source', '已有最后一条消息但轮次仍未结束') + finalAnswer('详见后续补充'));
+  await appendFile(b, turn('saved-on-stop', '可读的问答', '停止前完成'));
+
+  const stopped = await run(['stop']);
+  assert.deepEqual(stopped, { running: false, unverifiedSessions: ['missing-source'] });
+  await appendFile(unavailable, event('task_complete', 'unfinished-source', new Date().toISOString()));
+  await appendFile(unavailable, start('gap-a', '停止后的问题', new Date().toISOString()) +
+    finish('gap-a', '停止后的回答', new Date().toISOString()));
+  await appendFile(b, turn('gap-b', '另一会话也已停止采集', '停止期间完成'));
+
+  await run(['serve']);
+  await episodes(run, ['saved-on-stop']);
+  assert.ok((await run(['status'])).bindings.every(({ enabled }) => !enabled));
+  await rename(unavailable, a);
+  await episodes(run, ['saved-on-stop', 'saved-on-recovery']);
+});
+
+test('守护进程意外退出后仍可主动停止原采集区间', async (t) => {
+  const { run, session } = await project(t);
+  const file = await session('offline-stop');
+  await run(['bind', '--topic', 'gdn', '--session', 'offline-stop']);
+  process.kill((await run(['status'])).pid, 'SIGKILL');
+  await appendFile(file, turn('before-stop', '意外退出后仍在绑定', '主动停止前的答案'));
+
+  assert.deepEqual(await run(['stop']), { running: false, unverifiedSessions: [] });
+  await appendFile(file, turn('after-stop', '主动停止后的问题', '主动停止后的答案'));
+  await run(['serve']);
+  await episodes(run, ['before-stop']);
+  assert.equal((await run(['status'])).bindings[0].enabled, false);
+});
+
+test('重新绑定移动过的来源时保留已结束轮次，跳过停止前就已开始的进行中轮次', async (t) => {
+  const { run, session } = await project(t);
+  const file = await session('relocated-source');
+  await run(['bind', '--topic', 'gdn', '--session', 'relocated-source']);
+  const moved = file + '.relocated';
+  await rename(file, moved);
+  await appendFile(moved, turn('complete-before-stop', '停止请求前的问题', '停止请求前的答案') +
+    start('unfinished-at-stop', '停止请求时仍在作答'));
+  assert.deepEqual((await run(['stop'])).unverifiedSessions, ['relocated-source']);
+
+  await run(['bind', '--topic', 'gdn', '--transcript', moved], undefined, {
+    CODEX_THREAD_ID: 'relocated-source', CODEX_TURN_ID: 'unfinished-at-stop',
+  });
+  await appendFile(moved, finish('unfinished-at-stop', '现在才作答完毕', new Date().toISOString()) +
+    turn('new-interval', '重新绑定后的问题', '重新绑定后的答案'));
+  await episodes(run, ['complete-before-stop', 'new-interval']);
 });

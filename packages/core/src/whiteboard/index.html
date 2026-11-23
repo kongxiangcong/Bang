@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bang</title>
+  <link rel="stylesheet" href="/whiteboard.css">
+  <script type="module" src="/whiteboard.js"></script>
+</head>
+<body>
+  <header class="toolbar">
+    <a class="wordmark" href="/">Bang</a>
+    <select id="topics" aria-label="专题" hidden></select>
+    <span class="spacer"></span>
+    <input id="search" type="search" aria-label="查找路标" placeholder="查找路标" hidden>
+    <button id="episodes" type="button" hidden>原文记录</button>
+  </header>
+  <p id="status" role="status" hidden></p>
+  <main id="canvas" aria-label="专题白板">
+    <canvas id="connections" aria-hidden="true"></canvas>
+    <div id="landmarks"></div>
+  </main>
+  <aside id="details" aria-label="路标详情" hidden>
+    <button id="close-details" type="button" aria-label="关闭路标详情">关闭</button>
+    <div id="detail-content"></div>
+  </aside>
+  <dialog id="episode-dialog" aria-labelledby="episode-title">
+    <form method="dialog"><button aria-label="关闭原文">关闭</button></form>
+    <h2 id="episode-title">原文记录</h2>
+    <div id="episode-content"></div>
+  </dialog>
+</body>
+</html>

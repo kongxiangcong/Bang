@@ -6,6 +6,7 @@ import { BangError, BangStore, requiredString } from './store.ts';
 import { ReasoningEngine } from './reasoning/engine.ts';
 import { routeReasoning } from './reasoning/routes.ts';
 import { initializeWorkspace, writeWorkspaceDefaults } from './workspace.ts';
+import { serveWhiteboard } from './whiteboard.ts';
 
 const host = '127.0.0.1';
 const defaultPort = 4318;
@@ -34,6 +35,7 @@ type RuntimeOptions = {
   route?: (context: RouteContext) => boolean | Promise<boolean>;
   onStart?: (context: LifecycleContext) => void | (() => void | Promise<void>)
     | Promise<void | (() => void | Promise<void>)>;
+  onStop?: (context: LifecycleContext, stoppedAt: number) => Promise<{ unverifiedSessions: string[] }>;
 };
 
 function readDiscoveryFile(file: string) {
@@ -163,6 +165,8 @@ export async function startServer(project: string, options: RuntimeOptions = {})
   let ready = false;
   let teardown: void | (() => void | Promise<void>);
   let closing: Promise<void> | undefined;
+  let reasoningClosing: Promise<void> | undefined;
+  let stopping: Promise<{ unverifiedSessions: string[] }> | undefined;
 
   const server = createServer(async (request, response) => {
     response.setHeader('Cache-Control', 'no-store');
@@ -228,10 +232,29 @@ export async function startServer(project: string, options: RuntimeOptions = {})
       if (method === 'GET' && url.pathname === '/api/health') {
         return json({ pid: service.pid, project_root: paths.root, version: '2.0.0', ready });
       }
-      if (!ready) throw new BangError('starting', 'Bang is starting', 503);
+      if (method === 'POST' && url.pathname === '/api/stop') {
+        if (!authenticatedCli) throw new BangError('unauthorized', 'CLI authorization required', 401);
+        if (!stopping && !ready) throw new BangError('starting', 'Bang is starting', 503);
+        stopping ??= stop(Date.now());
+        try {
+          const result = await stopping;
+          if (!response.destroyed) json({ running: false, ...result });
+        } finally {
+          const shutdown = () => void close().catch((error) => console.error(error));
+          if (response.writableFinished || response.destroyed) shutdown();
+          else response.once('finish', shutdown).once('close', shutdown);
+        }
+        return;
+      }
+      if (!ready) throw closing || stopping
+        ? new BangError('service_stopping', 'Bang is stopping', 503)
+        : new BangError('starting', 'Bang is starting', 503);
 
       let body: ReturnType<typeof readBody> | undefined;
-      const read = () => body ??= readBody(request);
+      const read = () => body ??= readBody(request).then((input) => {
+        if (!ready) throw new BangError('service_stopping', 'Bang is stopping', 503);
+        return input;
+      });
       if (method === 'POST' && url.pathname === '/api/auth/exchange') {
         if (!authenticatedCli) throw new BangError('unauthorized', 'CLI authorization required', 401);
         const { topic } = await read();
@@ -243,11 +266,6 @@ export async function startServer(project: string, options: RuntimeOptions = {})
         const id = token();
         tickets.set(id, { topic: selected, expires: now + 60_000 });
         return json({ url: `${origin}/api/auth/exchange?token=${id}` });
-      }
-      if (method === 'POST' && url.pathname === '/api/stop') {
-        if (!authenticatedCli) throw new BangError('unauthorized', 'CLI authorization required', 401);
-        response.once('finish', () => void close().catch((error) => console.error(error)));
-        return json({ running: false });
       }
       if (url.pathname === '/api/topics') {
         if (method === 'GET') return json(store.listTopics());
@@ -276,11 +294,7 @@ export async function startServer(project: string, options: RuntimeOptions = {})
       const context = { ...lifecycle, request, response, url, parts, body: read, json };
       if (options.route && await options.route(context)) return;
       if (await routeReasoning(reasoning, context)) return;
-      if (method === 'GET' && url.pathname === '/') {
-        response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        response.end('<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>Bang</title><p>Bang 本地服务已连接。</p></html>');
-        return;
-      }
+      if (method === 'GET' && serveWhiteboard(url.pathname, response)) return;
       throw new BangError('not_found', 'Route not found', 404);
     } catch (error) {
       if (response.headersSent) {
@@ -294,12 +308,18 @@ export async function startServer(project: string, options: RuntimeOptions = {})
     }
   });
 
+  async function stop(stoppedAt: number) {
+    ready = false;
+    store.endCapture(stoppedAt);
+    reasoningClosing ??= reasoning.close();
+    return await options.onStop?.(lifecycle, stoppedAt) ?? { unverifiedSessions: [] };
+  }
+
   function close() {
     closing ??= (async () => {
       ready = false;
       try {
-        await reasoning.close();
-        await teardown?.();
+        await Promise.allSettled([reasoningClosing ??= reasoning.close(), teardown?.(), stopping]);
       } finally {
         await new Promise<void>((resolve) => {
           server.close(() => resolve());

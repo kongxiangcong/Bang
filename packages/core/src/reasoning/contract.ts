@@ -92,11 +92,13 @@ export type Merge = { summary: string; operations: Operation[] };
 
 const strings = array(string);
 const sources = { source_episodes: strings };
-const landmark = object({
-  id: string, kind: oneOf(kinds), tag: nullable(oneOf(Object.values(tags).flat())),
-  title: string, detail: string, conditions: strings, event_time: nullable(string),
-  ...sources,
-});
+const landmark = {
+  anyOf: kinds.map((kind) => object({
+    id: string, kind: oneOf([kind]), tag: nullable(oneOf(tags[kind])),
+    title: string, detail: string, conditions: strings, event_time: nullable(string),
+    ...sources,
+  })),
+};
 const relationship = object({
   id: string, from: string, to: string, skeleton: oneOf(skeletons), predicate: string,
   provenance: oneOf(provenances), ...sources,

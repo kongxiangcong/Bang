@@ -5,10 +5,14 @@
 !/AGENTS.md
 !/GLOSSARY.md
 !/README.md
+!/install.mjs
 !/package.json
 !/package-lock.json
 !/tsconfig.json
 !/packages/
+!/skills/
+/skills/*
+!/skills/bang/
 !/tests/
 /tests/*
 !/tests/v2/
