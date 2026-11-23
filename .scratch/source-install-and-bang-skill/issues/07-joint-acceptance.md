@@ -14,3 +14,16 @@ Status: ready-for-agent
 [父规格](../spec.md)
 
 ## Comments
+
+### 2026-11-23 · 技术验收
+
+在隔离的 `gdn` 目录从 `acab922` 的源码安装，使用真实 Codex 调用 `$bang`，回执确认自动采集并给出一次性链接。验收用回环转接调用真实 `gpt-6.2-sol` 模型进行两阶段整理，Chromium 从回执链接访问实际白板。对话按 GDN 学习用例的关键检查点新写为两批，每批五轮。[运行记录](../validation/live-gdn-nNjIVB/run.json) · [脱敏回执](../validation/live-gdn-nNjIVB/start.json)
+
+- 五轮入库后自动发布白板第 1 版。保留了 `[1,0]ᵀ` 与 `[1,1]ᵀ` 的对照、误差写入条件，以及只解码一个 token 的误解。用户说“理解了”时记录为自报理解。[中途 inspect](../validation/live-gdn-nNjIVB/midpoint.json) · [中途白板](../validation/live-gdn-nNjIVB/midpoint-canvas.png)
+- 十轮入库后自动发布第 2 版。`S k` 读出已有预测并参与计算写入误差。用户完成逐列推导后记录为已验证。α 与 β 的配合和完整单 token 流程保留为待讲问题。终版新增了门控衰减的限定，早期条件栏仍有一处“第 j 列实际变化”的宽泛表述，评审时请结合紧邻的误差写入限定核对。[终版 inspect](../validation/live-gdn-nNjIVB/final.json) · [白板总览](../validation/live-gdn-nNjIVB/final-overview.png) · [待讲问题](../validation/live-gdn-nNjIVB/final-pending-study.png)
+- 从“单个 token 会更新哪些列？”沿“用逐列增量解释单个 token 的写入范围和生效条件”打开结论，核对 `β`、`e`、`kⱼ` 的非零条件。通过路标打开纠偏 Episode `6fe489a2-ac8d-41a4-a6cb-e701b70403d3`、用户推导 Episode `6600022f-1ffd-41d6-ade0-9d4d16fa5bfe` 和两列算例 Episode `989dc257-4786-4d83-8639-200149a12b79`，逐条核对了用户提问与助手回答。[浏览路径及原文](../validation/live-gdn-nNjIVB/browser-path-and-sources.json) · [成立条件](../validation/live-gdn-nNjIVB/reopened-conditions.png) · [纠偏原文](../validation/live-gdn-nNjIVB/reopened-correction-source.png)
+- 宿主查询显示正在采集、已保存十轮和白板第 2 版。通过 `$bang stop` 停止，继续了一轮关于第三列的 Codex 讨论。再次调用 `$bang status` 显示无会话正在采集，并返回可打开的白板链接。浏览器显示原来的十轮，Episode ID 列表保持一致，关于第三列的新讨论留在采集区间之外。[停采与重开](../validation/live-gdn-nNjIVB/stop-and-reopen.json) · [停采后问答](../validation/live-gdn-nNjIVB/after-stop-discussion.json) · [重新打开的原文列表](../validation/live-gdn-nNjIVB/reopened-history.png)
+
+先行试跑的五轮原文全部保存。原模型提示下，三次整理均把用户复述标为已验证，语义校验拒绝后白板保持第 0 版。上述对照运行的末批中，模型第一次写错一位来源 ID，公开作业状态记录了拒绝，自动重试后才发布第 2 版。[先行作业状态](../validation/live-gdn-VmbynW/midpoint.json) · [被拒绝的模型提示结果](../validation/live-gdn-VmbynW/midpoint-rejected-epistemic-hints.json) · [末批重试状态](../validation/live-gdn-nNjIVB/final-jobs.json)
+
+整理内容和实际可交互白板待用户共同评审后签核。
