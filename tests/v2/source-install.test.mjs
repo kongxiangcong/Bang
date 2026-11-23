@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { once } from 'node:events';
-import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { appendFile, cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
 const execute = promisify(execFile);
-const installer = fileURLToPath(new URL('../../install.mjs', import.meta.url));
+const source = fileURLToPath(new URL('../../', import.meta.url));
 const timestamp = '2026-11-21T12:00:00.000Z';
 const row = (type, payload) => JSON.stringify({ timestamp, type, payload }) + '\n';
 
@@ -32,7 +32,7 @@ function completeTurn(turnId, answer) {
   }) + row('event_msg', { type: 'task_complete', turn_id: turnId, last_agent_message: answer });
 }
 
-async function installation(t) {
+async function installation(t, { copySource = false } = {}) {
   const root = await mkdtemp(join(tmpdir(), "bang source install's "));
   const home = join(root, 'home');
   const skill = join(home, '.agents', 'skills', 'bang');
@@ -48,9 +48,16 @@ async function installation(t) {
     await Promise.all(projects.map((run) => run(['stop']).catch(() => {})));
     await rm(root, { recursive: true, force: true });
   });
+  const checkout = copySource ? join(root, 'source') : source;
+  if (copySource) {
+    await mkdir(checkout);
+    await Promise.all(['install.mjs', 'packages', 'skills'].map((path) =>
+      cp(join(source, path), join(checkout, path), { recursive: true })));
+  }
   return {
+    checkout,
     skill,
-    install: () => execute(process.execPath, [installer], { env, cwd: root }),
+    install: () => execute(process.execPath, [join(checkout, 'install.mjs')], { env, cwd: root }),
     async learningDirectory(name, session) {
       const cwd = join(root, name);
       const sessions = join(env.CODEX_HOME, 'sessions', '2026', '11', '21');
@@ -80,6 +87,27 @@ async function installation(t) {
       return { cwd, run, start, transcript };
     },
   };
+}
+
+async function waitForEpisodes(run, slug, count) {
+  let episodes = [];
+  for (let attempt = 0; attempt < 30 && episodes.length < count; attempt += 1) {
+    ({ episodes } = await run(['episode', 'list', '--topic', slug]));
+    if (episodes.length < count) await delay(80);
+  }
+  return episodes;
+}
+
+async function readWhiteboard({ url, topic }) {
+  const exchange = await fetch(url, { redirect: 'manual' });
+  assert.equal(exchange.status, 303);
+  const location = exchange.headers.get('location');
+  assert.equal(location, `/?topic=${encodeURIComponent(topic.slug)}`);
+  const cookie = exchange.headers.get('set-cookie')?.split(';')[0];
+  assert.ok(cookie);
+  const board = await fetch(new URL(location, url), { headers: { Cookie: cookie } });
+  assert.equal(board.status, 200);
+  return board.text();
 }
 
 test('一次源码安装可在两个学习目录绑定并回读各自的第一轮 Episode', async (t) => {
@@ -113,15 +141,84 @@ test('一次源码安装可在两个学习目录绑定并回读各自的第一�
       beginTurn('study', `$bang\n\n${question}`));
     const continued = await start();
     await appendFile(transcript, completeTurn('study', `专题 ${name}。${continued.message}\n\n${answer}`));
-    let episodes = [];
-    for (let attempt = 0; attempt < 30 && episodes.length === 0; attempt += 1) {
-      ({ episodes } = await run(['episode', 'list', '--topic', slug]));
-      if (episodes.length === 0) await delay(80);
-    }
+    const episodes = await waitForEpisodes(run, slug, 1);
     assert.deepEqual(episodes.map((episode) => episode.turnId), ['study']);
     const original = await run(['episode', 'get', episodes[0].id, '--topic', slug]);
     assert.deepEqual(original.messages.map(({ content }) => content), [question, answer]);
   }
+});
+
+test('源码更新期间原项目沿用原版本采集，新启动的项目使用新版', async (t) => {
+  const { checkout, install, learningDirectory } = await installation(t, { copySource: true });
+  const board = join(checkout, 'packages', 'core', 'src', 'whiteboard', 'index.html');
+  const originalBoard = await readFile(board, 'utf8');
+  const oldBoard = originalBoard + '\n<!-- Old Bang release -->\n';
+  const newBoard = originalBoard + '\n<!-- New Bang release -->\n';
+  await writeFile(board, oldBoard);
+  await install();
+
+  const a = await learningDirectory('gdn', 'session-a');
+  const initial = await a.start();
+  assert.deepEqual(initial.sessions, ['session-a']);
+  assert.equal(await readWhiteboard(initial), oldBoard);
+  const { pid } = await a.run(['status']);
+  assert.ok(pid);
+  await appendFile(a.transcript, beginTurn('before', '门控控制什么？') + completeTurn('before', '门控控制更新。'));
+  const before = await waitForEpisodes(a.run, 'gdn', 1);
+  assert.deepEqual(before.map(({ turnId }) => turnId), ['before']);
+
+  const question = '门控为零时会发生什么？';
+  const answer = '该位置不会写入新信息。';
+  await appendFile(a.transcript, beginTurn('during', question));
+  await writeFile(board, newBoard);
+  await install();
+  await appendFile(a.transcript, completeTurn('during', answer));
+
+  const captured = await waitForEpisodes(a.run, 'gdn', 2);
+  assert.deepEqual(captured.map(({ turnId }) => turnId).sort(), ['before', 'during']);
+  const during = captured.find(({ turnId }) => turnId === 'during');
+  const readDuring = () => a.run(['episode', 'get', during.id, '--topic', 'gdn']);
+  assert.deepEqual((await readDuring()).messages.map(({ content }) => content), [question, answer]);
+
+  const continued = await a.start();
+  assert.deepEqual(continued.topic, initial.topic);
+  assert.deepEqual(continued.sessions, initial.sessions);
+  assert.equal((await a.run(['status'])).pid, pid);
+  assert.equal(await readWhiteboard(continued), oldBoard);
+
+  const b = await learningDirectory('attention', 'session-b');
+  const updated = await b.start();
+  assert.equal(updated.topic.title, 'attention');
+  assert.deepEqual(updated.sessions, ['session-b']);
+  assert.equal(await readWhiteboard(updated), newBoard);
+
+  await a.run(['stop']);
+  const restarted = await a.start();
+  assert.deepEqual(restarted.topic, initial.topic);
+  assert.deepEqual(restarted.sessions, initial.sessions);
+  assert.equal(await readWhiteboard(restarted), newBoard);
+  assert.deepEqual((await readDuring()).messages.map(({ content }) => content), [question, answer]);
+});
+
+test('更新安装失败后仍可用原有技能启动并访问原专题', async (t) => {
+  const { checkout, skill, install, learningDirectory } = await installation(t, { copySource: true });
+  await install();
+  const document = join(skill, 'SKILL.md');
+  const installed = await readFile(document, 'utf8');
+  const a = await learningDirectory('gdn', 'session-a');
+  const initial = await a.start();
+  const originalBoard = await readWhiteboard(initial);
+  await a.run(['stop']);
+
+  const entry = join(checkout, 'packages', 'adapters', 'src', 'cli.ts');
+  await writeFile(entry, "throw new Error('Broken Bang release');\n");
+  await assert.rejects(install(), { code: 1, stderr: /Broken Bang release/ });
+  assert.equal(await readFile(document, 'utf8'), installed);
+
+  const recovered = await a.start();
+  assert.deepEqual(recovered.topic, initial.topic);
+  assert.deepEqual(recovered.sessions, initial.sessions);
+  assert.equal(await readWhiteboard(recovered), originalBoard);
 });
 
 test('重装刷新 Bang 技能并保留用户编写和修改的同名技能', async (t) => {
@@ -151,11 +248,7 @@ test('配置整理模型后可处理该专题已保存的 Episode', async (t) =>
   const { cwd, run, start, transcript } = await learningDirectory('gdn', 'session-a');
   assert.match((await start()).message, /整理模型尚未配置/);
   await appendFile(transcript, beginTurn('study', '门控如何控制更新？') + completeTurn('study', '门控逐元素调制更新。'));
-  let episodes = [];
-  for (let attempt = 0; attempt < 30 && episodes.length === 0; attempt += 1) {
-    ({ episodes } = await run(['episode', 'list', '--topic', 'gdn']));
-    if (episodes.length === 0) await delay(80);
-  }
+  const episodes = await waitForEpisodes(run, 'gdn', 1);
   assert.equal(episodes.length, 1);
   const submitted = [];
   const provider = createServer(async (request, response) => {
