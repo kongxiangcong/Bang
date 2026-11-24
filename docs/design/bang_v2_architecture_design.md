@@ -119,7 +119,6 @@ bang/
 
 ```text
 <project-root>/
-├── .agents/skills/bang/SKILL.md  # 自动安装的跨 Harness 技能说明
 └── .bang/
     ├── bang.db                   # node:sqlite WAL 唯一写入权威（默认 .gitignore，含 7 张核心表）
     ├── server.json               # 当前守护进程发现文件 {pid, port, token, started_at, project_root}（.gitignore，0600 权限）
@@ -183,7 +182,7 @@ CREATE TABLE adapter_cursors (
   harness        TEXT NOT NULL,
   session_id     TEXT NOT NULL,
   topic_id       TEXT NOT NULL,
-  enabled        INTEGER NOT NULL DEFAULT 1,   -- 1=已显式绑定采集, 0=显式解绑；停机保持绑定状态
+  enabled        INTEGER NOT NULL DEFAULT 1,   -- 1=已显式绑定采集, 0=显式解绑；意外退出保持绑定状态
   file_signature TEXT,                         -- 首行 session_meta 哈希，替代 Windows 不可靠的 inode
   capture_from_offset INTEGER NOT NULL,        -- 本次绑定的采集起点，重启或重新定位文件时仍须遵守
   byte_offset    INTEGER NOT NULL,             -- 已读取位置，首次绑定时从采集起点初始化
@@ -448,7 +447,7 @@ export interface NodeEpistemicState {
 #### 1. Codex 只读尾随器（`codex-watcher.ts`，~180–250 行）
 - **显式授权与隐私边界**：默认**仅监听**用户通过 `bang bind --topic <slug>`（或在对话中通过 `$bang` / MCP）显式绑定到具体专题的 Codex 会话，绝不默认扫描并混合同一 `cwd` 下的任意其他对话；仅当用户在 `.bang/config.json` 显式开启 `"auto_watch_project": true` 并指定默认专题时，才自动接管该目录下新发起的主会话。
 - **首次绑定从当轮开始**：在第 12 轮发起绑定，采集范围从第 12 轮（含）开始。记录该轮起始位置，等本轮完成再采集；前 11 轮不入库、不送入整理器。若从终端在两轮之间绑定，则从下一轮开始。绑定边界与游标一起持久化，重启后继续遵守。MCP 对同一绑定会话补投时也须遵守该边界。
-- **解绑与恢复**：显式解绑结束本次采集。再次绑定时按新绑定的起点采集，跳过解绑期间的对话；MCP 自动投递遵守同一边界。关闭浏览器或守护进程退出时保留绑定，重启后从原游标补齐有效绑定期间的轮次。
+- **解绑与恢复**：显式解绑结束本次采集。再次绑定时按新绑定的起点采集，跳过解绑期间的对话；MCP 自动投递遵守同一边界。同一专题可以同时绑定多个会话。主动停止项目结束全部会话的采集区间。关闭浏览器或守护进程意外退出时保留绑定，重启后从原游标补齐有效绑定期间的轮次。
 - **专题原文的范围**：Bang 自身的整理会话及操作 Bang 的交互（如绑定指令、同步回执、状态输出）在写入 Episode 前排除。纯操作轮只推进读取游标；同一轮既操作 Bang 又讨论专题时，仅保留其中可独立辨认的专题问答原文。若两者无法分离，整轮跳过 Episode 采集；用户明确要求修改某项白板内容时，按人工编辑保存该修改并应用字段锁定规则。操作回执不计为证据。判断依据是会话来源及操作上下文，专题本身可以是 Bang 的产品或架构设计。
 - **容错解析状态机**：扫描 `~/.codex/sessions/**/*.jsonl`，读取首行 `session_meta` 校验 `cwd`，明确跳过子代理/分支会话（`forked_from_id`）及 Bang 自身 `codex exec` 整理器进程产生的会话；通过追踪 `task_started`、`task_complete` / `turn_aborted` 以及 `phase === 'final_answer'` 组装完整问答轮，遇到未知 JSONL 事件类型时安全跳过而不崩溃（**彻底移除 `CODEX_VERSION` 硬编码与 App Server RPC**）。
 - **跨平台断点续传**：使用 `(file_path, session_meta_hash)` 标识文件身份，配合 `byte_offset` 与未闭合半行 `line_buffer` 存入 `adapter_cursors`，彻底解决 Windows 下 `inode` 不可靠及半行写入 JSON 截断问题。
@@ -468,8 +467,8 @@ Stdio MCP Server，面向 Codex CLI、[Cursor CLI / Editor](https://cursor.com/d
 >
 > **原文修订**：写入时在事务内核对前版属于同一轮，并用 `replaces_episode_id` 追加新版。同一初版或同一前版的修订若收到不同正文，返回冲突并保留已有原文。重复确认未产生新理解时，Pass 1 可返回 `no-op`。
 
-#### 3. 跨 Harness Skill + CLI（`bang init`）
-在项目内生成 `.agents/skills/bang/SKILL.md` 并建议在 `AGENTS.md` 追加一句指引；任何支持终端命令的 Agent 均可通过 `bang ingest` / `bang sync` / `bang inspect` 与本地守护进程交互。
+#### 3. 跨 Harness Skill + CLI（用户级安装）
+源码安装时写入当前用户的 `~/.agents/skills/bang/SKILL.md`；任何支持终端命令的 Agent 均可通过 `bang ingest` / `bang sync` / `bang inspect` 与本地守护进程交互。
 
 ### 5.2 本地 HTTP + SSE 服务契约与最小安全边界（`packages/core/server`）
 
@@ -508,10 +507,9 @@ Stdio MCP Server，面向 Codex CLI、[Cursor CLI / Editor](https://cursor.com/d
    # 或源码开发期在仓库根目录执行：
    pnpm install && pnpm --filter @bang/adapters link --global
    ```
-3. **项目初始化**：在目标项目根目录执行 `bang init`，该命令幂等完成 4 件事：
+3. **项目初始化**：在目标项目根目录执行 `bang init`，首次在新目录调用 `$bang` 时也会执行该初始化：
    - 创建 `.bang/` 目录与 SQLite 数据库 `bang.db`（建好 7 张表）；
    - 向项目 `.gitignore` 追加 `.bang/bang.db*` 与 `.bang/server.json`；
-   - 写入 `.agents/skills/bang/SKILL.md`，并提示（不强制修改）在 `AGENTS.md` 添加一句 Skill 引用；
    - 生成非敏感默认配置 `.bang/config.json`（指定 LLM Provider 类型与模型名，默认 `auto_watch_project: false`），并检查环境变量 `BANG_API_KEY` / `OPENAI_API_KEY` 或 `~/.bang/credentials.json` 是否可用。
 4. **注册宿主 MCP（可选但推荐，支持 `agy` / Cursor / Codex）**：
    - **Codex (`~/.codex/config.toml`)**：
@@ -536,7 +534,7 @@ Stdio MCP Server，面向 Codex CLI、[Cursor CLI / Editor](https://cursor.com/d
 
 - **按需自动拉起 + 单项目单进程**：执行 `bang serve`（默认后台守护，加 `--foreground` 可前台调试）即可启动项目守护进程；日常无需手动先起服务，调用 `bang open`、`bang mcp` 或 `bang sync` 时都会自动检查并按需拉起。
 - **多项目端口发现协议**：每个项目的 `.bang/server.json` 记录 `{ pid, port, token, started_at, project_root }`。所有 CLI 与 MCP 工具遵循统一寻址流程：`读取 .bang/server.json` → `携带 Bearer Token 请求 GET /api/health 探活` → `若已失活则清理过期文件并重新拉起`。同时打开 3 个项目时将自动分别占用 `4318`、`4319`、`4320`，互不冲突。
-- **停止与开机后恢复**：执行 `bang stop` 会优雅停止 `codex-watcher`、执行 SQLite WAL checkpoint、退出 HTTP 服务并清理 `.bang/server.json`。系统重启后，重新执行 `bang serve`、`bang open` 或在对话中触发 MCP 工具，后台即对仍启用的绑定从 `adapter_cursors`（`byte_offset` + `line_buffer`）与未完成的 `jobs` 自动断点续传，**不丢轮次、不重复建卡**。
+- **停止与开机后恢复**：执行 `bang stop` 会结束项目内所有采集区间并停止 `codex-watcher`、执行 SQLite WAL checkpoint、退出 HTTP 服务并清理 `.bang/server.json`。主动停止后，重新绑定从新的起点开始。若进程意外退出，重新执行 `bang serve`、`bang open` 或在对话中触发 MCP 工具，后台即对仍启用的绑定从 `adapter_cursors`（`byte_offset` + `line_buffer`）与未完成的 `jobs` 自动断点续传，**不丢轮次、不重复建卡**。
 
 ### 6.3 三条端到端日常使用路径
 
@@ -574,12 +572,12 @@ flowchart LR
 
 | 命令 | 核心参数与用途 | 典型示例 |
 | :--- | :--- | :--- |
-| `bang init` | 初始化 `.bang/`、`bang.db`、`.gitignore` 与 `.agents/skills/bang/SKILL.md` | `bang init` |
+| `bang init` | 初始化 `.bang/`、`bang.db`、`.gitignore` 与项目配置 | `bang init` |
 | `bang topic` | 子动作 `list` / `create` / `archive`，管理项目专题 | `bang topic create gdn --title "GDN 笔记"` |
 | `bang bind` | 将指定或最近 Codex/会话显式绑定到某专题 | `bang bind --topic gdn --latest` |
 | `bang unbind` | 结束该会话的自动采集；保留已入库数据，重新绑定时跳过解绑期间的轮次 | `bang unbind --session <id>` |
 | `bang serve` | 启动本地守护进程与 `codex-watcher`（支持 `--foreground` / `--port`） | `bang serve` |
-| `bang stop` | 优雅停止守护进程、checkpoint WAL 并清理 `server.json` | `bang stop` |
+| `bang stop` | 结束项目所有采集区间、停止守护进程、checkpoint WAL 并清理 `server.json` | `bang stop` |
 | `bang status` | 查看守护进程 PID/端口、各专题绑定会话、队列状态与失败重试项 | `bang status` |
 | `bang open` | 按需拉起服务并带一次性 Token 在浏览器打开白板 | `bang open --topic gdn` |
 | `bang ingest` | 手动向指定专题补录外部对话文本或 JSONL 文件（支持 `--replaces`） | `bang ingest --topic gdn --file chat.json` |
@@ -715,7 +713,7 @@ flowchart LR
 | **Phase 1 · 两层推理内核与双评测基准（最高优先级）** | 实现会话有状态 Pass 1（0–N 增量，软预算 3–7 路标）+ Pass 2（Blurry/Focused 投影 + 9 算子归并 + 乐观锁合并）+ 统一 CLI（`init / topic / ingest / sync / inspect / retry`）。 | **双基准实测**：跑通冻结评测集 [quality-cases.json](file:///root/Bang/baselines/whiteboard-v1/quality-cases.json)（Q01–Q20，确保无人工重写丢失、无编造来源、无过时前提续用）+ GDN/Delta Rule 与架构讨论多会话实测，`bang inspect` 能准确回答“我对某概念提过哪些问题、哪些已解决、曾经什么误解被哪轮推翻、当前成立条件是什么”。 |
 | **Phase 2a · MVP 静谧纸感白板与功能驱动布局** | 实现 React Flow 4 类去表单标签卡片、9 类骨架边、功能驱动局部自适应布局（层级/流程/对比/发散）、增量防重叠落位、零预设空区/零引导词规范、原地/抽屉人工编辑（节点正文 + 边端点改接锁定）、3 微操作（Pin/Verify-Shaky/Fold）、原文溯源与 Proposal 审阅。 | 空专题画布零预设区域、零引导文字噪音；打开包含 3 个会话的本地专题，在自然视图中选中带条件的结论，可从抽屉查看完整条件并打开对应轮次的原文；手动改写节点正文或改接边端点后执行 `bang sync`，手改内容与连线零丢失、冲突以 Proposal 温和挂靠；忽略建议后连续同步仅在出现直接相关的新依据时再提醒；向区域一加节点时区域二坐标零偏移。 |
 | **Phase 2b · 复盘视角增强与克制动效** | 实现按需视角过滤（`自然` / `学习` / `决策` / `演进`）、语义 `revision` 时间轴回放（不受拖拽坐标污染）、5 类克制微动效与 `prefers-reduced-motion` 支持。 | 切换视角与时间轴回放平滑无全图跳变；拖动节点后再回放时间轴，历史版本数量与画面演化不被拖拽记录污染。 |
-| **Phase 3 · 多 Harness 插件化与完整使用闭环** | 上线 `codex-watcher.ts`（显式绑定、容错 JSONL 解析、跨平台续传、防 `codex exec` 自激死循环）、5 工具 `bang mcp`、`.agents/skills/bang/SKILL.md`、`bang bind / unbind / serve / stop / open / import / export`。 | 在第 12 轮绑定，核对前 11 轮及 Bang 操作回执均未入库；第 12 轮含有独立的专题问答时可回看其原文，只有绑定操作时则从下一次专题讨论开始记录；验证解绑后重绑跳过间隔、绑定中停机重启则补齐间隔；无法分离的操作轮只保存明确指定的人工编辑，Episode 计数不变。绑定后连续对话，关浏览器不中断增量整理且无自激死循环；在 watcher 读取某轮前后分别用 MCP 省略轮次标识提交，两次均返回 `watcher_managed`，最终只有 watcher 写入的一份原文，防抖计数增加一次；模拟断网/进程强杀后重启，能从精确 `byte_offset + line_buffer` 断点续传不重不漏；多项目并开自动发现端口不冲突；在 `agy` 与 Cursor CLI 中通过 MCP 共读写同一专题，跨机导入分别验证首次恢复、相同快照重复导入零变更、单边更新正向导入生效（含仅布局变化）、反向导入旧快照保留本机修改、分叉或先后不明时两份内容均可找回。 |
+| **Phase 3 · 多 Harness 插件化与完整使用闭环** | 上线 `codex-watcher.ts`（显式绑定、容错 JSONL 解析、跨平台续传、防 `codex exec` 自激死循环）、5 工具 `bang mcp`、`.agents/skills/bang/SKILL.md`、`bang bind / unbind / serve / stop / open / import / export`。 | 在第 12 轮绑定，核对前 11 轮及 Bang 操作回执均未入库；第 12 轮含有独立的专题问答时可回看其原文，只有绑定操作时则从下一次专题讨论开始记录；验证解绑后重绑跳过间隔、主动停止跳过间隔、绑定中意外退出重启则补齐间隔；无法分离的操作轮只保存明确指定的人工编辑，Episode 计数不变。绑定后连续对话，关浏览器不中断增量整理且无自激死循环；在 watcher 读取某轮前后分别用 MCP 省略轮次标识提交，两次均返回 `watcher_managed`，最终只有 watcher 写入的一份原文，防抖计数增加一次；模拟断网/进程强杀后重启，能从精确 `byte_offset + line_buffer` 断点续传不重不漏；多项目并开自动发现端口不冲突；在 `agy` 与 Cursor CLI 中通过 MCP 共读写同一专题，跨机导入分别验证首次恢复、相同快照重复导入零变更、单边更新正向导入生效（含仅布局变化）、反向导入旧快照保留本机修改、分叉或先后不明时两份内容均可找回。 |
 
 ---
 

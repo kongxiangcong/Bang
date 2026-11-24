@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-import { migrateReasoningSessions, schema } from './schema.ts';
+import { deliveryBindings, legacyCaptureFences, migrateCaptureStop, migrateReasoningSessions, schema, stoppedDeliveryIntervals } from './schema.ts';
 
 export class BangError extends Error {
   code: string;
@@ -55,6 +55,8 @@ export type EpisodeInput = {
   replacesEpisodeId?: unknown;
 };
 
+type CaptureSource = { harness: string; session_id: string; topic_id: string };
+
 function episodeFromRow(row: EpisodeRow) {
   return {
     id: row.id,
@@ -73,6 +75,15 @@ function episodeFromRow(row: EpisodeRow) {
   };
 }
 
+export function episodeTimestamp(value: unknown) {
+  const timestamp = requiredString(value, 'timestamp');
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(timestamp) ||
+      !Number.isFinite(Date.parse(timestamp))) {
+    throw new BangError('invalid_timestamp', 'Use an ISO 8601 timestamp with a timezone');
+  }
+  return timestamp;
+}
+
 function episodeMessages(value: unknown): [EpisodeMessage, EpisodeMessage] {
   if (!Array.isArray(value) || value.length !== 2) {
     throw new BangError('invalid_messages', 'Expected the user message and assistant reply');
@@ -82,12 +93,7 @@ function episodeMessages(value: unknown): [EpisodeMessage, EpisodeMessage] {
     if (message?.role !== role || typeof message.content !== 'string') {
       throw new BangError('invalid_messages', `Expected the ${role} message with text content`);
     }
-    const timestamp = requiredString(message.timestamp, 'timestamp');
-    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(timestamp) ||
-        !Number.isFinite(Date.parse(timestamp))) {
-      throw new BangError('invalid_timestamp', 'Use an ISO 8601 timestamp with a timezone');
-    }
-    return { role, timestamp, content: message.content };
+    return { role, timestamp: episodeTimestamp(message.timestamp), content: message.content };
   }
   return [parse(value[0], 'user'), parse(value[1], 'assistant')];
 }
@@ -116,13 +122,25 @@ export class BangStore {
       this.transaction(() => {
         const state = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
         if (state.user_version === 0) {
-          this.db.exec(schema + 'PRAGMA user_version = 3;');
+          this.db.exec(schema + 'PRAGMA user_version = 7;');
           return;
         }
         if (state.user_version === 1) this.db.exec('ALTER TABLE adapter_cursors ADD COLUMN active_turn_json TEXT;');
         if (state.user_version === 1 || state.user_version === 2) {
-          this.db.exec(migrateReasoningSessions + 'PRAGMA user_version = 3;');
-        } else if (state.user_version !== 3) {
+          this.db.exec(migrateReasoningSessions);
+        }
+        if (state.user_version >= 1 && state.user_version <= 3) {
+          this.db.exec(migrateCaptureStop);
+        }
+        if (state.user_version >= 1 && state.user_version <= 4) {
+          this.db.exec(deliveryBindings);
+        }
+        if (state.user_version >= 1 && state.user_version <= 5) {
+          this.db.exec(stoppedDeliveryIntervals);
+        }
+        if (state.user_version >= 1 && state.user_version <= 6) {
+          this.db.exec(legacyCaptureFences + 'PRAGMA user_version = 7;');
+        } else if (state.user_version !== 7) {
           throw new Error(`Unsupported Bang database version ${state.user_version}`);
         }
       });
@@ -147,6 +165,44 @@ export class BangStore {
   close() {
     this.db.exec('PRAGMA wal_checkpoint(PASSIVE)');
     this.db.close();
+  }
+
+  endCapture(stoppedAt: number, legacy?: { daemon: string; ownsDiscovery: () => boolean }) {
+    return this.transaction(() => {
+      if (legacy && !legacy.ownsDiscovery()) return false;
+      // A legacy watcher can keep writing until we hold the same writer lock.
+      const cutoff = legacy ? Date.now() : stoppedAt;
+      const cursors = this.db.prepare(`
+        UPDATE adapter_cursors
+        SET enabled = 0, stopped_at = ?, stop_pending = (file_signature IS NOT NULL), updated_at = ?
+        WHERE enabled = 1
+        RETURNING harness, session_id, topic_id
+      `).all(cutoff, new Date(cutoff).toISOString()) as CaptureSource[];
+      this.db.prepare(`
+        INSERT INTO stopped_delivery_intervals (binding_id, harness, session_id, topic_id, started_at, ended_at)
+        SELECT binding_id, harness, session_id, topic_id, started_at, ? FROM delivery_bindings WHERE ended_at IS NULL
+      `).run(cutoff);
+      const deliveries = this.db.prepare(`
+        UPDATE delivery_bindings SET ended_at = ? WHERE ended_at IS NULL
+        RETURNING harness, session_id, topic_id
+      `).all(cutoff) as CaptureSource[];
+      if (legacy) {
+        const fence = this.db.prepare('INSERT OR IGNORE INTO legacy_capture_fences VALUES (?, ?, ?, ?)');
+        for (const source of [...cursors, ...deliveries]) {
+          fence.run(source.harness, source.session_id, source.topic_id, legacy.daemon);
+        }
+      }
+      return true;
+    });
+  }
+
+  clearLegacyCaptureFences(daemon?: string) {
+    if (daemon === undefined) this.db.exec('DELETE FROM legacy_capture_fences');
+    else this.db.prepare('DELETE FROM legacy_capture_fences WHERE daemon = ?').run(daemon);
+  }
+
+  hasLegacyCaptureFence(daemon: string) {
+    return Boolean(this.db.prepare('SELECT 1 FROM legacy_capture_fences WHERE daemon = ? LIMIT 1').get(daemon));
   }
 
   listTopics() {
@@ -235,6 +291,14 @@ export class BangStore {
       .get(topic.id, episodeId) as EpisodeRow | undefined;
     if (!row) throw new BangError('episode_not_found', 'Episode does not exist in this topic', 404);
     return episodeFromRow(row);
+  }
+
+  findOriginalEpisode(topicId: string, sourceTool: string, sessionId: string, turnId: string) {
+    const row = this.db.prepare(`
+      SELECT * FROM episodes WHERE topic_id = ? AND harness = ? AND session_id = ? AND source_turn_id = ?
+      AND replaces_episode_id IS NULL
+    `).get(topicId, sourceTool, sessionId, turnId) as EpisodeRow | undefined;
+    return row && episodeFromRow(row);
   }
 
   recordEpisode(input: EpisodeInput) {

@@ -2,7 +2,41 @@
 
 Bang 把围绕专题展开的对话保存在本机，整理为可追溯到原文的认知路标。CLI 提供专题管理、原文录入与修订、手动同步、检查和导出。
 
-## 启动
+## 从源码安装 Bang 技能
+
+需要 Node.js 22.13 或以上版本。在源码仓库运行一次。
+
+```sh
+node install.mjs
+```
+
+在学习目录中启动 Codex，在对话里使用以下动作。
+
+- `$bang` 开始或接续本会话的记录。首次按目录名创建专题，有多个活跃专题时按提示选择。回执返回一次性白板链接，由你自行打开。整理模型尚未配置时，Bang 仍会保存有效问答。
+- `$bang status` 查看各专题的白板链接、采集中的会话、已保存轮数及最近成功整理的进度。链接过期后可重新查询。
+- `$bang stop` 结束当前项目的全部采集区间并停止后台。之后可以查看白板和历史，新的讨论从再次绑定时才开始保存。
+
+如果宿主限制访问本机回环服务或启动后台进程，按宿主提示批准本次 Bang 命令。
+
+更新源码后重跑安装脚本可更新用户级入口。运行中的项目沿用当前版本至下次启动。安装保留用户自行编写或编辑的同名技能，安装失败时原有入口仍可用。
+
+## 在逐轮投递的宿主中使用
+
+让宿主读取同一个已安装的 `~/.agents/skills/bang/SKILL.md`。例如，Antigravity 可在学习项目的 `.agents/skills/bang` 使用指向该安装目录的链接，再用该宿主的技能入口调用 Bang。宿主集成应向技能提供当前原生会话 ID。例如在学习目录运行以下命令，将末尾参数替换为实际会话 ID。
+
+```sh
+node --experimental-strip-types "$HOME/.agents/skills/bang/launch.mjs" skill start --harness antigravity --session 'HOST_SESSION_ID'
+```
+
+在宿主的 MCP 配置中将 `node` 设为 stdio 命令，并传入以下参数。使用安装入口和学习目录的绝对路径。
+
+```json
+["--experimental-strip-types", "/path/to/.agents/skills/bang/launch.mjs", "--project", "/path/to/project", "mcp"]
+```
+
+逐轮投递的宿主先绑定当前会话，然后在助手完整回复后调用 `bang_record_turn`，提供 `harness`、`session_id`、`source_turn_id`、`user_text` 和 `assistant_text`。将启动回执中的 `bindingId` 随同本次采集区间的投递传为 `binding_id`。项目主动停止后，迟到的投递须携带原 `binding_id` 和宿主原生的 ISO 8601 完成时间 `completed_at`，且该轮须在原采集区间内完成。宿主集成也可通过同一 CLI 入口向 `deliver` 的标准输入写入这一 JSON 对象。停止或解绑后，重新绑定的会话使用新的采集区间。
+
+## 使用 CLI
 
 需要 Node.js 22.13 或以上版本。在此仓库运行以下命令，将 `/path/to/project` 替换为已有项目目录。省略 `--project` 时使用当前目录。
 
@@ -22,7 +56,7 @@ npm run bang -- --project /path/to/project topic switch gdn
 
 在 Codex 的当前会话中运行 `bang bind --topic gdn`，采集从该轮开始。从外部终端使用 `bang bind --topic gdn --session <id>`，在两轮之间绑定会从下一轮开始。Bang 从 `$CODEX_HOME/sessions`（默认 `~/.codex/sessions`）定位本项目中明确指定的主会话。宿主提供的 transcript 路径和活动轮标识也可以通过 `--transcript` 和 `--turn` 指定。
 
-`bang status` 显示会话绑定状态和已处理的最后一轮。退出守护进程保留绑定，重新启动后补齐期间的对话。`bang unbind --session <id>` 结束采集，再次绑定时跳过中间的对话。
+`bang status` 显示会话绑定状态和已处理的最后一轮。守护进程意外退出时保留绑定，重新启动后补齐有效区间里的对话。`bang unbind --session <id>` 只结束指定会话的采集，`bang stop` 结束项目的所有采集区间。
 
 采集跳过纯 Bang 操作。混合轮只保存可独立辨认的专题问答。无法分离的白板修改指令会跳过 Episode 采集，人工编辑及字段锁定接入待 [06 白板原地编辑](.scratch/bang-v2/issues/06-edit-proposals.md) 完成。
 
@@ -55,7 +89,9 @@ npm run bang -- --project /path/to/project topic archive gdn
 
 ## 整理和检查专题
 
-手动同步需要显式配置兼容 Chat Completions JSON Schema 输出的模型。可在 `.bang/config.json` 中设置 `llm.base_url` 和 `llm.model`，也可通过 `BANG_LLM_BASE_URL` 和 `BANG_LLM_MODEL` 覆盖。基础地址通常以 `/v1` 结尾，模型需要凭据时通过环境变量 `BANG_LLM_API_KEY` 提供。从环境配置时，先停止已运行的守护进程，再从配置了环境变量的终端同步。同步时会将本批 Episode 的原文发送到所配置的地址。 单次模型请求默认超时 120 秒，可用 `llm.timeout_ms` 或优先级更高的 `BANG_LLM_TIMEOUT_MS` 设置，接受 1 到 3,600,000 毫秒的整数。
+整理需要显式配置兼容 Chat Completions JSON Schema 输出的模型。可在 `.bang/config.json` 中设置 `llm.base_url` 和 `llm.model`，也可通过 `BANG_LLM_BASE_URL` 和 `BANG_LLM_MODEL` 覆盖。基础地址通常以 `/v1` 结尾，模型需要凭据时通过环境变量 `BANG_LLM_API_KEY` 提供。从环境配置时，请在配置了环境变量的终端重新启动守护进程。
+
+未配置模型时仍会保存原文。配置完成后，守护进程在同一会话累积五个新轮次或静默 90 秒时自动整理，也可手动同步。整理会将本批 Episode 的原文发送到所配置的地址。单次模型请求默认超时 120 秒，可用 `llm.timeout_ms` 或优先级更高的 `BANG_LLM_TIMEOUT_MS` 设置，接受 1 到 3,600,000 毫秒的整数。
 
 ```sh
 npm run bang -- --project /path/to/project sync --topic gdn
@@ -64,7 +100,7 @@ npm run bang -- --project /path/to/project inspect --topic gdn --query "为什�
 npm run bang -- --project /path/to/project export --topic gdn
 ```
 
-`sync --session <source-session-id>` 可指定一个会话。输出包含每个会话的终态。`inspect` 显示路标、关系、个人认知与来源 ID，可用 `episode get` 回读对应问答。专题快照写入 `.bang/topics/<slug>/` 的三份 JSON 文件。
+`status --topic <slug>` 显示作业进度。失败会话最多自动重试两次，分别等待 15 秒和 30 秒。可随时用 `sync --session <source-session-id>` 手动同步或重试。`inspect` 显示路标、关系、个人认知与来源 ID，可用 `episode get` 回读对应问答。专题快照写入 `.bang/topics/<slug>/` 的三份 JSON 文件。
 
 ## 开发与归档
 

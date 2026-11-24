@@ -1,10 +1,20 @@
 import type { RouteContext } from '../server.ts';
-import { requiredString } from '../store.ts';
+import { BangError, requiredString } from '../store.ts';
 import { currentBoard, inspectBoard, readBoard, revisions } from './board.ts';
 import type { ReasoningEngine } from './engine.ts';
+import { configuredProvider } from './provider.ts';
 
 export async function routeReasoning(engine: ReasoningEngine, context: RouteContext) {
-  const { parts, store, request, url, body, json } = context;
+  const { parts, paths, store, request, url, body, json } = context;
+  if (request.method === 'GET' && url.pathname === '/api/reasoning/configuration') {
+    let status = 'configured';
+    try {
+      configuredProvider(paths.config);
+    } catch (error) {
+      status = error instanceof BangError && error.code === 'reasoning_not_configured' ? 'unconfigured' : 'invalid';
+    }
+    return respond({ status });
+  }
   const [api, topics, topicId, action] = parts;
   if (api !== 'api' || topics !== 'topics' || parts.length !== 4) return false;
   if (request.method === 'GET' && (action === 'board' || action === 'inspect')) {
@@ -19,6 +29,10 @@ export async function routeReasoning(engine: ReasoningEngine, context: RouteCont
   }
   if (request.method === 'GET' && action === 'jobs') {
     const topic = store.findTopic(topicId);
+    if (url.searchParams.get('latest_success') === 'true') {
+      const latest = engine.latestSuccessfulJob(topic.id);
+      return respond({ topicId: topic.id, jobs: latest ? [latest] : [] });
+    }
     return respond({ topicId: topic.id, jobs: engine.jobs(topic.id) });
   }
   if (request.method === 'GET' && action === 'revisions') {
@@ -29,7 +43,10 @@ export async function routeReasoning(engine: ReasoningEngine, context: RouteCont
     const topic = store.findTopic(topicId);
     const input = await body();
     const session = input.sessionId === undefined ? undefined : requiredString(input.sessionId, 'sessionId');
-    return respond(await engine.sync(topic, session));
+    return respond(input.enqueue === true ? engine.enqueue(topic, session) : await engine.sync(topic, session));
+  }
+  if (request.method === 'POST' && action === 'epistemic') {
+    return respond(engine.updateEpistemic(store.findTopic(topicId), await body()));
   }
   if (request.method === 'POST' && action === 'export') {
     return respond(engine.export(store.findTopic(topicId)));

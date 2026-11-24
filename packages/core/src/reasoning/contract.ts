@@ -28,8 +28,8 @@ const tags = {
 export const skeletons = [
   'about', 'answers', 'part_of', 'depends_on', 'leads_to', 'supports', 'refutes', 'qualifies', 'supersedes',
 ] as const;
-const masteries = ['unfamiliar', 'exploring', 'self_reported', 'verified', 'shaky'] as const;
-const stances = ['neutral', 'endorsed', 'skeptical', 'rejected'] as const;
+export const masteries = ['unfamiliar', 'exploring', 'self_reported', 'verified', 'shaky'] as const;
+export const stances = ['neutral', 'endorsed', 'skeptical', 'rejected'] as const;
 const provenances = ['EXTRACTED', 'INFERRED'] as const;
 const layoutHints = ['auto', 'hierarchy', 'flow', 'radial', 'comparison', 'free'] as const;
 
@@ -92,11 +92,13 @@ export type Merge = { summary: string; operations: Operation[] };
 
 const strings = array(string);
 const sources = { source_episodes: strings };
-const landmark = object({
-  id: string, kind: oneOf(kinds), tag: nullable(oneOf(Object.values(tags).flat())),
-  title: string, detail: string, conditions: strings, event_time: nullable(string),
-  ...sources,
-});
+const landmark = {
+  anyOf: kinds.map((kind) => object({
+    id: string, kind: oneOf([kind]), tag: nullable(oneOf(tags[kind])),
+    title: string, detail: string, conditions: strings, event_time: nullable(string),
+    ...sources,
+  })),
+};
 const relationship = object({
   id: string, from: string, to: string, skeleton: oneOf(skeletons), predicate: string,
   provenance: oneOf(provenances), ...sources,

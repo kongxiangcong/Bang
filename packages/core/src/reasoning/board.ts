@@ -1,10 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdirSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { BangError } from '../store.ts';
+import { BangError, requiredString } from '../store.ts';
 import type { BangStore } from '../store.ts';
 import {
-  invalidOutput, safeId, validateHint, validateLandmark, validateSources,
+  invalidOutput, masteries, safeId, stances, validateHint, validateLandmark, validateSources,
 } from './contract.ts';
 import type {
   Cluster, Episode, EpistemicHint, Landmark, Merge, Relationship, SessionGraph, Sources,
@@ -109,13 +109,66 @@ export function publishBoard(directory: string, slug: string, board: Board) {
   return { revision: board.revision, directory: target, files };
 }
 
-export function saveRevision(store: BangStore, board: Board, jobId: string, summary: string, createdAt: string) {
+export function saveRevision(store: BangStore, board: Board, jobId: string | null, summary: string, createdAt: string, author = 'engine') {
   store.db.prepare(`
     INSERT INTO topic_revisions (
       topic_id, revision, trigger_job_id, author, summary, knowledge_json, epistemic_json, created_at
-    ) VALUES (?, ?, ?, 'engine', ?, ?, ?, ?)
-  `).run(board.knowledge.topic_id, board.revision, jobId, summary,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(board.knowledge.topic_id, board.revision, jobId, author, summary,
     JSON.stringify(board.knowledge), JSON.stringify(board.epistemic), createdAt);
+}
+
+function epistemicChoice<T extends string>(value: unknown, allowed: readonly T[], field: string) {
+  if (value === undefined) return undefined;
+  const selected = allowed.find((item) => item === value);
+  if (selected === undefined) throw new BangError('invalid_input', `${field} must be one of: ${allowed.join(', ')}`);
+  return selected;
+}
+
+export function updateEpistemic(store: BangStore, topicId: string, input: Record<string, unknown>) {
+  const nodeId = requiredString(input.node_id, 'node_id');
+  const mastery = epistemicChoice(input.mastery, masteries, 'mastery');
+  const stance = epistemicChoice(input.stance, stances, 'stance');
+  let shift: EpistemicHint['belief_shift'];
+  if (input.belief_shift === undefined) shift = null;
+  else {
+    const candidate = input.belief_shift as Partial<NonNullable<typeof shift>> | null;
+    shift = {
+      previous_belief: requiredString(candidate?.previous_belief, 'previous_belief'),
+      correction: requiredString(candidate?.correction, 'correction'),
+      trigger_episode_id: requiredString(candidate?.trigger_episode_id, 'trigger_episode_id'),
+    };
+  }
+  if (!mastery && !stance && !shift) throw new BangError('invalid_input', 'Provide an epistemic change');
+  return store.transaction(() => {
+    const board = readBoard(store, topicId);
+    const node = currentBoard(store, board).knowledge.nodes.find(({ id }) => id === nodeId);
+    if (!node) throw new BangError('node_not_found', 'Landmark does not exist in this topic', 404);
+    const time = new Date().toISOString();
+    const existing = board.epistemic.nodes.find((state) => state.node_id === nodeId);
+    const state = existing ?? {
+      node_id: nodeId, source_episodes: node.source_episodes, human_locked_fields: [], belief_history: [], updated_at: time,
+    } satisfies EpistemicState;
+    const prior = JSON.stringify(state);
+    if (mastery) {
+      state.mastery = mastery;
+      delete state.mastery_source_episode_id;
+    }
+    if (stance) state.stance = stance;
+    if (shift && !state.belief_history.some(({ previous_belief, correction, trigger_episode_id }) =>
+      previous_belief === shift.previous_belief && correction === shift.correction &&
+      trigger_episode_id === shift.trigger_episode_id)) {
+      const episode = store.getEpisode(topicId, shift.trigger_episode_id);
+      state.source_episodes = union(state.source_episodes, [episode.id]);
+      state.belief_history.push({ ...shift, id: randomUUID(), shifted_at: episode.occurredAt, recorded_at: time });
+    }
+    if (prior === JSON.stringify(state)) return { status: 'unchanged', board, state };
+    if (!existing) board.epistemic.nodes.push(state);
+    state.updated_at = time;
+    board.revision += 1;
+    saveRevision(store, board, null, 'Update personal epistemic state', time, 'human');
+    return { status: 'updated', board, state };
+  });
 }
 
 export function revisions(store: BangStore, topicId: string) {

@@ -5,6 +5,9 @@ import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { text } from 'node:stream/consumers';
 import test from 'node:test';
+import { setTimeout as delay } from 'node:timers/promises';
+import { readDiscovery, requestService, startServer } from '../../packages/core/src/server.ts';
+import { workspacePaths } from '../../packages/core/src/workspace.ts';
 import { createProject } from './cli.mjs';
 
 function turn(id, content, sessionId = 'session') {
@@ -17,7 +20,13 @@ function turn(id, content, sessionId = 'session') {
   };
 }
 
-async function fixture(t, respond) {
+async function fixture(t, respond, { clock = false, configured = true } = {}) {
+  for (const name of ['BANG_LLM_BASE_URL', 'BANG_LLM_MODEL', 'BANG_LLM_API_KEY', 'BANG_LLM_TIMEOUT_MS']) {
+    const value = process.env[name];
+    if (value === undefined) continue;
+    delete process.env[name];
+    t.after(() => { process.env[name] = value; });
+  }
   const provider = createServer(async (request, response) => {
     try {
       assert.equal(request.url, '/v1/chat/completions');
@@ -38,13 +47,25 @@ async function fixture(t, respond) {
   t.after(() => { provider.closeAllConnections(); provider.close(); });
   const project = await createProject(t);
   const { run, path } = project;
-  await run(['init']);
-  await writeFile(join(path, '.bang', 'config.json'), JSON.stringify({
+  if (clock) {
+    t.mock.timers.enable({ apis: ['Date', 'setInterval'], now: new Date() });
+    const runtime = await startServer(path, { port: 0 });
+    t.after(runtime.close);
+  } else {
+    await run(['init']);
+  }
+  const configure = () => writeFile(join(path, '.bang', 'config.json'), JSON.stringify({
     auto_watch_project: false,
     llm: { base_url: `http://127.0.0.1:${provider.address().port}/v1`, model: 'test-model' },
   }));
+  if (configured) await configure();
   await run(['topic', 'create', 'Rules']);
-  return project;
+  const jobs = async () => {
+    const response = await requestService(readDiscovery(workspacePaths(path)), '/api/topics/rules/jobs');
+    assert.equal(response.status, 200);
+    return (await response.json()).jobs;
+  };
+  return { ...project, configure, jobs };
 }
 
 function landmark(id) {
@@ -56,6 +77,145 @@ function landmark(id) {
 }
 
 const empty = { landmarks: [], remove_landmarks: [], relationships: [], remove_relationships: [], epistemic_hints: [] };
+
+async function waitForJobs(readJobs, predicate) {
+  let jobs;
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    jobs = await readJobs();
+    if (predicate(jobs)) return jobs;
+    await delay(25);
+  }
+  assert.fail(`Expected jobs to settle. Last status: ${JSON.stringify(jobs)}`);
+}
+
+test('同会话累计五个新轮次触发自动整理，重复投递和修订版不增加轮数', async (t) => {
+  const { run, jobs } = await fixture(t, (stage, input) => {
+    if (stage === 'bang_pass1') {
+      assert.deepEqual(input.episodes.map(({ turnId }) => turnId), ['2', '3', '4', '1', '5']);
+      return { ...empty, landmarks: [landmark(input.episodes[0].id)] };
+    }
+    return { summary: 'Add load rule', operations: [{ op: 'ADD_NODE', node: input.session.landmarks[0] }] };
+  }, { clock: true });
+  const ingest = (episode) => run(['ingest', '--topic', 'rules'], episode);
+  const initial = await ingest(turn(1, 'First question'));
+  for (const n of [2, 3, 4]) await ingest(turn(n, 'Same text in distinct turns'));
+  assert.equal((await ingest(turn(1, 'First question'))).status, 'duplicate');
+  await ingest({ ...turn(1, 'Revised question'), replacesEpisodeId: initial.episode.id });
+  t.mock.timers.tick(1_000);
+  assert.deepEqual(await jobs(), []);
+
+  await ingest(turn(5, 'Fifth question'));
+  t.mock.timers.tick(1_000);
+  const [job] = await waitForJobs(jobs, (items) => items.some(({ status }) => status === 'done'));
+  assert.equal(job.revision, 1);
+  assert.equal((await run(['inspect', '--topic', 'rules'])).knowledge.nodes[0].title, 'Load rule');
+});
+
+test('模型补配后，守护进程整理已静默 90 秒的会话积压', async (t) => {
+  const { run, jobs, configure } = await fixture(t, () => empty, { clock: true, configured: false });
+  const ingest = (episode) => run(['ingest', '--topic', 'rules'], episode);
+  const waiting = (await ingest(turn(1, 'First question', 'waiting'))).episode;
+  await ingest(turn(1, 'First question', 'ongoing'));
+  t.mock.timers.tick(45_000);
+  await ingest(turn(2, 'Follow-up', 'ongoing'));
+  t.mock.timers.tick(44_000);
+  assert.equal((await ingest(turn(1, 'First question', 'waiting'))).status, 'duplicate');
+  t.mock.timers.tick(1_000);
+  assert.deepEqual(await jobs(), []);
+  assert.deepEqual(await run(['episode', 'get', '--topic', 'rules', waiting.id]), waiting);
+
+  await configure();
+  t.mock.timers.tick(1_000);
+  const first = await waitForJobs(jobs, (items) => items.some(({ status }) => status === 'done'));
+  assert.deepEqual(first.map(({ sessionId, episodeIds }) => ({ sessionId, episodeIds })),
+    [{ sessionId: 'waiting', episodeIds: [waiting.id] }]);
+
+  t.mock.timers.tick(43_000);
+  assert.equal((await jobs()).length, 1);
+  t.mock.timers.tick(1_000);
+  const completed = await waitForJobs(jobs, (items) => items.filter(({ status }) => status === 'done').length === 2);
+  assert.equal(completed[1].sessionId, 'ongoing');
+  assert.equal(completed[1].episodeIds.length, 2);
+});
+
+test('会话归并失败退避并续跑 Pass 2，其他会话照常提交', async (t) => {
+  let acceptMerge = false;
+  const passes = [];
+  const { run, jobs } = await fixture(t, (stage, input) => {
+    if (stage === 'bang_pass1') {
+      const [episode] = input.episodes;
+      if (episode.sessionId === 'recovering') passes.push(stage);
+      return { ...empty, landmarks: [{ ...landmark(episode.id), id: episode.sessionId }] };
+    }
+    const [node] = input.session.landmarks;
+    if (node.id === 'recovering') {
+      passes.push(stage);
+      if (!acceptMerge) return { finishReason: 'length', summary: 'Incomplete merge', operations: [] };
+    }
+    return { summary: 'Add load rule', operations: [{ op: 'ADD_NODE', node }] };
+  }, { clock: true });
+  for (const sessionId of ['recovering', 'healthy']) {
+    await run(['ingest', '--topic', 'rules'], turn(1, 'What rule applies?', sessionId));
+  }
+  t.mock.timers.tick(90_000);
+
+  const recoveringJob = (items) => items.find(({ sessionId }) => sessionId === 'recovering');
+  const initial = await waitForJobs(jobs, (items) =>
+    items.some(({ status }) => status === 'failed') && items.some(({ status }) => status === 'done'));
+  let failed = recoveringJob(initial);
+  const failedId = failed.id;
+  assert.equal(failed.error.code, 'invalid_model_output');
+  assert.equal(failed.stage, 'pass2_merge');
+  assert.equal(initial.find(({ sessionId }) => sessionId === 'healthy').revision, 1);
+  assert.equal(failed.attempts, 1);
+
+  t.mock.timers.tick(14_000);
+  assert.equal(recoveringJob(await jobs()).attempts, 1);
+  t.mock.timers.tick(1_000);
+  failed = recoveringJob(await waitForJobs(jobs, (items) => {
+    const job = recoveringJob(items);
+    return job?.status === 'failed' && job.attempts === 2;
+  }));
+  assert.equal(failed.id, failedId);
+
+  t.mock.timers.tick(29_000);
+  assert.equal(recoveringJob(await jobs()).attempts, 2);
+  acceptMerge = true;
+  t.mock.timers.tick(1_000);
+  const recovered = recoveringJob(await waitForJobs(jobs, (items) => recoveringJob(items)?.status === 'done'));
+  assert.equal(recovered.id, failedId);
+  assert.equal(recovered.revision, 2);
+  assert.deepEqual(passes, ['bang_pass1', 'bang_pass2', 'bang_pass2', 'bang_pass2']);
+});
+
+test('守护进程异常退出后继续自动归并，已保存的 Pass 1 和专题版本只提交一次', async (t) => {
+  const passes = [];
+  const interrupted = Promise.withResolvers();
+  t.after(() => interrupted.resolve({ summary: 'Interrupted', operations: [] }));
+  const { run, jobs } = await fixture(t, (stage, input) => {
+    passes.push(stage);
+    if (stage === 'bang_pass1') return { ...empty, landmarks: [landmark(input.episodes[0].id)] };
+    if (passes.length === 2) return interrupted.promise;
+    return { summary: 'Add load rule', operations: [{ op: 'ADD_NODE', node: input.session.landmarks[0] }] };
+  });
+  const { pid } = await run(['status']);
+  for (let n = 1; n <= 5; n += 1) {
+    await run(['ingest', '--topic', 'rules'], turn(n, 'What rule applies?'));
+  }
+  const [running] = await waitForJobs(jobs, ([job]) =>
+    job?.stage === 'pass2_merge' && job.status === 'running' && passes.includes('bang_pass2'));
+  process.kill(pid, 'SIGKILL');
+  assert.notEqual((await run(['init'])).pid, pid);
+  interrupted.resolve({ summary: 'Interrupted', operations: [] });
+
+  const settled = await waitForJobs(jobs, ([job]) => job?.status === 'done');
+  assert.equal(settled.length, 1);
+  assert.equal(settled[0].id, running.id);
+  assert.equal(settled[0].revision, 1);
+  assert.equal((await run(['inspect', '--topic', 'rules'])).revision, 1);
+  assert.deepEqual((await run(['sync', '--topic', 'rules'])).jobs, []);
+  assert.deepEqual(passes, ['bang_pass1', 'bang_pass2', 'bang_pass2']);
+});
 
 test('手动同步提交带原文引用的专题版本，重启后增量为空时保留原版本与导出', async (t) => {
   let calls = 0;
@@ -325,4 +485,22 @@ test('模型请求超时支持配置和环境覆盖，拒绝超出上限的值',
   const recovered = (await run(sync, undefined, { BANG_LLM_TIMEOUT_MS: '5000' })).jobs[0];
   assert.equal(recovered.id, invalid.id);
   assert.equal(recovered.status, 'done');
+});
+
+test('主动停止无需等待未完成的模型整理，已保存原文仍可回读', { timeout: 20_000 }, async (t) => {
+  const modelStarted = Promise.withResolvers();
+  const modelResponse = Promise.withResolvers();
+  const { run } = await fixture(t, () => {
+    modelStarted.resolve();
+    return modelResponse.promise;
+  });
+  t.after(() => modelResponse.resolve(empty));
+  const { episode } = await run(['ingest', '--topic', 'rules'], turn(1, 'How does the rule work?'));
+  const sync = run(['sync', '--topic', 'rules']).catch(() => undefined);
+  await modelStarted.promise;
+
+  assert.deepEqual(await run(['stop']), { running: false, unverifiedSessions: [] });
+  assert.deepEqual(await run(['status']), { running: false });
+  await sync;
+  assert.deepEqual((await run(['episode', 'get', '--topic', 'rules', episode.id])).messages, episode.messages);
 });

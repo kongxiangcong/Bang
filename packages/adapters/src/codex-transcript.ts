@@ -4,7 +4,7 @@ import { open, readdir, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { BangError } from '../../core/src/store.ts';
-import { bangOperationCall } from './codex-filter.ts';
+import { bangCommandLine } from '../../core/src/capture-filter.ts';
 
 export const chunkSize = 128 * 1024;
 const decoder = new TextDecoder('utf-8', { fatal: true });
@@ -14,6 +14,27 @@ type TranscriptRow = { type?: unknown; timestamp?: unknown; payload?: JsonObject
 
 function object(value: unknown): JsonObject | undefined {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonObject : undefined;
+}
+
+function bangOperationCall(entry: JsonObject) {
+  if (typeof entry.name !== 'string') return false;
+  const skillLaunch = /[\\/](?:\.agents[\\/]skills[\\/]bang[\\/]launch\.mjs|packages[\\/]adapters[\\/]src[\\/]cli\.ts)['"]?\s+skill\s+(?:start|status|stop)\b/u;
+  if (entry.type === 'custom_tool_call') {
+    if (!/(?:^|__)exec$/u.test(entry.name) || typeof entry.input !== 'string') return false;
+    const command = /\btools\.exec_command\s*\(\s*\{[\s\S]*?\bcmd\s*:\s*["'`]([^\n]*)/u.exec(entry.input)?.[1];
+    return command !== undefined && (bangCommandLine(command) || skillLaunch.test(command));
+  }
+  if (entry.type !== 'function_call') return false;
+  if (/(?:^|__)bang_(?:topics|record_turn|sync|query_board|update_epistemic)$/u.test(entry.name)) return true;
+  if (!/(?:^|__)exec_command$/u.test(entry.name) || typeof entry.arguments !== 'string') return false;
+  try {
+    const { cmd } = JSON.parse(entry.arguments) ?? {};
+    return typeof cmd === 'string' && cmd.split(/\r?\n|\s*(?:&&|\|\||;)\s*/u).some((part) =>
+      bangCommandLine(part) || skillLaunch.test(part));
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    return false;
+  }
 }
 
 export function parseRow(line: Buffer): TranscriptRow | undefined {
@@ -46,7 +67,8 @@ export async function transcriptMeta(file: FileHandle, root: string, expectedId?
   if (row?.type !== 'session_meta' || typeof meta?.id !== 'string' ||
       (expectedId !== undefined && meta.id !== expectedId) ||
       (meta.session_id != null && meta.session_id !== meta.id) ||
-      typeof meta.source !== 'string' || !['cli', 'vscode', 'appServer'].includes(meta.source) ||
+      typeof meta.source !== 'string' ||
+      !(['cli', 'vscode', 'appServer'].includes(meta.source) || (meta.source === 'exec' && meta.thread_source === 'user')) ||
       meta.forked_from_id || meta.parent_thread_id || meta.parent_session_id || meta.agent_nickname ||
       meta.originator === 'bang-organizer' || meta.bang_internal === true ||
       typeof meta.cwd !== 'string' || await realpath(meta.cwd).catch(() => undefined) !== root) return;
@@ -102,7 +124,7 @@ function timestamp(value: unknown) {
 export async function bindingBoundary(file: FileHandle, firstOffset: number) {
   const { size } = await file.stat();
   let lineOffset = firstOffset;
-  let active: { id: string; offset: number } | undefined;
+  let active: { id: string; offset: number; at?: string } | undefined;
   let pending: Buffer = Buffer.alloc(0);
   for (let offset = firstOffset; offset < size;) {
     const chunk = await readChunk(file, offset, size - offset);
@@ -113,7 +135,9 @@ export async function bindingBoundary(file: FileHandle, firstOffset: number) {
       const row = parseRow(line.bytes);
       const entry = row?.payload;
       if (row?.type !== 'event_msg' || typeof entry?.turn_id !== 'string') continue;
-      if (entry.type === 'task_started') active = { id: entry.turn_id, offset: line.offset };
+      if (entry.type === 'task_started') {
+        active = { id: entry.turn_id, offset: line.offset, at: timestamp(row.timestamp) };
+      }
       if ((entry.type === 'task_complete' || entry.type === 'turn_aborted') && active?.id === entry.turn_id) {
         active = undefined;
       }

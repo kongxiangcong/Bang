@@ -1,3 +1,55 @@
+export const deliveryBindings = `
+  CREATE TABLE IF NOT EXISTS delivery_bindings (
+    harness TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    topic_id TEXT NOT NULL REFERENCES topics(id),
+    binding_id TEXT NOT NULL UNIQUE,
+    started_at INTEGER NOT NULL,
+    ended_at INTEGER,
+    rebound INTEGER NOT NULL DEFAULT 0 CHECK (rebound IN (0, 1)),
+    PRIMARY KEY (harness, session_id)
+  ) STRICT;
+`;
+
+export const stoppedDeliveryIntervals = `
+  CREATE TABLE IF NOT EXISTS stopped_delivery_intervals (
+    binding_id TEXT PRIMARY KEY,
+    harness TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    topic_id TEXT NOT NULL REFERENCES topics(id),
+    started_at INTEGER NOT NULL,
+    ended_at INTEGER NOT NULL
+  ) STRICT;
+`;
+
+function captureFenceTrigger(table: string, event: string, row: 'NEW' | 'OLD') {
+  return `
+    CREATE TRIGGER IF NOT EXISTS legacy_capture_${table}_${event.toLowerCase()}
+    BEFORE ${event} ON ${table}
+    WHEN EXISTS (
+      SELECT 1 FROM legacy_capture_fences AS fence
+      WHERE fence.harness = ${row}.harness AND fence.session_id = ${row}.session_id
+        AND fence.topic_id = ${row}.topic_id
+    ) BEGIN
+      SELECT RAISE(ABORT, 'Capture interval is shutting down');
+    END;
+  `;
+}
+
+export const legacyCaptureFences = `
+  CREATE TABLE IF NOT EXISTS legacy_capture_fences (
+    harness TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    topic_id TEXT NOT NULL,
+    daemon TEXT NOT NULL,
+    PRIMARY KEY (harness, session_id, topic_id, daemon)
+  ) STRICT;
+  ${captureFenceTrigger('episodes', 'INSERT', 'NEW')}
+  ${captureFenceTrigger('adapter_cursors', 'UPDATE', 'OLD')}
+  ${captureFenceTrigger('adapter_cursors', 'DELETE', 'OLD')}
+  ${captureFenceTrigger('delivery_bindings', 'UPDATE', 'OLD')}
+`;
+
 const sessionSubgraphs = `
   CREATE TABLE IF NOT EXISTS session_subgraphs (
     topic_id TEXT NOT NULL REFERENCES topics(id),
@@ -62,8 +114,12 @@ export const schema = `
     line_buffer TEXT NOT NULL DEFAULT '',
     active_turn_json TEXT,
     last_turn_id TEXT,
+    stopped_at INTEGER,
+    stop_pending INTEGER NOT NULL DEFAULT 0,
     updated_at TEXT NOT NULL
   ) STRICT;
+  ${deliveryBindings}
+  ${stoppedDeliveryIntervals}
   ${sessionSubgraphs}
   CREATE TABLE IF NOT EXISTS jobs (
     id TEXT PRIMARY KEY,
@@ -97,6 +153,7 @@ export const schema = `
     layout_json TEXT NOT NULL,
     updated_at TEXT NOT NULL
   ) STRICT;
+  ${legacyCaptureFences}
 `;
 
 export const migrateReasoningSessions = `
@@ -128,4 +185,9 @@ export const migrateReasoningSessions = `
     SELECT 1 FROM legacy_session_subgraphs AS legacy
     WHERE legacy.topic_id = jobs.topic_id AND legacy.session_id = jobs.session_id
   ));
+`;
+
+export const migrateCaptureStop = `
+  ALTER TABLE adapter_cursors ADD COLUMN stopped_at INTEGER;
+  ALTER TABLE adapter_cursors ADD COLUMN stop_pending INTEGER NOT NULL DEFAULT 0;
 `;

@@ -4,7 +4,7 @@ import {
   bindingBoundary, completeLines, consumeRow, locateTranscript, openTranscript, parseRow, readChunk, transcriptMeta,
 } from './codex-transcript.ts';
 import type { ActiveTurn } from './codex-transcript.ts';
-import { filterCodexExchange } from './codex-filter.ts';
+import { filterExchange } from '../../core/src/capture-filter.ts';
 
 type Cursor = {
   adapter_key: string;
@@ -17,6 +17,8 @@ type Cursor = {
   line_buffer: string;
   last_turn_id: string | null;
   active_turn_json: string | null;
+  stopped_at: number | null;
+  stop_pending: number;
 };
 
 const harness = 'codex';
@@ -44,6 +46,7 @@ function fileMissing(error: unknown) {
 
 class CodexWatcher {
   private queue = Promise.resolve();
+  private stopping = false;
   private readonly store: BangStore;
   private readonly project: string;
 
@@ -62,12 +65,31 @@ class CodexWatcher {
     return this.queue;
   }
 
+  stop() {
+    this.stopping = true;
+    return this.run(async () => {
+      const pending = this.store.db.prepare(`
+        SELECT * FROM adapter_cursors WHERE harness = ? AND stop_pending = 1 ORDER BY session_id
+      `).all(harness) as Cursor[];
+      const unverifiedSessions = [];
+      for (const cursor of pending) {
+        if (!await this.drainStopped(cursor)) unverifiedSessions.push(cursor.session_id);
+      }
+      return { unverifiedSessions };
+    });
+  }
+
+  private checkRunning() {
+    if (this.stopping) throw new BangError('service_stopping', 'Bang is stopping', 503);
+  }
+
   private cursor(session: string) {
     return this.store.db.prepare('SELECT * FROM adapter_cursors WHERE harness = ? AND session_id = ?')
       .get(harness, session) as Cursor | undefined;
   }
 
   async bind(input: Record<string, unknown>) {
+    this.checkRunning();
     const topic = this.store.findTopic(requiredString(input.topicId, 'topicId'));
     if (topic.status === 'archived') throw new BangError('topic_archived', 'Topic is archived', 409);
     const session = parseSessionId(input.sessionId);
@@ -84,12 +106,17 @@ class CodexWatcher {
       if (!meta || (prior?.enabled && prior.file_signature !== meta.signature)) {
         throw new BangError('codex_session_excluded', 'Codex transcript is outside the project or is not a primary session', 409);
       }
+      this.checkRunning();
       if (prior?.enabled) return { status: 'bound', ...summary(prior) };
       const { active, lineOffset } = await bindingBoundary(file, meta.offset);
       if (turnId !== undefined && turnId !== active?.id) {
         throw new BangError('codex_turn_not_active', 'The supplied Codex turn is not active in this transcript', 409);
       }
-      const boundary = (turnId !== undefined || input.includeActive === true) && active ? active.offset : lineOffset;
+      const includeActive = active && (turnId !== undefined || input.includeActive === true) &&
+        (prior?.stopped_at == null || (active.at !== undefined && Date.parse(active.at) >= prior.stopped_at));
+      const boundary = includeActive ? active.offset : lineOffset;
+      if (prior?.stop_pending && prior.file_signature === meta.signature) await this.drainStopped(prior, path);
+      this.checkRunning();
       this.store.transaction(() => {
         if (prior) this.store.db.prepare('DELETE FROM adapter_cursors WHERE adapter_key = ?').run(prior.adapter_key);
         this.store.db.prepare(`
@@ -105,12 +132,14 @@ class CodexWatcher {
   }
 
   async unbind(value: unknown) {
+    this.checkRunning();
     const cursor = this.cursor(parseSessionId(value));
     if (!cursor) throw new BangError('codex_binding_not_found', 'Codex session is not bound', 404);
     if (cursor.enabled) {
       await this.follow(cursor).catch((error) => {
         if (!fileMissing(error)) throw error;
       });
+      this.checkRunning();
       this.store.db.prepare(`
         UPDATE adapter_cursors SET enabled = 0, active_turn_json = NULL, line_buffer = '', updated_at = ?
         WHERE harness = ? AND session_id = ?
@@ -126,11 +155,17 @@ class CodexWatcher {
   }
 
   async poll() {
+    if (this.stopping) return;
     const cursors = this.store.db.prepare(`
       SELECT adapter_cursors.* FROM adapter_cursors JOIN topics ON topics.id = adapter_cursors.topic_id
-      WHERE harness = ? AND enabled = 1 AND topics.status = 'active'
+      WHERE harness = ? AND ((enabled = 1 AND topics.status = 'active') OR stop_pending = 1)
     `).all(harness) as Cursor[];
     for (const cursor of cursors) {
+      if (this.stopping) break;
+      if (cursor.stop_pending) {
+        await this.drainStopped(cursor);
+        continue;
+      }
       try {
         await this.follow(cursor);
       } catch (error) {
@@ -139,24 +174,39 @@ class CodexWatcher {
     }
   }
 
-  private async follow(cursor: Cursor) {
-    let file = await openTranscript(cursor.adapter_key.slice(prefix.length)).catch((error) => {
+  private async drainStopped(cursor: Cursor, path?: string) {
+    try {
+      await this.follow(cursor, path);
+      this.store.db.prepare(`
+        UPDATE adapter_cursors SET stop_pending = 0, active_turn_json = NULL, line_buffer = ''
+        WHERE adapter_key = ? AND stopped_at IS ?
+      `).run(cursor.adapter_key, cursor.stopped_at);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async follow(cursor: Cursor, path = cursor.adapter_key.slice(prefix.length)) {
+    let file = await openTranscript(path).catch((error) => {
       if (!fileMissing(error)) throw error;
     });
-    let relocatedKey: string | undefined;
     if (!file) {
-      const path = await locateTranscript(cursor.session_id);
+      path = await locateTranscript(cursor.session_id);
       file = await openTranscript(path);
-      relocatedKey = prefix + path;
     }
     try {
+      const relocatedKey = prefix + path !== cursor.adapter_key ? prefix + path : undefined;
       const { size } = await file.stat();
-      if (size < cursor.byte_offset || (size === cursor.byte_offset && !relocatedKey)) return;
+      if (!cursor.stop_pending && (size < cursor.byte_offset || (size === cursor.byte_offset && !relocatedKey))) return;
       const meta = await transcriptMeta(file, this.project, cursor.session_id);
-      if (!meta || meta.signature !== cursor.file_signature) return;
+      if (size < cursor.byte_offset || !meta || meta.signature !== cursor.file_signature) {
+        if (!cursor.stop_pending) return;
+        throw new BangError('codex_transcript_changed', 'Could not verify the bound Codex transcript');
+      }
       if (relocatedKey) {
-        this.store.db.prepare('UPDATE adapter_cursors SET adapter_key = ? WHERE adapter_key = ?')
-          .run(relocatedKey, cursor.adapter_key);
+        this.store.db.prepare('UPDATE adapter_cursors SET adapter_key = ? WHERE adapter_key = ? AND stopped_at IS ?')
+          .run(relocatedKey, cursor.adapter_key, cursor.stopped_at);
         cursor.adapter_key = relocatedKey;
       }
       let offset = cursor.byte_offset;
@@ -165,16 +215,23 @@ class CodexWatcher {
       let lastTurnId = cursor.last_turn_id;
       while (offset < size) {
         const chunk = await readChunk(file, offset, size - offset);
-        if (chunk.length === 0) break;
+        if (this.stopping && cursor.enabled) return;
+        if (chunk.length === 0) {
+          if (!cursor.stop_pending) break;
+          throw new BangError('codex_transcript_changed', 'Could not verify the bound Codex transcript');
+        }
         let lineOffset = offset - pending.length;
         const bytes = Buffer.concat([pending, chunk]);
         for (const line of completeLines(bytes, lineOffset)) {
           lineOffset = line.next;
-          const result = consumeRow(active, parseRow(line.bytes));
+          const row = parseRow(line.bytes);
+          if (cursor.stopped_at !== null &&
+              !(typeof row?.timestamp === 'string' && Date.parse(row.timestamp) < cursor.stopped_at)) continue;
+          const result = consumeRow(active, row);
           active = result.active;
           if (result.ended) lastTurnId = result.ended;
           const turn = result.complete;
-          const exchange = turn && filterCodexExchange(turn.user, turn.assistant, turn.bangOperation);
+          const exchange = turn && filterExchange(turn.user, turn.assistant, turn.bangOperation);
           if (turn && exchange) {
             try {
               this.store.recordEpisode({
@@ -196,9 +253,9 @@ class CodexWatcher {
         // Episode identity makes a replay idempotent if the process dies before this checkpoint.
         this.store.db.prepare(`
           UPDATE adapter_cursors SET byte_offset = ?, line_buffer = ?, active_turn_json = ?, last_turn_id = ?, updated_at = ?
-          WHERE adapter_key = ?
+          WHERE adapter_key = ? AND stopped_at IS ?
         `).run(offset, pending.toString('base64'), active ? JSON.stringify(active) : null, lastTurnId,
-          new Date().toISOString(), cursor.adapter_key);
+          new Date().toISOString(), cursor.adapter_key, cursor.stopped_at);
       }
     } finally {
       await file.close();
@@ -206,10 +263,15 @@ class CodexWatcher {
   }
 }
 
+export function drainStoppedCapture(store: BangStore, project: string) {
+  return new CodexWatcher(store, project).stop();
+}
+
 export function codexCapture() {
   let watcher: CodexWatcher | undefined;
 
   return {
+    watcherHarnesses: [harness],
     onStart({ store, paths }: Pick<RouteContext, 'store' | 'paths'>) {
       const runtime = new CodexWatcher(store, paths.root);
       watcher = runtime;
@@ -229,6 +291,9 @@ export function codexCapture() {
         clearTimeout(timer);
         return runtime.wait();
       };
+    },
+    async onStop() {
+      return await watcher?.stop() ?? { unverifiedSessions: [] };
     },
     async route({ request, url, parts, body, json }: RouteContext) {
       if (!watcher) return false;

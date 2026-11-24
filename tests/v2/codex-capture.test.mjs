@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
-import { appendFile, mkdir, stat, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, rename, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
 import { createProject } from './cli.mjs';
 
 const timestamp = '2026-11-21T12:00:00.000Z';
-const row = (type, payload) => JSON.stringify({ timestamp, type, payload }) + '\n';
-const event = (type, turn_id) => row('event_msg', { type, turn_id });
+const row = (type, payload, at = timestamp) => JSON.stringify({ timestamp: at, type, payload }) + '\n';
+const event = (type, turn_id, at) => row('event_msg', { type, turn_id }, at);
 function prompt(id, text) {
   return row('response_item', {
     type: 'message', role: 'user', content: [{ type: 'input_text', text }],
@@ -16,11 +16,13 @@ function prompt(id, text) {
     },
   });
 }
-const start = (id, question) => event('task_started', id) + prompt(id, question);
-const finish = (id, answer) => row('response_item', {
+const start = (id, question, at) => event('task_started', id, at) + prompt(id, question);
+const finalAnswer = (answer) => row('response_item', {
   type: 'message', role: 'assistant', phase: 'final_answer',
   content: [{ type: 'output_text', text: answer }],
-}) + row('event_msg', { type: 'task_complete', turn_id: id, last_agent_message: answer });
+});
+const finish = (id, answer, at) => finalAnswer(answer) +
+  row('event_msg', { type: 'task_complete', turn_id: id, last_agent_message: answer }, at);
 const turn = (id, question, answer) => start(id, question) + finish(id, answer);
 
 async function project(t) {
@@ -40,10 +42,10 @@ async function project(t) {
   };
 }
 
-async function episodes(run, ids) {
+async function episodes(run, ids, topic = 'gdn') {
   let found;
   for (let attempt = 0; attempt < 30; attempt += 1) {
-    const { episodes } = await run(['episode', 'list', '--topic', 'gdn']);
+    const { episodes } = await run(['episode', 'list', '--topic', topic]);
     found = episodes;
     if (found.length >= ids.length) break;
     await delay(80);
@@ -51,6 +53,91 @@ async function episodes(run, ids) {
   assert.deepEqual(found.map((episode) => episode.turnId), ids);
   return found;
 }
+
+test('Bang 有多个活跃专题时先请用户选择，选定后从新绑定起点采集', async (t) => {
+  const { run, session } = await project(t);
+  const other = await run(['topic', 'create', 'state', '--title', '循环状态']);
+  await run(['topic', 'create', 'retired']);
+  await run(['topic', 'archive', 'retired']);
+  const file = await session('choosing');
+  const startSkill = (...args) => run(['skill', 'start', '--session', 'choosing', ...args]);
+
+  const choice = await startSkill();
+  assert.equal(choice.status, 'choose_topic');
+  assert.deepEqual(choice.candidates.map(({ slug, title }) => [slug, title]), [['gdn', 'GDN'], ['state', '循环状态']]);
+  assert.equal(choice.url, undefined);
+  await appendFile(file, turn('while-choosing', '选择前的问题', '选择前的答案'));
+
+  const selected = await startSkill('--topic', '循环状态');
+  assert.equal(selected.topic.id, other.id);
+  const exchange = await fetch(selected.url, { redirect: 'manual' });
+  assert.equal(exchange.headers.get('location'), '/?topic=state');
+  await appendFile(file, turn('after-selection', '选择后的问题', '选择后的答案'));
+  const [saved] = await episodes(run, ['after-selection'], 'state');
+  const source = await run(['episode', 'get', saved.id, '--topic', 'state']);
+  assert.deepEqual(source.messages.map(({ content }) => content), ['选择后的问题', '选择后的答案']);
+  await episodes(run, [], 'gdn');
+});
+
+test('Bang 遇到同名专题时列出可区分的标识，接受精确的 slug', async (t) => {
+  const { run, session } = await project(t);
+  await run(['topic', 'create', 'first', '--title', '循环状态']);
+  const second = await run(['topic', 'create', 'second', '--title', '循环状态']);
+  await session('same-title');
+  const startSkill = (topic) => run(['skill', 'start', '--session', 'same-title', '--topic', topic]);
+
+  await assert.rejects(startSkill('循环'), /topic_not_found/);
+  const choice = await startSkill('循环状态');
+  assert.equal(choice.status, 'choose_topic');
+  assert.deepEqual(choice.candidates.map(({ slug }) => slug), ['first', 'second']);
+  assert.equal((await startSkill('second')).topic.id, second.id);
+});
+
+test('Bang 重复启动沿用原采集区间，解绑只结束指定会话的采集', async (t) => {
+  const { run, session } = await project(t);
+  const a = await session('learning-a');
+  const b = await session('learning-b');
+  const startSkill = (id, ...args) => run(['skill', 'start', '--session', id, ...args]);
+  const initial = await startSkill('learning-a');
+  assert.equal(initial.topic.slug, 'gdn');
+  await appendFile(a, start('ongoing', 'A 会话进行中的问题'));
+  await run(['topic', 'create', 'different']);
+  const parallel = await startSkill('learning-b', '--topic', initial.topic.id);
+  assert.deepEqual(parallel.sessions, ['learning-a', 'learning-b']);
+
+  const repeated = await startSkill('learning-a', '--topic', 'different');
+  assert.equal(repeated.topic.id, initial.topic.id);
+  assert.deepEqual(repeated.sessions, ['learning-a', 'learning-b']);
+  await appendFile(a, finish('ongoing', 'A 会话进行中的回答'));
+  await episodes(run, ['ongoing']);
+  await appendFile(b, turn('parallel', 'B 会话的问题', 'B 会话的回答'));
+  const originals = await episodes(run, ['ongoing', 'parallel']);
+  for (const [index, contents] of [
+    ['A 会话进行中的问题', 'A 会话进行中的回答'],
+    ['B 会话的问题', 'B 会话的回答'],
+  ].entries()) {
+    const original = await run(['episode', 'get', originals[index].id, '--topic', 'gdn']);
+    assert.deepEqual(original.messages.map(({ content }) => content), contents);
+  }
+
+  await run(['unbind', '--session', 'learning-a']);
+  await appendFile(a, turn('unbound', 'A 会话解绑后的问题', 'A 会话解绑后的回答'));
+  await appendFile(b, turn('continues', 'B 会话继续讨论', 'B 会话继续采集'));
+  await episodes(run, ['ongoing', 'parallel', 'continues']);
+  assert.deepEqual((await startSkill('learning-b')).sessions, ['learning-b']);
+});
+
+test('旧绑定的专题归档后，Bang 可接续剩下的活跃专题', async (t) => {
+  const { run, session } = await project(t);
+  const file = await session('archived-topic');
+  const startSkill = () => run(['skill', 'start', '--session', 'archived-topic']);
+  assert.equal((await startSkill()).topic.slug, 'gdn');
+  await run(['topic', 'create', 'active']);
+  await run(['topic', 'archive', 'gdn']);
+  assert.equal((await startSkill()).topic.slug, 'active');
+  await appendFile(file, turn('active-topic', '接续哪个专题？', '接续活跃专题。'));
+  await episodes(run, ['active-topic'], 'active');
+});
 
 test('Codex 第 12 轮绑定时从当轮采集，轮间绑定从下一轮开始', async (t) => {
   const { run, session } = await project(t);
@@ -108,12 +195,31 @@ test('纯 Bang 操作只推进游标，混合轮只保留可独立识别的专�
   assert.equal((await run(['status'])).bindings[0].lastTurnId, 'pure-last');
 });
 
+test('Codex 的内联 $bang 与工具回执保留原样的专题问答', async (t) => {
+  const { run, session } = await project(t);
+  const file = await session('inline-skill');
+  await run(['bind', '--topic', 'gdn', '--session', 'inline-skill']);
+  const launcher = row('response_item', {
+    type: 'custom_tool_call', name: 'exec',
+    input: `text(await tools.exec_command({cmd:"'/path/to/node' --experimental-strip-types '/tmp/isolation/home/.agents/skills/bang/launch.mjs' skill start"}))`,
+  });
+  const question = '为什么门控能减弱噪声？';
+  const answer = '门控逐元素调制信号。';
+  await appendFile(file,
+    start('inline', `$bang ${question}`) + launcher +
+    finish('inline', `Bang 已开始自动记录 **gdn** 专题。整理模型尚未配置。\n\n${answer}`) +
+    start('status', '请查看 GDN 专题。') + launcher + finish('status', 'GDN 专题里有 3 条记录。'));
+  const [saved] = await episodes(run, ['inline']);
+  assert.deepEqual(saved.messages.map(({ content }) => content), [question, answer]);
+});
+
 test('Codex 绑定排除整理器、子代理、分支会话与其他项目', async (t) => {
   const { path, run, session } = await project(t);
   const other = join(path, 'other-project');
   await mkdir(other);
   const excluded = [
     ['organizer', { originator: 'bang-organizer' }],
+    ['internal-exec', { source: 'exec', thread_source: 'subagent' }],
     ['child', { source: { subagent: { thread_spawn: { parent_thread_id: 'main' } } } }],
     ['child-cli', { agent_nickname: 'subagent' }],
     ['fork', { forked_from_id: 'main' }],
@@ -125,7 +231,7 @@ test('Codex 绑定排除整理器、子代理、分支会话与其他项目', as
     await assert.rejects(run(['bind', '--topic', 'gdn', '--session', id]), /codex_session_excluded/);
   }
   const neverBound = await session('never-bound');
-  const main = await session('main');
+  const main = await session('main', { source: 'exec', thread_source: 'user' });
   await run(['bind', '--topic', 'gdn', '--session', 'main']);
   await appendFile(neverBound, turn('unbound', '未授权', '未授权'));
   await appendFile(main, turn('allowed', '已授权', '已授权'));
@@ -180,8 +286,105 @@ test('解绑跳过间隔，强杀后续采已绑定会话与按字节拆开的 U
     '中文问题：如何表示门控？', '中文答案：逐元素乘法。',
   ]);
   assert.notEqual(resumed[0].id, resumed[1].id);
-  await run(['stop']);
-  await appendFile(file, turn('while-down', '停机期间仍绑定', '重启后补采'));
+  process.kill(restarted.pid, 'SIGKILL');
+  await appendFile(file, turn('while-down', '意外退出期间仍绑定', '重启后补采'));
   await run(['serve']);
   await episodes(run, [...expected, 'split', 'while-down']);
+});
+
+test('主动停止结束项目内各专题的采集，保留已完成的问答，只重新绑定一个会话', async (t) => {
+  const { run, session } = await project(t);
+  const other = await project(t);
+  const a = await session('capture-a');
+  const b = await session('capture-b');
+  const independent = await other.session('independent');
+  await run(['topic', 'create', 'Other']);
+  await Promise.all([
+    run(['bind', '--topic', 'gdn', '--session', 'capture-a']),
+    run(['bind', '--topic', 'other', '--session', 'capture-b']),
+    other.run(['bind', '--topic', 'gdn', '--session', 'independent']),
+  ]);
+  const { pid: independentPid } = await other.run(['status']);
+  await appendFile(b, start('unfinished', '停止时仍在作答'));
+  await appendFile(a, turn('complete', '停止前已完成的问题', '停止前已完成的回答'));
+  const stopped = await run(['stop']);
+  assert.equal(stopped.running, false);
+  assert.deepEqual(stopped.unverifiedSessions, []);
+  assert.deepEqual(await run(['status']), { running: false });
+
+  await appendFile(a, turn('gap-a', '停采期间的问题', '停采期间的回答'));
+  await appendFile(b, finish('unfinished', '停止后才答完') + turn('gap-b', '停采期间的问题', '停采期间的回答'));
+  await appendFile(independent, turn('continues', '另一项目的问题', '另一项目的回答'));
+  await run(['serve']);
+  assert.ok((await run(['status'])).bindings.every(({ enabled }) => !enabled));
+  const [saved] = await episodes(run, ['complete']);
+  const source = await run(['episode', 'get', '--topic', 'gdn', saved.id]);
+  assert.deepEqual(source.messages.map(({ content }) => content), ['停止前已完成的问题', '停止前已完成的回答']);
+  await episodes(run, [], 'other');
+  await episodes(other.run, ['continues']);
+  assert.equal((await other.run(['status'])).pid, independentPid);
+
+  await run(['bind', '--topic', 'other', '--session', 'capture-b']);
+  await appendFile(a, turn('still-disabled', '只重绑了 B', 'A 继续停采'));
+  await appendFile(b, turn('after-rebind', '重绑后的问题', '重绑后的回答'));
+  await episodes(run, ['after-rebind'], 'other');
+  await episodes(run, ['complete']);
+});
+
+test('停止时点名不可读的来源，恢复后只补采停止前已完成的问答', async (t) => {
+  const { run, session } = await project(t);
+  const a = await session('missing-source');
+  const b = await session('readable-source');
+  await run(['bind', '--topic', 'gdn', '--session', 'missing-source']);
+  await run(['bind', '--topic', 'gdn', '--session', 'readable-source']);
+  const unavailable = a + '.unavailable';
+  await rename(a, unavailable);
+  await appendFile(unavailable, turn('saved-on-recovery', '恢复后可证明的问答', '停止前完成') +
+    start('unfinished-source', '已有最后一条消息但轮次仍未结束') + finalAnswer('详见后续补充'));
+  await appendFile(b, turn('saved-on-stop', '可读的问答', '停止前完成'));
+
+  const stopped = await run(['stop']);
+  assert.deepEqual(stopped, { running: false, unverifiedSessions: ['missing-source'] });
+  await appendFile(unavailable, event('task_complete', 'unfinished-source', new Date().toISOString()));
+  await appendFile(unavailable, start('gap-a', '停止后的问题', new Date().toISOString()) +
+    finish('gap-a', '停止后的回答', new Date().toISOString()));
+  await appendFile(b, turn('gap-b', '另一会话也已停止采集', '停止期间完成'));
+
+  await run(['serve']);
+  await episodes(run, ['saved-on-stop']);
+  assert.ok((await run(['status'])).bindings.every(({ enabled }) => !enabled));
+  await rename(unavailable, a);
+  await episodes(run, ['saved-on-stop', 'saved-on-recovery']);
+});
+
+test('守护进程意外退出后仍可主动停止原采集区间', async (t) => {
+  const { run, session } = await project(t);
+  const file = await session('offline-stop');
+  await run(['bind', '--topic', 'gdn', '--session', 'offline-stop']);
+  process.kill((await run(['status'])).pid, 'SIGKILL');
+  await appendFile(file, turn('before-stop', '意外退出后仍在绑定', '主动停止前的答案'));
+
+  assert.deepEqual(await run(['stop']), { running: false, unverifiedSessions: [] });
+  await appendFile(file, turn('after-stop', '主动停止后的问题', '主动停止后的答案'));
+  await run(['serve']);
+  await episodes(run, ['before-stop']);
+  assert.equal((await run(['status'])).bindings[0].enabled, false);
+});
+
+test('重新绑定移动过的来源时保留已结束轮次，跳过停止前就已开始的进行中轮次', async (t) => {
+  const { run, session } = await project(t);
+  const file = await session('relocated-source');
+  await run(['bind', '--topic', 'gdn', '--session', 'relocated-source']);
+  const moved = file + '.relocated';
+  await rename(file, moved);
+  await appendFile(moved, turn('complete-before-stop', '停止请求前的问题', '停止请求前的答案') +
+    start('unfinished-at-stop', '停止请求时仍在作答'));
+  assert.deepEqual((await run(['stop'])).unverifiedSessions, ['relocated-source']);
+
+  await run(['bind', '--topic', 'gdn', '--transcript', moved], undefined, {
+    CODEX_THREAD_ID: 'relocated-source', CODEX_TURN_ID: 'unfinished-at-stop',
+  });
+  await appendFile(moved, finish('unfinished-at-stop', '现在才作答完毕', new Date().toISOString()) +
+    turn('new-interval', '重新绑定后的问题', '重新绑定后的答案'));
+  await episodes(run, ['complete-before-stop', 'new-interval']);
 });

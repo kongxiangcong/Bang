@@ -2,10 +2,12 @@ import { randomBytes } from 'node:crypto';
 import { readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { IncomingMessage, Server, ServerResponse } from 'node:http';
+import { connect } from 'node:net';
 import { BangError, BangStore, requiredString } from './store.ts';
 import { ReasoningEngine } from './reasoning/engine.ts';
 import { routeReasoning } from './reasoning/routes.ts';
 import { initializeWorkspace, writeWorkspaceDefaults } from './workspace.ts';
+import { routeDelivery } from './delivery.ts';
 
 const host = '127.0.0.1';
 const defaultPort = 4318;
@@ -31,9 +33,11 @@ export type RouteContext = LifecycleContext & {
 };
 type RuntimeOptions = {
   port?: number;
+  watcherHarnesses?: readonly string[];
   route?: (context: RouteContext) => boolean | Promise<boolean>;
   onStart?: (context: LifecycleContext) => void | (() => void | Promise<void>)
     | Promise<void | (() => void | Promise<void>)>;
+  onStop?: (context: LifecycleContext, stoppedAt: number) => Promise<{ unverifiedSessions: string[] }>;
 };
 
 function readDiscoveryFile(file: string) {
@@ -64,6 +68,10 @@ export function readDiscovery(paths: ProjectPaths) {
   return parseDiscovery(readDiscoveryFile(paths.discovery), paths.root);
 }
 
+export function discoveryIdentity(service: Discovery) {
+  return `${service.pid}:${service.started_at}`;
+}
+
 export function requestService(service: Discovery, path: string, init?: RequestInit) {
   const headers = new Headers(init?.headers);
   headers.set('Authorization', `Bearer ${service.token}`);
@@ -75,12 +83,25 @@ export async function probeService(service: Discovery) {
     const response = await requestService(service, '/api/health', { signal: AbortSignal.timeout(500) });
     if (!response.ok) return;
     const health = await response.json() as {
-      pid: number; project_root: string; version: string; ready: boolean;
+      pid: number; project_root: string; version: string; ready: boolean; captureStop?: boolean;
     };
     if (health.pid === service.pid && health.project_root === service.project_root) return health;
   } catch {
     return undefined;
   }
+}
+
+function serviceMayStillListen(port: number) {
+  return new Promise<boolean>((resolve) => {
+    const socket = connect({ port, host });
+    function finish(listening: boolean) {
+      socket.destroy();
+      resolve(listening);
+    }
+    socket.setTimeout(500, () => finish(true));
+    socket.once('connect', () => finish(true));
+    socket.once('error', (error: NodeJS.ErrnoException) => finish(error.code !== 'ECONNREFUSED'));
+  });
 }
 
 function writeDiscovery(path: string, service: Discovery) {
@@ -163,6 +184,8 @@ export async function startServer(project: string, options: RuntimeOptions = {})
   let ready = false;
   let teardown: void | (() => void | Promise<void>);
   let closing: Promise<void> | undefined;
+  let reasoningClosing: Promise<void> | undefined;
+  let stopping: Promise<{ unverifiedSessions: string[] }> | undefined;
 
   const server = createServer(async (request, response) => {
     response.setHeader('Cache-Control', 'no-store');
@@ -226,12 +249,31 @@ export async function startServer(project: string, options: RuntimeOptions = {})
         throw new BangError('unauthorized', 'Authorization required', 401);
       }
       if (method === 'GET' && url.pathname === '/api/health') {
-        return json({ pid: service.pid, project_root: paths.root, version: '2.0.0', ready });
+        return json({ pid: service.pid, project_root: paths.root, version: '2.0.0', ready, captureStop: true });
       }
-      if (!ready) throw new BangError('starting', 'Bang is starting', 503);
+      if (method === 'POST' && url.pathname === '/api/stop') {
+        if (!authenticatedCli) throw new BangError('unauthorized', 'CLI authorization required', 401);
+        if (!stopping && !ready) throw new BangError('starting', 'Bang is starting', 503);
+        stopping ??= stop(Date.now());
+        try {
+          const result = await stopping;
+          if (!response.destroyed) json({ running: false, ...result });
+        } finally {
+          const shutdown = () => void close().catch((error) => console.error(error));
+          if (response.writableFinished || response.destroyed) shutdown();
+          else response.once('finish', shutdown).once('close', shutdown);
+        }
+        return;
+      }
+      if (!ready) throw closing || stopping
+        ? new BangError('service_stopping', 'Bang is stopping', 503)
+        : new BangError('starting', 'Bang is starting', 503);
 
       let body: ReturnType<typeof readBody> | undefined;
-      const read = () => body ??= readBody(request);
+      const read = () => body ??= readBody(request).then((input) => {
+        if (!ready) throw new BangError('service_stopping', 'Bang is stopping', 503);
+        return input;
+      });
       if (method === 'POST' && url.pathname === '/api/auth/exchange') {
         if (!authenticatedCli) throw new BangError('unauthorized', 'CLI authorization required', 401);
         const { topic } = await read();
@@ -243,11 +285,6 @@ export async function startServer(project: string, options: RuntimeOptions = {})
         const id = token();
         tickets.set(id, { topic: selected, expires: now + 60_000 });
         return json({ url: `${origin}/api/auth/exchange?token=${id}` });
-      }
-      if (method === 'POST' && url.pathname === '/api/stop') {
-        if (!authenticatedCli) throw new BangError('unauthorized', 'CLI authorization required', 401);
-        response.once('finish', () => void close().catch((error) => console.error(error)));
-        return json({ running: false });
       }
       if (url.pathname === '/api/topics') {
         if (method === 'GET') return json(store.listTopics());
@@ -275,12 +312,8 @@ export async function startServer(project: string, options: RuntimeOptions = {})
       }
       const context = { ...lifecycle, request, response, url, parts, body: read, json };
       if (options.route && await options.route(context)) return;
+      if (await routeDelivery(context, options.watcherHarnesses)) return;
       if (await routeReasoning(reasoning, context)) return;
-      if (method === 'GET' && url.pathname === '/') {
-        response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        response.end('<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>Bang</title><p>Bang 本地服务已连接。</p></html>');
-        return;
-      }
       throw new BangError('not_found', 'Route not found', 404);
     } catch (error) {
       if (response.headersSent) {
@@ -294,12 +327,18 @@ export async function startServer(project: string, options: RuntimeOptions = {})
     }
   });
 
+  async function stop(stoppedAt: number) {
+    ready = false;
+    store.endCapture(stoppedAt);
+    reasoningClosing ??= reasoning.close();
+    return await options.onStop?.(lifecycle, stoppedAt) ?? { unverifiedSessions: [] };
+  }
+
   function close() {
     closing ??= (async () => {
       ready = false;
       try {
-        await reasoning.close();
-        await teardown?.();
+        await Promise.allSettled([reasoningClosing ??= reasoning.close(), teardown?.(), stopping]);
       } finally {
         await new Promise<void>((resolve) => {
           server.close(() => resolve());
@@ -331,15 +370,23 @@ export async function startServer(project: string, options: RuntimeOptions = {})
         await close();
         return { discovery: previous, close, owned: false };
       }
+      const previousIdentity = previous && discoveryIdentity(previous);
+      const fenced = previousIdentity !== undefined && store.hasLegacyCaptureFence(previousIdentity);
+      if (previous && fenced && await serviceMayStillListen(previous.port)) {
+        throw new BangError('service_stopping', 'The previous Bang service is still stopping', 503);
+      }
       const claimed = store.transaction(() => {
         if (readDiscoveryFile(paths.discovery) !== observed) return false;
+        if (!fenced && previousIdentity !== undefined && store.hasLegacyCaptureFence(previousIdentity)) return false;
         writeWorkspaceDefaults(paths);
         writeDiscovery(paths.discovery, service);
+        store.clearLegacyCaptureFences();
         return true;
       });
       if (claimed) break;
     }
     teardown = await options.onStart?.(lifecycle);
+    reasoning.start();
     ready = true;
     return { discovery: service, close, owned: true };
   } catch (error) {

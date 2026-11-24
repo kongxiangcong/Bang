@@ -1,13 +1,21 @@
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { text as readStream } from 'node:stream/consumers';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import type { Discovery } from '../../core/src/server.ts';
-import { probeService, readDiscovery, requestService, startServer } from '../../core/src/server.ts';
-import { BangError, requiredString } from '../../core/src/store.ts';
+import { discoveryIdentity, probeService, readDiscovery, requestService, startServer } from '../../core/src/server.ts';
+import { BangError, BangStore, requiredString } from '../../core/src/store.ts';
+import { prepareDelivery } from '../../core/src/delivery.ts';
 import { workspacePaths } from '../../core/src/workspace.ts';
-import { codexCapture } from './codex-watcher.ts';
+import { serveWhiteboard } from '../../web/src/whiteboard.ts';
+import { bindHost, hostBinding, unbindHost } from './capture-bindings.ts';
+import type { ServiceCall } from './capture-bindings.ts';
+import { codexCapture, drainStoppedCapture } from './codex-watcher.ts';
+import { serveMcp } from './mcp.ts';
+import { skillStatus } from './skill-status.ts';
+import { startSkill } from './skill.ts';
 
 const args = process.argv.slice(2);
 function option(name: string) {
@@ -24,6 +32,11 @@ function flag(name: string) {
   if (index < 0) return false;
   args.splice(index, 1);
   return true;
+}
+
+function sessionContext() {
+  return hostBinding({ harness: option('--harness'), sessionId: option('--session'),
+    transcript: option('--transcript'), turnId: option('--turn') });
 }
 
 function print(value: unknown) {
@@ -57,7 +70,7 @@ async function ensureService(project: string, port?: number) {
   throw new BangError('start_timeout', 'Bang service did not become ready.');
 }
 
-async function call(service: Discovery, path: string, method = 'GET', body?: unknown) {
+async function call<Result = Record<string, unknown>>(service: Discovery, path: string, method = 'GET', body?: unknown) {
   const response = await requestService(service, path, {
     method,
     ...(body === undefined ? {} : {
@@ -69,7 +82,58 @@ async function call(service: Discovery, path: string, method = 'GET', body?: unk
   if (!response.ok) {
     throw new BangError(String(result.code), String(result.message), response.status);
   }
-  return result;
+  return result as Result;
+}
+
+async function stopProject(project: string, requestedAt = Date.now()): Promise<{ running: boolean; unverifiedSessions: string[] }> {
+  const paths = workspacePaths(project);
+  const discovered = readDiscovery(paths);
+  const health = discovered && await probeService(discovered);
+  if (!health && !existsSync(paths.database)) return { running: false, unverifiedSessions: [] };
+  const local = health?.captureStop ? undefined : new BangStore(paths.database);
+  const legacy = local && discovered && health ? {
+    daemon: discoveryIdentity(discovered),
+    ownsDiscovery: () => readDiscovery(paths)?.token === discovered.token,
+  } : undefined;
+  try {
+    // Fence the old daemon's in-flight reads before it can release discovery.
+    if (local && !local.endCapture(requestedAt, legacy)) return await stopProject(project, requestedAt);
+    if (discovered && health) {
+      const result = await call<{ running: boolean; unverifiedSessions: string[] }>(discovered, '/api/stop', 'POST');
+      for (let attempt = 0; attempt < 100 && readDiscovery(paths)?.token === discovered.token; attempt += 1) {
+        await delay(25);
+      }
+      if (readDiscovery(paths)?.token === discovered.token) {
+        throw new BangError('stop_timeout', 'Bang service did not stop.');
+      }
+      if (!local) return result;
+    }
+    if (legacy) local!.clearLegacyCaptureFences(legacy.daemon);
+    return { running: false, ...await drainStoppedCapture(local!, paths.root) };
+  } finally {
+    local?.close();
+  }
+}
+
+async function deliverTurn(project: string, port: number | undefined, input: Record<string, unknown>) {
+  const paths = workspacePaths(project);
+  const discovered = readDiscovery(paths);
+  if (discovered && (await probeService(discovered))?.ready) {
+    return await call(discovered, '/api/delivery/turns', 'POST', input);
+  }
+  if (!existsSync(paths.database)) return { status: 'capture_inactive' };
+  const store = new BangStore(paths.database);
+  try {
+    const delivery = prepareDelivery(store, input);
+    if ('result' in delivery) {
+      if (delivery.result.status !== 'watcher_managed') return delivery.result;
+    } else if (delivery.stopped) {
+      return store.recordEpisode(delivery.episode);
+    }
+  } finally {
+    store.close();
+  }
+  return await call(await ensureService(project, port), '/api/delivery/turns', 'POST', input);
 }
 
 function startBrowser(url: string) {
@@ -97,11 +161,35 @@ async function main() {
   }
   const command = args.shift();
   if (command === 'help' || command === '--help' || command === undefined) {
-    console.log('bang [--project <dir>] init | topic list/create/switch/archive | episode record/list/get | ingest | bind | unbind | sync | inspect | export | serve | stop | status | open');
+    console.log('bang [--project <dir>] init | topic list/create/switch/archive | episode record/list/get | ingest | deliver | mcp | bind | unbind | sync | inspect | export | serve | stop | status | open');
     return;
   }
+  if (command === 'mcp') {
+    return serveMcp(async (path, method, body) => call(await ensureService(project, port), path, method, body),
+      (input) => deliverTurn(project, port, input));
+  }
+  if (command === 'deliver') {
+    let input: unknown;
+    try {
+      input = JSON.parse(await readStream(process.stdin));
+    } catch {
+      throw new BangError('invalid_json', 'Expected a host turn JSON object');
+    }
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+      throw new BangError('invalid_json', 'Expected a host turn JSON object');
+    }
+    return print(await deliverTurn(project, port, input as Record<string, unknown>));
+  }
   if ((command === 'serve' || command === 'start') && flag('--foreground')) {
-    const runtime = await startServer(project, { port, ...codexCapture() });
+    const capture = codexCapture();
+    const runtime = await startServer(project, {
+      port,
+      ...capture,
+      async route(context) {
+        return await capture.route(context) ||
+          (context.request.method === 'GET' && serveWhiteboard(context.url.pathname, context.response));
+      },
+    });
     if (runtime.owned) {
       process.once('SIGINT', () => void runtime.close());
       process.once('SIGTERM', () => void runtime.close());
@@ -124,25 +212,16 @@ async function main() {
     if (flag('--include-superseded')) parameters.set('include_superseded', 'true');
     return print(await call(service, `${endpoint}/inspect?${parameters}`));
   }
-  if (command === 'status' || command === 'stop') {
+  if (command === 'status') {
     const paths = workspacePaths(project);
     const discovered = readDiscovery(paths);
     const health = discovered && await probeService(discovered);
     if (!discovered || !health) return print({ running: false });
-    if (command === 'status') {
-      return print({ running: true, ready: health.ready, pid: discovered.pid, port: discovered.port,
-        ...(health.ready ? await call(discovered, '/api/codex/bindings') : {}),
-      });
-    }
-    const result = await call(discovered, '/api/stop', 'POST');
-    for (let attempt = 0; attempt < 100 && readDiscovery(paths)?.token === discovered.token; attempt += 1) {
-      await delay(25);
-    }
-    if (readDiscovery(paths)?.token === discovered.token) {
-      throw new BangError('stop_timeout', 'Bang service did not stop.');
-    }
-    return print(result);
+    return print({ running: true, ready: health.ready, pid: discovered.pid, port: discovered.port,
+      ...(health.ready ? await call(discovered, '/api/codex/bindings') : {}),
+    });
   }
+  if (command === 'stop') return print(await stopProject(project));
   if (['init', 'serve', 'start'].includes(command)) {
     const service = await ensureService(project, port);
     return print({ running: true, pid: service.pid, port: service.port, projectRoot: service.project_root });
@@ -155,22 +234,37 @@ async function main() {
     if (!urlOnly) await startBrowser(String(result.url));
     return print(urlOnly ? result : { opened: true });
   }
-  if (command === 'bind' || command === 'unbind') {
-    const hostSession = process.env.CODEX_THREAD_ID || process.env.CODEX_SESSION_ID;
-    const sessionId = requiredString(option('--session') ?? (hostSession || undefined), 'Codex session. Provide --session');
-    const service = await ensureService(project, port);
-    if (command === 'unbind') {
-      return print(await call(service, `/api/codex/bindings/${encodeURIComponent(sessionId)}`, 'DELETE'));
+  if (command === 'skill') {
+    const action = args.shift();
+    if (action === 'status') {
+      if (!existsSync(workspacePaths(project).database)) {
+        return print({ status: 'uninitialized', message: 'Bang 尚未初始化。' });
+      }
+      const service = await ensureService(project, port);
+      return print(await skillStatus((path, method, body) => call(service, path, method, body)));
     }
-    const fromHost = sessionId === hostSession;
+    if (action === 'stop') {
+      const result = await stopProject(project);
+      return print({ ...result, message: '已停止当前项目的采集与白板服务。' });
+    }
+    if (action === 'start') {
+      const topicArgument = option('--topic');
+      const topic = topicArgument === undefined ? undefined : requiredString(topicArgument, 'topic');
+      const binding = sessionContext();
+      const service = await ensureService(project, port);
+      return print(await startSkill((path, method, body) => call(service, path, method, body), service.project_root, {
+        ...binding, topic,
+      }));
+    }
+    throw new BangError('unknown_command', 'Expected skill start, status or stop.');
+  }
+  if (command === 'bind' || command === 'unbind') {
+    const session = sessionContext();
+    const service = await ensureService(project, port);
+    const client: ServiceCall = (path, method, body) => call(service, path, method, body);
+    if (command === 'unbind') return print(await unbindHost(client, session));
     const topicId = requiredString(option('--topic'), 'topic');
-    const transcriptOption = option('--transcript');
-    const turnOption = option('--turn');
-    const transcript = (transcriptOption ?? (fromHost && process.env.CODEX_TRANSCRIPT_PATH)) || undefined;
-    const turnId = (turnOption ?? (fromHost && process.env.CODEX_TURN_ID)) || undefined;
-    return print(await call(service, '/api/codex/bindings', 'POST', {
-      topicId, sessionId, transcript, turnId, includeActive: fromHost,
-    }));
+    return print(await bindHost(client, session, topicId));
   }
   if (command === 'topic') {
     const action = args.shift();
